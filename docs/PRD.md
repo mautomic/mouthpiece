@@ -29,7 +29,7 @@ Speech-to-text (Wispr Flow) has made *talking to* Claude Code much faster than t
 
 - **G1:** Hear a spoken version of every Claude Code response without looking at the terminal, starting soon after the response finishes:
   - **< 1.5 s** in full mode
-  - **< 4 s** in summary mode with the subscription summarizer (§8.4)
+  - **< 4 s** in summary mode with the subscription summarizer (§8.5)
 - **G2:** Two speech modes that can be switched on the fly:
   - **summary** (default): 1–3 spoken sentences.
   - **full**: the whole response with markdown and code cleaned out.
@@ -38,7 +38,7 @@ Speech-to-text (Wispr Flow) has made *talking to* Claude Code much faster than t
 - **G4:** Handle multiple concurrent sessions without audio overlapping. You always know which project is talking.
 - **G5:** Provider-agnostic TTS layer: swapping ElevenLabs / Inworld / Deepgram / OpenAI / macOS `say` is a config change.
 - **G6:** Keep it cheap and visible: **≤ $50/month** at heavy personal usage in summary mode. Track character usage per provider and project against each plan's quota (used / remaining / projected), warn at 80%, and fall back to a free voice at 100%.
-- **G7:** One entry point that any tool can use (`mouthpiece say` / `POST /speak`), so integrations beyond Claude Code are thin adapters.
+- **G7:** Source-agnostic core: one entry point that anything can use (`mouthpiece say` / `POST /v1/speak`). Claude Code is just the first adapter, and other sources (a Discord bot, cron jobs, CI, other AI CLIs) are thin adapters onto the same pipeline (§8.3).
 
 ## 3. Decisions made so far
 
@@ -246,7 +246,11 @@ Stories are grouped by phase. Each should fit in one focused session.
 **Acceptance Criteria:**
 - [ ] `mouthpieced` (Bun) listens on `127.0.0.1:7317`, configurable, and **binds to loopback only**
 - [ ] `GET /v1/health` returns `{ ok, version, provider, queueDepth }`
-- [ ] `POST /v1/speak` accepts `{ text, source?, sessionId?, project?, priority?, mode? }` and returns `202` immediately
+- [ ] `POST /v1/speak` accepts the generic event envelope (§8.3) and returns `202` immediately:
+  ```ts
+  { text, source, conversationId?, label?, kind?, priority?, mode?, format? }
+  ```
+  No field names are specific to Claude Code.
 - [ ] Requires a shared token stored in `~/.mouthpiece/token`, so other local processes and web pages can't trigger speech. The CLI and hooks read the same file.
 - [ ] Typecheck and lint pass; unit tests cover request validation
 
@@ -299,8 +303,8 @@ Stories are grouped by phase. Each should fit in one focused session.
 **Description:** As a user, when I start my next prompt I want the old response to stop talking.
 
 **Acceptance Criteria:**
-- [ ] A `UserPromptSubmit` hook sends `POST /v1/interrupt { sessionId }`
-- [ ] Stops playback if that session's item is playing, and drops its queued items. Other sessions are unaffected.
+- [ ] Any source can send `POST /v1/interrupt { source, conversationId }`. The Claude Code `UserPromptSubmit` hook is the first caller.
+- [ ] Stops playback if that conversation's item is playing, and drops its queued items. Other conversations are unaffected.
 - [ ] `mouthpiece stop` (all sessions) and `mouthpiece skip` (current item only) work from any terminal
 
 ### Phase 2: Summary mode, modes, Claude Code install
@@ -426,7 +430,8 @@ Stories are grouped by phase. Each should fit in one focused session.
 - **FR-3:** Text cleaning must run before both summarization and verbatim speech.
 - **FR-4:** **summary** mode must produce at most 350 characters of speech per response. **full** mode must speak all cleaned text, split into chunks under each provider's per-request limit.
 - **FR-5:** Only one audio item may play at a time, system-wide.
-- **FR-6:** A `UserPromptSubmit` from session S must interrupt and flush only S's audio.
+- **FR-6:** An interrupt for conversation C (for example a `UserPromptSubmit` from Claude Code session C) must interrupt and flush only C's audio.
+- **FR-13:** The core (`packages/core`, daemon, queue) must not import or reference anything Claude Code-specific. All source-specific behavior lives in adapters and source profiles (§8.3).
 - **FR-7:** Every spoken item must keep its source text (full and summary) for replay, for 24 hours or the last 100 items, whichever is smaller.
 - **FR-8:** Provider failure must fall back to the next provider in the configured chain, ending in macOS `say`, within 3 s.
 - **FR-9:** API keys must be read from env vars or the macOS Keychain, never from plain-text config committed anywhere.
@@ -454,9 +459,13 @@ mouthpiece/
 │   ├── daemon/        # HTTP server, queue, pipeline, playback
 │   ├── core/          # cleaning, chunking, summarizer, provider interface, config
 │   ├── providers/     # inworld, deepgram, elevenlabs, openai, say, (kokoro)
-│   ├── cli/           # `mouthpiece` CLI
-│   └── cc-plugin/     # Claude Code plugin (hooks.json, commands, mp-hook)
-├── adapters/          # codex, gemini, file-tail
+│   └── cli/           # `mouthpiece` CLI
+├── adapters/          # everything source-specific; core never imports these
+│   ├── claude-code/   # mp-hook, install-hooks, slash commands, (plugin later)
+│   ├── codex/
+│   ├── gemini/
+│   ├── file-tail/
+│   └── (discord/)     # future: local gateway client + ConversationDriver
 ├── tasks/             # PRDs
 └── docs/
 ```
@@ -465,21 +474,62 @@ mouthpiece/
 
 | Stage | What it does |
 |---|---|
-| `ingest` | Normalize the event into `{text, source, sessionId, project, kind}` |
+| `ingest` | Normalize the event into the generic envelope (§8.3) |
 | `filter` | Drop trivial or too-short text; apply mute and mode |
-| `clean` | Markdown → speakable text |
-| `summarize?` | Only in summary mode, and only if the text is longer than the threshold |
+| `clean` | Markdown → speakable text, plus the source profile's extra rules |
+| `summarize?` | Only in summary mode, only if the text is longer than the threshold, using the source profile's prompt |
 | `chunk` | Split at sentence boundaries |
 | `synthesize` | Stream from the provider (cache lookup first) |
 | `enqueue` / `play` | Hand the audio to the queue and player |
 
-### 8.3 Audio playback
+### 8.3 Source-agnostic design
+
+Claude Code is the first source, not a special one. **Everything source-specific lives at the edges.**
+
+**Generic event envelope** (input to `POST /v1/speak`):
+
+| Field | Meaning | Claude Code | Discord bot (example) |
+|---|---|---|---|
+| `source` | Which adapter sent it | `claude-code` | `discord` |
+| `conversationId` | Unit for coalescing and interrupts | session id | channel or thread id |
+| `label` | Spoken prefix when several sources are active | project name | "*Discord, alerts*" |
+| `kind` | `response` \| `alert` \| `info` | Stop → `response`, Notification → `alert` | alert post → `alert` |
+| `format` | `markdown` \| `plain` | `markdown` | `markdown` |
+
+**Source profiles** (config, keyed by `source`) hold the per-source behavior:
+- default mode (summary or full)
+- the summarizer prompt (coding-oriented for Claude Code; "what happened, what do I need to do" for alerts)
+- extra cleaning rules (Discord: `<@123>` mentions → names, `:emoji:` dropped)
+- voice, priority, and mute settings
+
+**Adapters run locally and pull.** A source on another machine, like a Discord bot hosted elsewhere, is handled by a small local adapter that connects *out* to Discord's gateway and forwards events to the loopback daemon. The daemon never opens an inbound port beyond `127.0.0.1`.
+
+**Replying is the same seam as §12.** "Respond to the Discord bot" is a **ConversationDriver** that posts a message back to the channel. It's the same interface Claude Code would use via tmux. v1 ships no drivers, but `conversationId` and `source` on every queued item keep the reply target addressable later.
+
+**Mouthpiece as a framework.** The long-term shape is a local voice layer that other tools build on, not a Claude Code add-on. The extension points:
+
+| Extension point | Interface | v1 implementations |
+|---|---|---|
+| **Sources / adapters** | Generic envelope over `POST /v1/speak` and `/v1/interrupt` | Claude Code, CLI/pipe, Codex, Gemini |
+| **TTS providers** | `TtsProvider` | `say`, Inworld |
+| **Summarizers** | `Summarizer`: `summarize(text, profile) → string` | `claude -p`, Anthropic API, first-sentences fallback |
+| **Source profiles** | Config: prompt, cleaning rules, mode, voice | Claude Code, default |
+| **Conversation drivers** | `ConversationDriver` (§12) | none in v1 |
+
+**v1 framework commitments (cheap now, expensive to retrofit):**
+- The HTTP API is versioned (`/v1`), documented in `docs/api.md`, and changed only additively within v1.
+- Every interface above lives in `packages/core` with no source- or vendor-specific imports (FR-13). Built-in implementations use exactly the same interfaces a third party would.
+- A small `@mouthpiece/client` TypeScript package (`speak()`, `interrupt()`, token discovery) is what our own adapters use. That way adapter code doubles as the example code for third parties.
+
+**Not in v1:** loading third-party providers or adapters as runtime plugins, a plugin registry, or SDKs in other languages. Any language can already integrate over HTTP. Revisit once a second real consumer (e.g. the Discord bot) exists.
+
+### 8.4 Audio playback
 
 Easiest first: write mp3 to a temp file and run `afplay`. This adds latency, since playback waits for the whole file.
 
 Better: stream PCM into a long-lived player process (`ffplay -nodisp -`, `sox play`, or a small Swift CoreAudio helper) so playback starts on the first chunk. Decide this in the US-002 spike.
 
-### 8.4 Latency budget (summary mode)
+### 8.5 Latency budget (summary mode)
 
 | Step | Target |
 |---|---|
@@ -494,7 +544,7 @@ Full mode skips the summary call and is faster to first audio. If `claude -p` co
 - a warm, long-lived `claude -p` process using streaming JSON input
 - the speech-TL;DR output style (Open Question 1)
 
-### 8.5 Privacy
+### 8.6 Privacy
 
 The full assistant text, which may include code context, file names, and secrets Claude echoed, goes to the summarizer and the TTS provider. Mitigations:
 
@@ -502,7 +552,7 @@ The full assistant text, which may include code context, file names, and secrets
 - Redact anything that looks like a secret, using regexes for keys and tokens.
 - A per-project `local_only = true` setting forces `say` or Kokoro.
 
-### 8.6 Dependencies
+### 8.7 Dependencies
 
 - Bun ≥ 1.2
 - `claude` CLI, already installed and logged in (default summarizer)
@@ -589,15 +639,18 @@ Either way, the summarizer is negligible next to TTS, and it cuts TTS spend by a
 
 | Piece | Options | Leaning |
 |---|---|---|
-| **Session driver** (send input to Claude Code) | (a) `tmux send-keys` into a pane running interactive `claude`; (b) Mouthpiece runs `claude -p` with streaming JSON input/output, resuming the same session id; (c) focus the terminal and let Wispr type | **(a) first.** It keeps the terminal UI and reuses the Stop hook. (b) is the clean long-term route. |
+| **Conversation driver** (send input back to a source; Claude Code shown here, Discord = post to channel) | (a) `tmux send-keys` into a pane running interactive `claude`; (b) Mouthpiece runs `claude -p` with streaming JSON input/output, resuming the same session id; (c) focus the terminal and let Wispr type | **(a) first.** It keeps the terminal UI and reuses the Stop hook. (b) is the clean long-term route. |
 | **Speech input** | Wispr Flow (hotkey-driven; no known API, *verify*), or Mouthpiece's own STT: Deepgram streaming, or local Whisper/Parakeet | Own STT for hands-free mode. Wispr stays for normal typing. |
 | **Turn-taking** | Detect end of speech (silence detection), a "send it" keyword, or push-to-talk | Push-to-talk first, auto-listen later |
 | **Barge-in** | Stop playback as soon as you start talking | Needs headphones or echo cancellation |
 | **Permission prompts** | Speak "*Allow Bash: npm test?*" and accept a spoken yes/no | Only with driver (b), or a tmux keystroke |
 
 **v1 implications (cheap to do now):**
-- Treat input as a pluggable **SessionDriver** interface alongside `TtsProvider`, even if v1 only has a no-op driver.
-- Keep the session registry (session id → project, tmux pane, transcript) in the daemon, not in hooks.
+- Treat input as a pluggable **ConversationDriver** interface alongside `TtsProvider`, even if v1 only has a no-op driver:
+  ```ts
+  send(source, conversationId, text): Promise<void>
+  ```
+- Keep the conversation registry in the daemon, not in hooks. It maps `source` + `conversationId` → label, tmux pane or Discord channel, and transcript.
 - The "no STT" non-goal applies to v1 only.
 
 **Open questions:**
