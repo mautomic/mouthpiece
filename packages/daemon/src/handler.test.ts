@@ -18,6 +18,13 @@ function setup(overrides: Partial<HandlerDeps> = {}) {
     interrupt: () => ({ stopped: true, dropped: 1 }),
     stopAll: () => ({ stopped: false, dropped: 3 }),
     skip: () => ({ skipped: true }),
+    getMode: () => ({ default: "summary", overrides: [] }),
+    setMode: (r) => ({ default: r.mode ?? "full", overrides: [] }),
+    replay: (r) => ({ id: r.full ? "full-id" : "id" }),
+    usage: (month) => {
+      if (month === "bad") throw new Error("month must be YYYY-MM");
+      return { from: "a", to: "b", rows: [], quotas: [] };
+    },
     ...overrides,
   };
   return { handle: createHandler(deps), enqueued };
@@ -98,4 +105,44 @@ test("unknown path is 404; wrong method is 405 with Allow", async () => {
   const res = await handle(req("GET", "/v1/speak"));
   expect(res.status).toBe(405);
   expect(res.headers.get("allow")).toBe("POST");
+});
+
+test("mode GET and POST share a path; validation errors are 400", async () => {
+  const { handle } = setup();
+  expect(await (await handle(req("GET", "/v1/mode"))).json()).toEqual({
+    default: "summary",
+    overrides: [],
+  });
+  expect(await (await handle(req("POST", "/v1/mode", { mode: "off" }))).json()).toEqual({
+    default: "off",
+    overrides: [],
+  });
+  expect((await handle(req("POST", "/v1/mode", {}))).status).toBe(400);
+  const del = await handle(req("DELETE", "/v1/mode"));
+  expect(del.status).toBe(405);
+  expect(del.headers.get("allow")).toBe("GET, POST");
+});
+
+test("replay and usage", async () => {
+  const { handle } = setup();
+  expect(await (await handle(req("POST", "/v1/replay", { full: true }))).json()).toEqual({
+    id: "full-id",
+  });
+  expect((await handle(req("GET", "/v1/usage?month=2026-10"))).status).toBe(200);
+  expect((await handle(req("GET", "/v1/usage?month=bad"))).status).toBe(400);
+  expect((await handle(req("GET", "/v1/usage", undefined, null))).status).toBe(401);
+});
+
+test("phase 2 routes answer 501 until their deps are wired", async () => {
+  const { handle } = setup({
+    getMode: undefined,
+    setMode: undefined,
+    replay: undefined,
+    usage: undefined,
+  });
+  expect((await handle(req("GET", "/v1/mode"))).status).toBe(501);
+  expect((await handle(req("POST", "/v1/mode", { mode: "off" }))).status).toBe(501);
+  expect((await handle(req("POST", "/v1/replay", {}))).status).toBe(501);
+  expect((await handle(req("GET", "/v1/usage"))).status).toBe(501);
+  expect((await handle(req("GET", "/v1/mode", undefined, null))).status).toBe(401);
 });
