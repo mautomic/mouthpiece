@@ -1,0 +1,13 @@
+{
+  "name": "@mouthpiece/adapter-claude-code",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@mouthpiece/core": "workspace:*",
+    "@mouthpiece/client": "workspace:*"
+  }
+}

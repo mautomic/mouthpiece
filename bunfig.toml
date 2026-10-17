@@ -1,0 +1,3 @@
+# Run package bins (biome, tsc) with Bun instead of whatever `node` is on PATH.
+[run]
+bun = true
