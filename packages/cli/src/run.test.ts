@@ -100,6 +100,6 @@ test("unknown command prints usage", async () => {
 
 test("mode routes to its command module", async () => {
   const h = harness();
-  expect(await run(["mode"], h.io, h.deps)).toBe(1);
-  expect(h.err.join("")).toContain("not implemented");
+  expect(await run(["mode"], h.io, h.deps)).toBe(0);
+  expect(JSON.parse(h.out.join(""))).toEqual({ default: "summary", overrides: [] });
 });
