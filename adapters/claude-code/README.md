@@ -10,15 +10,20 @@ Claude Code hook adapter for Mouthpiece (US-007, US-008, US-012).
   - `idle_prompt` (opt-in): "web is waiting for you."
   - Other notification types are ignored. Alerts still play when the mode is `off`.
 
-The hook never writes to stdout, always exits 0, and gives up on the daemon after 300 ms (FR-2).
-It does nothing when `MOUTHPIECE_CHILD=1` is set.
+`src/main.ts` is only the entry point: the shared runtime in `@mouthpiece/hook-kit` (`runHook`)
+reads stdin, never writes to stdout or stderr, always exits 0, gives up on the daemon after 300 ms
+and exits hard after 1 s (FR-2), and does nothing when `MOUTHPIECE_CHILD=1` is set. The Claude
+Code-specific mapping from hook payloads to events lives in `src/hook.ts`.
+
+The Codex and Gemini CLI adapters (`adapters/codex`, `adapters/gemini`) work the same way.
 
 ## Install
 
 The normal path (US-011):
 
 ```sh
-mouthpiece install-hooks                # Stop, UserPromptSubmit, Notification (permission_prompt)
+mouthpiece install-hooks                # Stop, UserPromptSubmit, Notification (permission_prompt);
+                                        # same as --target claude-code
 mouthpiece install-hooks --idle-alerts  # also speak when Claude Code is waiting for input
 mouthpiece uninstall-hooks              # removes only Mouthpiece's entries
 ```
