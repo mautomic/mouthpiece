@@ -51,6 +51,18 @@ fi
 say_step "Claude Code hooks"
 run "$MP" install-hooks
 
+# Codex and Gemini CLI hooks, only for tools that are installed. A failure (e.g. a settings file
+# that isn't plain JSON) is reported but doesn't stop the install.
+if command -v codex >/dev/null 2>&1; then
+  say_step "Codex hooks"
+  run "$MP" install-hooks --target codex || echo "Codex hook install failed; continuing."
+  echo "→ In Codex, run /hooks to trust them."
+fi
+if command -v gemini >/dev/null 2>&1; then
+  say_step "Gemini CLI hooks"
+  run "$MP" install-hooks --target gemini || echo "Gemini hook install failed; continuing."
+fi
+
 say_step "Background daemon (launchd)"
 run mkdir -p "$HOME/.config/mouthpiece"
 run "$MP" install-agent

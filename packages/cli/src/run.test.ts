@@ -105,7 +105,13 @@ test("mode routes to its command module", async () => {
   expect(JSON.parse(h.out.join(""))).toEqual({ default: "summary", overrides: [] });
 });
 
-test.each([["voices"], ["tail"]])("%s routes to its (not yet implemented) command", async (cmd) => {
+test("tail routes to its command (which needs --format)", async () => {
+  const h = harness();
+  expect(await run(["tail"], h.io, h.deps)).toBe(2);
+  expect(h.err.join("")).toContain("--format");
+});
+
+test.each([["voices"]])("%s routes to its (not yet implemented) command", async (cmd) => {
   const h = harness();
   expect(await run([cmd], h.io, h.deps)).toBe(1);
   expect(h.err.join("")).toContain("not implemented");

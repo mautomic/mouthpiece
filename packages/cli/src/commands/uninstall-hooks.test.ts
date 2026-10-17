@@ -41,7 +41,11 @@ function harness() {
       voices: unused,
     },
     startDaemon: unused,
-    env: { MOUTHPIECE_CLAUDE_SETTINGS: settingsPath },
+    env: {
+      MOUTHPIECE_CLAUDE_SETTINGS: settingsPath,
+      MOUTHPIECE_CODEX_HOOKS: join(dir, "codex", "hooks.json"),
+      MOUTHPIECE_GEMINI_SETTINGS: join(dir, "gemini", "settings.json"),
+    },
     exec: async () => {
       throw new Error("unexpected exec");
     },
@@ -92,4 +96,38 @@ test("invalid JSON is refused and left untouched", async () => {
   const h = harness();
   await expect(uninstallHooksCommand([], h.io, h.deps)).rejects.toThrow();
   expect(await readFile(settingsPath, "utf8")).toBe("{oops");
+});
+
+test.each([
+  ["codex", "codex/hooks.json"],
+  ["gemini", "gemini/settings.json"],
+])("--target %s removes only that target's hooks", async (target, rel) => {
+  const path = join(dir, rel);
+  const h = harness();
+  await installHooksCommand([], h.io, h.deps);
+  const claude = await readFile(settingsPath, "utf8");
+  await installHooksCommand(["--target", target], h.io, h.deps);
+  const before = JSON.parse(await readFile(path, "utf8")) as { hooks: object };
+  expect(Object.keys(before.hooks).length).toBeGreaterThan(0);
+
+  expect(await uninstallHooksCommand(["--target", target], h.io, h.deps)).toBe(0);
+  expect(JSON.parse(await readFile(path, "utf8"))).toEqual({});
+  expect(await readFile(settingsPath, "utf8")).toBe(claude);
+  expect(h.out.join("")).toContain(`Removed Mouthpiece hooks from ${path}`);
+
+  const again = harness();
+  expect(await uninstallHooksCommand(["--target", target], again.io, again.deps)).toBe(0);
+  expect(again.out.join("")).toMatch(/no Mouthpiece hooks found/i);
+});
+
+test("--target for a missing codex hooks.json creates nothing", async () => {
+  const h = harness();
+  expect(await uninstallHooksCommand(["--target", "codex"], h.io, h.deps)).toBe(0);
+  await expect(stat(join(dir, "codex"))).rejects.toThrow();
+});
+
+test("--target nope exits 2", async () => {
+  const h = harness();
+  expect(await uninstallHooksCommand(["--target", "nope"], h.io, h.deps)).toBe(2);
+  expect(h.err.join("")).toContain("nope");
 });
