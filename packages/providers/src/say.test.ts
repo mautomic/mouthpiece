@@ -4,7 +4,7 @@ import { chmod, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectChunks } from "@mouthpiece/core";
-import { SayProvider } from "./say.ts";
+import { parseSayVoices, SayProvider } from "./say.ts";
 
 const onMac = process.platform === "darwin";
 let dir: string;
@@ -65,4 +65,46 @@ test("an abort while the command runs kills it and rejects promptly", async () =
   await expect(p).rejects.toThrow();
   expect(performance.now() - started).toBeLessThan(1000);
   expect(await readdir(dir)).toEqual([]);
+});
+
+const VOICE_FIXTURE = [
+  "Alex                en_US    # Most people recognize me by my voice.",
+  "Ava (Premium)       en_US    # Hello, my name is Ava.",
+  "Amélie              fr_CA    # Bonjour, je m’appelle Amélie.",
+  // Long names leave a single space before the locale (real macOS output).
+  "Eddy (English (UK)) en_GB    # Hello! My name is Eddy.",
+  "this line is not a voice",
+  "",
+].join("\n");
+
+test("parseSayVoices parses names and locales and skips malformed lines", () => {
+  expect(parseSayVoices(VOICE_FIXTURE)).toEqual([
+    { id: "Alex", name: "Alex", language: "en-US" },
+    { id: "Ava (Premium)", name: "Ava (Premium)", language: "en-US" },
+    { id: "Amélie", name: "Amélie", language: "fr-CA" },
+    { id: "Eddy (English (UK))", name: "Eddy (English (UK))", language: "en-GB" },
+  ]);
+});
+
+test("listVoices runs `say -v ?` through the injected command", async () => {
+  const fixture = join(scriptDir, "voices.txt");
+  const argsFile = join(scriptDir, "args.txt");
+  await Bun.write(fixture, VOICE_FIXTURE);
+  const path = join(scriptDir, "list-say");
+  await Bun.write(path, `#!/bin/sh\necho "$@" > '${argsFile}'\ncat '${fixture}'\n`);
+  await chmod(path, 0o755);
+  const voices = await new SayProvider({ tmpDir: dir, command: path }).listVoices();
+  expect(voices.map((v) => v.id)).toEqual([
+    "Alex",
+    "Ava (Premium)",
+    "Amélie",
+    "Eddy (English (UK))",
+  ]);
+  expect((await Bun.file(argsFile).text()).trim()).toBe("-v ?");
+});
+
+test("listVoices rejects when the command fails", async () => {
+  await expect(new SayProvider({ tmpDir: dir, command: "false" }).listVoices()).rejects.toThrow(
+    "say exited",
+  );
 });

@@ -7,3 +7,4 @@ export * from "./http.ts";
 export * from "./inworld.ts";
 export * from "./openai.ts";
 export * from "./say.ts";
+export * from "./voice-map.ts";

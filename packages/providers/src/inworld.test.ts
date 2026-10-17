@@ -2,12 +2,15 @@ import { expect, test } from "bun:test";
 import { collectChunks } from "@mouthpiece/core";
 import { FakeProvider } from "./fake.ts";
 import { FallbackProvider } from "./fallback.ts";
+import { ProviderHttpError } from "./http.ts";
 import {
   INWORLD_STREAM_URL,
+  INWORLD_VOICES_URL,
   InworldError,
   type InworldOptions,
   InworldProvider,
 } from "./inworld.ts";
+import { jsonResponse, recordingFetch } from "./testing.ts";
 
 const b64 = (s: string) => Buffer.from(s).toString("base64");
 
@@ -131,6 +134,45 @@ test("cacheKey changes with the configured voice and model", () => {
   expect(key("Ashley", "inworld-tts-2-flash")).not.toBe(key("Dennis", "inworld-tts-2-flash"));
   expect(key("Ashley", "inworld-tts-2-flash")).not.toBe(key("Ashley", "inworld-tts-2"));
   expect(key("Ashley", "inworld-tts-2")).toBe(key("Ashley", "inworld-tts-2"));
+});
+
+test("listVoices requests the voice list with Basic auth and maps it", async () => {
+  const seen: Request[] = [];
+  const p = new InworldProvider({
+    apiKey: "QUJD",
+    model: "inworld-tts-2-flash",
+    voice: "Ashley",
+    fetch: recordingFetch(
+      () =>
+        jsonResponse({
+          voices: [
+            { voiceId: "Ashley", displayName: "Ashley", languageCode: "en-US", tags: [] },
+            { voiceId: "default-abc__mine", displayName: "My clone" },
+          ],
+        }),
+      seen,
+    ),
+  });
+  expect(await p.listVoices()).toEqual([
+    { id: "Ashley", name: "Ashley", language: "en-US" },
+    { id: "default-abc__mine", name: "My clone" },
+  ]);
+  expect(seen[0]?.method).toBe("GET");
+  expect(seen[0]?.url).toBe(`${INWORLD_VOICES_URL}?pageSize=2000`);
+  expect(INWORLD_VOICES_URL).toBe("https://api.inworld.ai/voices/v1/voices");
+  expect(seen[0]?.headers.get("authorization")).toBe("Basic QUJD");
+});
+
+test("listVoices rejects with ProviderHttpError on an HTTP error", async () => {
+  const p = new InworldProvider({
+    apiKey: "QUJD",
+    model: "inworld-tts-2-flash",
+    voice: "Ashley",
+    fetch: recordingFetch(() => jsonResponse({ code: 16, message: "unauthenticated" }, 401)),
+  });
+  const error = await p.listVoices().catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(ProviderHttpError);
+  expect((error as Error).message).toContain("unauthenticated");
 });
 
 const live = process.env.MOUTHPIECE_LIVE_TESTS === "1" && Boolean(process.env.INWORLD_API_KEY);
