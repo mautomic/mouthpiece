@@ -35,20 +35,21 @@ const gemini: LineParser = (line, file) => {
   if (line.startsWith('{"$')) return null;
   const record = parseRecord(line);
   if (record?.type !== "gemini") return null;
-  const content = record.content;
-  const text =
-    typeof content === "string"
-      ? content
-      : Array.isArray(content)
-        ? content
-            .filter((p): p is { text: string } => isRecord(p) && typeof p.text === "string")
-            .map((p) => p.text)
-            .join("\n")
-        : "";
+  const text = contentText(record.content);
   if (!text.trim()) return null;
   const name = file.slice(file.lastIndexOf("/") + 1);
   return { text, conversationId: GEMINI_SESSION_ID.exec(name)?.[1] };
 };
+
+/** Gemini `content` is a string or a list of `{text}` parts (joined with newlines). */
+function contentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((p): p is { text: string } => isRecord(p) && typeof p.text === "string")
+    .map((p) => p.text)
+    .join("\n");
+}
 
 /** Any text log: each non-empty line is a message. */
 const lines: LineParser = (line) => {

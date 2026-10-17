@@ -5,7 +5,7 @@ import type {
   TtsProvider,
   VoiceInfo,
 } from "@mouthpiece/core";
-import { DEFAULT_STREAM_IDLE_TIMEOUT_MS, getJson, streamingClip } from "./http.ts";
+import { getJson, streamingClip } from "./http.ts";
 
 export const ELEVENLABS_BASE_URL = "https://api.elevenlabs.io";
 
@@ -45,7 +45,7 @@ export class ElevenLabsProvider implements TtsProvider {
     );
     return streamingClip(res, {
       provider: this.name,
-      idleTimeoutMs: this.opts.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+      idleTimeoutMs: this.opts.streamIdleTimeoutMs,
       signal: options.signal,
     });
   }
@@ -58,9 +58,7 @@ export class ElevenLabsProvider implements TtsProvider {
     };
     return (body.voices ?? []).map((v) => {
       const language = v.verified_languages?.[0]?.language;
-      return language
-        ? { id: v.voice_id, name: v.name, language }
-        : { id: v.voice_id, name: v.name };
+      return { id: v.voice_id, name: v.name, ...(language ? { language } : {}) };
     });
   }
 

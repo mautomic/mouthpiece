@@ -1,5 +1,5 @@
 import { isRecord } from "@mouthpiece/core";
-import { type HookContext, labelFromCwd } from "@mouthpiece/hook-kit";
+import { approvalText, type HookContext, labelFromCwd } from "@mouthpiece/hook-kit";
 
 export const SOURCE = "claude-code";
 
@@ -28,32 +28,35 @@ export async function handleHook(event: string, input: unknown, deps: HookContex
       return;
     case "notify": {
       // The label is already in the text, so `label` stays unset to avoid a double prefix (US-012).
-      const label = labelFromCwd(input.cwd) ?? "Claude Code";
-      let text: string | undefined;
-      if (input.notification_type === "permission_prompt") {
-        const tool =
-          typeof input.message === "string"
-            ? /permission to use ([\w.:-]+)/i.exec(input.message)?.[1]
-            : undefined;
-        text = tool
-          ? `${label} needs your approval to use ${tool}.`
-          : `${label} needs your approval.`;
-      } else if (input.notification_type === "idle_prompt") {
-        text = `${label} is waiting for you.`;
-      }
-      if (text) {
-        await deps.speak({
-          text,
-          source: SOURCE,
-          conversationId: sessionId,
-          kind: "alert",
-          format: "plain",
-        });
-      }
+      const text = notificationText(input, labelFromCwd(input.cwd) ?? "Claude Code");
+      if (!text) return;
+      await deps.speak({
+        text,
+        source: SOURCE,
+        conversationId: sessionId,
+        kind: "alert",
+        format: "plain",
+      });
       return;
     }
     default:
       return;
+  }
+}
+
+function notificationText(input: Record<string, unknown>, label: string): string | null {
+  switch (input.notification_type) {
+    case "permission_prompt": {
+      const tool =
+        typeof input.message === "string"
+          ? /permission to use ([\w.:-]+)/i.exec(input.message)?.[1]
+          : undefined;
+      return approvalText(label, tool);
+    }
+    case "idle_prompt":
+      return `${label} is waiting for you.`;
+    default:
+      return null;
   }
 }
 

@@ -17,7 +17,7 @@ export const usageCommand: CommandFn = async (args, io, deps) => {
     n(r.requests),
     n(r.chars),
     n(r.cacheHits),
-    `$${r.costUsd.toFixed(2)}`,
+    usd(r.costUsd),
   ]);
   const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)));
   const line = (cells: string[]) =>

@@ -36,7 +36,7 @@ packages/daemon     HTTP server, speech queue, speaker pipeline, player, usage m
 packages/summarizers  Summarizer backends (claude -p) + first-sentence fallback
 packages/hotkeys    global hotkeys: Swift helper + TypeScript supervisor
 packages/client     @mouthpiece/client: speak/interrupt/stop/skip/health/mode/replay/usage over HTTP
-packages/hook-kit   @mouthpiece/hook-kit: silent hook runtime (runHook, HookContext, labelFromCwd) shared by hook adapters
+packages/hook-kit   @mouthpiece/hook-kit: silent hook runtime (runHook, HookContext, labelFromCwd, approvalText) shared by hook adapters
 packages/cli        `mouthpiece` CLI
 adapters/claude-code  Claude Code hooks
 adapters/codex      Codex CLI hooks

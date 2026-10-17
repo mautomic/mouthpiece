@@ -181,17 +181,10 @@ export class UsageStore {
     const rows = this.#db
       .query("SELECT ms, ok FROM summaries WHERE ts >= ? AND ts < ? ORDER BY ms")
       .all(from.getTime(), to.getTime()) as { ms: number; ok: number }[];
-    const mid = Math.floor(rows.length / 2);
-    const medianMs =
-      rows.length === 0
-        ? null
-        : rows.length % 2 === 1
-          ? (rows[mid]?.ms ?? null)
-          : Math.round(((rows[mid - 1]?.ms ?? 0) + (rows[mid]?.ms ?? 0)) / 2);
     return {
       calls: rows.length,
       failures: rows.filter((r) => r.ok === 0).length,
-      medianMs,
+      medianMs: median(rows.map((r) => r.ms)),
     };
   }
 
@@ -201,6 +194,14 @@ export class UsageStore {
 }
 
 const round6 = (x: number) => Math.round(x * 1e6) / 1e6;
+
+/** The median of an ascending list (the mean of the middle two, rounded, when even); null when empty. */
+function median(sorted: number[]): number | null {
+  if (sorted.length === 0) return null;
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid] ?? null;
+  return Math.round(((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2);
+}
 
 /** Records one usage row per synthesis; cache hits are free (FR-10). */
 export class MeteredProvider implements TtsProvider {

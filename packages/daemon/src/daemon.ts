@@ -214,12 +214,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     return {
       providers: await Promise.all(
         list.map(async (p) => {
-          if (!p.listVoices) return { provider: p.name, voices: [] };
           try {
-            return {
-              provider: p.name,
-              voices: await withTimeout(p.listVoices(), VOICES_TIMEOUT_MS, p.name),
-            };
+            const voices = p.listVoices
+              ? await withTimeout(p.listVoices(), VOICES_TIMEOUT_MS, p.name)
+              : [];
+            return { provider: p.name, voices };
           } catch (error) {
             return {
               provider: p.name,

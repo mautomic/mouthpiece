@@ -76,12 +76,11 @@ export class InworldProvider implements TtsProvider {
       `${this.opts.voicesUrl ?? INWORLD_VOICES_URL}?pageSize=2000`,
       { Authorization: `Basic ${this.opts.apiKey}` },
     )) as { voices?: { voiceId: string; displayName?: string; languageCode?: string }[] };
-    return (body.voices ?? []).map((v) => {
-      const name = v.displayName || v.voiceId;
-      return v.languageCode
-        ? { id: v.voiceId, name, language: v.languageCode }
-        : { id: v.voiceId, name };
-    });
+    return (body.voices ?? []).map((v) => ({
+      id: v.voiceId,
+      name: v.displayName || v.voiceId,
+      ...(v.languageCode ? { language: v.languageCode } : {}),
+    }));
   }
 }
 

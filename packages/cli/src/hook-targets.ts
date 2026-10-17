@@ -24,9 +24,14 @@ export interface HookTarget {
 
 export type TargetName = HookTarget["name"];
 
-const markerFor = (name: TargetName) => `/adapters/${name}/src/main.ts`;
-const commandLine = (spec: HookSpec, arg: string) =>
-  `${JSON.stringify(spec.bun)} ${JSON.stringify(spec.hookMain)} ${arg}`;
+function markerFor(name: TargetName): string {
+  return `/adapters/${name}/src/main.ts`;
+}
+
+/** `"<bun>" "<hookMain>" <arg>`, the same for every target. */
+function commandLine(spec: HookSpec, arg: string): string {
+  return `${JSON.stringify(spec.bun)} ${JSON.stringify(spec.hookMain)} ${arg}`;
+}
 
 export function claudeSettingsPath(env: Env): string {
   return (

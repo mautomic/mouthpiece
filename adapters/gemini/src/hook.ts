@@ -1,5 +1,5 @@
 import { isRecord } from "@mouthpiece/core";
-import { type HookContext, labelFromCwd } from "@mouthpiece/hook-kit";
+import { approvalText, type HookContext, labelFromCwd } from "@mouthpiece/hook-kit";
 
 export const SOURCE = "gemini";
 
@@ -33,11 +33,8 @@ export async function handleHook(event: string, input: unknown, ctx: HookContext
       if (input.notification_type !== "ToolPermission") return;
       // The label is already in the text, so `label` stays unset to avoid a double prefix (US-012).
       const label = labelFromCwd(input.cwd) ?? "Gemini";
-      const tool = toolName(input.details);
       await ctx.speak({
-        text: tool
-          ? `${label} needs your approval to use ${tool}.`
-          : `${label} needs your approval.`,
+        text: approvalText(label, toolName(input.details)),
         source: SOURCE,
         conversationId: sessionId,
         kind: "alert",

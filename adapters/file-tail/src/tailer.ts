@@ -267,7 +267,7 @@ export class FileTailer {
     const tail = concat(cursor.fingerprint, data);
     cursor.fingerprint = tail.slice(Math.max(0, tail.length - FINGERPRINT_BYTES));
 
-    let bytes = concat(cursor.partial, data);
+    const bytes = concat(cursor.partial, data);
     let start = 0;
     if (cursor.skipToNewline) {
       const nl = bytes.indexOf(NEWLINE);
@@ -282,8 +282,7 @@ export class FileTailer {
       this.emit(this.decoder.decode(bytes.subarray(start, nl)).replace(/\r$/, ""), cursor.file);
       start = nl + 1;
     }
-    bytes = bytes.slice(start);
-    cursor.partial = bytes;
+    cursor.partial = bytes.slice(start);
   }
 
   private emit(line: string, file: string): void {

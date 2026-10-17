@@ -1,5 +1,5 @@
 import type { AudioClip, SynthesizeOptions, TtsProvider, VoiceInfo } from "@mouthpiece/core";
-import { DEFAULT_STREAM_IDLE_TIMEOUT_MS, getJson, streamingClip } from "./http.ts";
+import { getJson, streamingClip } from "./http.ts";
 
 export const DEEPGRAM_BASE_URL = "https://api.deepgram.com";
 
@@ -36,7 +36,7 @@ export class DeepgramProvider implements TtsProvider {
     });
     return streamingClip(res, {
       provider: this.name,
-      idleTimeoutMs: this.opts.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+      idleTimeoutMs: this.opts.streamIdleTimeoutMs,
       signal: options.signal,
     });
   }
@@ -52,9 +52,7 @@ export class DeepgramProvider implements TtsProvider {
       .filter((m) => m.canonical_name?.startsWith("aura-2-"))
       .map((m) => {
         const language = m.languages?.[0];
-        return language
-          ? { id: m.canonical_name, name: m.name, language }
-          : { id: m.canonical_name, name: m.name };
+        return { id: m.canonical_name, name: m.name, ...(language ? { language } : {}) };
       });
   }
 

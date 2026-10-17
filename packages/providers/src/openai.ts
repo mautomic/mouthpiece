@@ -1,5 +1,5 @@
 import type { AudioClip, SynthesizeOptions, TtsProvider, VoiceInfo } from "@mouthpiece/core";
-import { DEFAULT_STREAM_IDLE_TIMEOUT_MS, streamingClip } from "./http.ts";
+import { streamingClip } from "./http.ts";
 
 export const OPENAI_BASE_URL = "https://api.openai.com";
 
@@ -70,7 +70,7 @@ export class OpenAIProvider implements TtsProvider {
     );
     return streamingClip(res, {
       provider: this.name,
-      idleTimeoutMs: this.opts.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+      idleTimeoutMs: this.opts.streamIdleTimeoutMs,
       signal: options.signal,
     });
   }
