@@ -130,13 +130,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     log,
   });
   const player = opts.player ?? new AfplayPlayer({ tmpDir });
+  // Replays are not recorded, so history keeps the original full + summary (US-010, FR-7).
+  const replays = new WeakSet<NormalizedSpeakEvent>();
   const queue = new SpeechQueue({
     play: createSpeaker({
       provider,
       player,
       log,
       prepare: (e) => preparer.prepare(e),
-      onSpoken: (r) => history.add(r),
+      onSpoken: (r) => {
+        if (!replays.has(r.event)) history.add(r);
+      },
     }),
     expireAfterMs: config.queue.expireAfterMs,
     labelWindowMs: config.queue.labelWindowMs,
@@ -173,16 +177,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       replay: ({ full }) => {
         const last = history.last();
         if (!last) return { id: null };
-        const text = full ? last.full : last.spoken;
-        return {
-          id: queue.enqueue({
-            ...last.event,
-            text,
-            format: "plain",
-            mode: "full",
-            kind: "response",
-          }).id,
+        const event: NormalizedSpeakEvent = {
+          ...last.event,
+          text: full ? last.full : last.spoken,
+          format: "plain",
+          mode: "full",
+          kind: "response",
         };
+        replays.add(event);
+        return { id: queue.enqueue(event).id };
       },
       usage: (month) => {
         const now = new Date();

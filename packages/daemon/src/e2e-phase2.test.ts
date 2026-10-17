@@ -49,6 +49,19 @@ test("summary mode speaks the summary; replay --full speaks the full text", asyn
   expect(player.played.slice(1).join(" ")).toBe(long.trim());
 });
 
+test("a plain replay does not replace the full text kept for replay --full", async () => {
+  await boot();
+  await speak({ text: long, source: "claude-code", conversationId: "s1" }, o());
+  await daemon.queue.idle();
+  await replay({}, o());
+  await daemon.queue.idle();
+  expect(player.played).toEqual(["Queue now prioritizes alerts.", "Queue now prioritizes alerts."]);
+  await replay({ full: true }, o());
+  await daemon.queue.idle();
+  expect(player.played.slice(2).join(" ")).toBe(long.trim());
+  expect(daemon.history.size).toBe(1);
+});
+
 test("mode off mutes responses but not alerts; toggle flips global mode", async () => {
   await boot();
   await setMode({ mode: "off" }, o());
