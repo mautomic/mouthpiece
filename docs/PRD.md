@@ -1,0 +1,646 @@
+# PRD: Mouthpiece
+
+> **Status:** Draft v0.1 · research + design kickoff (no code yet)
+> **Date:** 2026-10-17
+> **Owner:** @mautomic
+
+## 1. Introduction
+
+Speech-to-text (Wispr Flow) has made *talking to* Claude Code much faster than typing: more thoughts and more detail for the same time spent. Output still only comes back one way: I have to read it. That forces me to watch the terminal, so I can't step away, pace, look at another monitor, or keep several sessions going while doing something else.
+
+**Mouthpiece is the other half of the loop.** It's a small local service that listens for output from Claude Code (and other AI CLIs or any script), optionally condenses it into something worth hearing, and reads it aloud through a third-party text-to-speech (TTS) provider. A local voice is the fallback.
+
+```
+ ┌──────────────┐  Stop / Notification hooks   ┌───────────────────────────────────────────────┐
+ │ Claude Code  │ ───────────────────────────▶ │                mouthpieced                    │
+ │  session(s)  │   (async, never blocks CC)   │                (local daemon)                 │
+ └──────────────┘                              │                                               │
+ ┌──────────────┐  notify hook / adapter       │  ingest → clean → [summarize] → chunk → TTS   │
+ │ Codex/Gemini │ ───────────────────────────▶ │                                  │            │
+ └──────────────┘                              │                     audio queue ◀┘            │
+ ┌──────────────┐  `mouthpiece say` / POST     │           (priority, interrupt, replay)       │
+ │ any script   │ ───────────────────────────▶ │                         │                     │
+ └──────────────┘                              └─────────────────────────┼─────────────────────┘
+                                                                         ▼
+                                                             speakers / headphones
+```
+
+## 2. Goals
+
+- **G1:** Hear a spoken version of every Claude Code response without looking at the terminal, starting soon after the response finishes:
+  - **< 1.5 s** in full mode
+  - **< 4 s** in summary mode with the subscription summarizer (§8.4)
+- **G2:** Two speech modes that can be switched on the fly:
+  - **summary** (default): 1–3 spoken sentences.
+  - **full**: the whole response with markdown and code cleaned out.
+  - "Replay the full version of the last message" is always available.
+- **G3:** Never slow down or block Claude Code. Hooks are fire-and-forget, and a dead daemon degrades silently.
+- **G4:** Handle multiple concurrent sessions without audio overlapping. You always know which project is talking.
+- **G5:** Provider-agnostic TTS layer: swapping ElevenLabs / Inworld / Deepgram / OpenAI / macOS `say` is a config change.
+- **G6:** Keep it cheap and visible: **≤ $50/month** at heavy personal usage in summary mode. Track character usage per provider and project against each plan's quota (used / remaining / projected), warn at 80%, and fall back to a free voice at 100%.
+- **G7:** One entry point that any tool can use (`mouthpiece say` / `POST /speak`), so integrations beyond Claude Code are thin adapters.
+
+## 3. Decisions made so far
+
+| Topic | Decision | Notes |
+|---|---|---|
+| Speech mode | **Both, switchable**, with summary as the default | Toggle per session or globally. "Replay full" command. |
+| Architecture | **Local daemon + Claude Code hooks** | The daemon owns the queue, TTS, and playback. Clients only POST text. v1 uses user-scope hooks; a plugin is the distribution path (§4.4). |
+| Stack | **TypeScript on Bun** | Fast startup, built-in HTTP server and SQLite, good TTS SDKs. Node-compatible. |
+| v1 sources | **Claude Code**, **generic HTTP/CLI**, **other AI CLIs** | Clipboard/selection reading is deferred. |
+| Summarizer | **Claude Haiku via `claude -p --model haiku`** on the logged-in Claude subscription (no API key, no extra billing; counts toward plan limits). Optional API-key path for lower latency. | $0 extra on the subscription; about $0.70/month on the API-key path (see §9.2). Recursion guarded by `MOUTHPIECE_CHILD=1`. |
+| TTS rollout | **macOS `say` for the MVP**, then **Inworld TTS-2 Flash** as the first paid provider | `say` is free and needs no keys, so the whole pipeline gets built first. Kokoro comes later as a free upgrade (US-019). |
+
+## 4. How we hook into Claude Code (research findings)
+
+**Short answer: yes, the harness supports this directly.** Hooks are configured in `settings.json` or shipped inside a **plugin**.
+
+### 4.1 Relevant hook events
+
+| Event | When it fires | Mouthpiece use |
+|---|---|---|
+| **`Stop`** | Main agent finishes a response. Not fired on user interrupt. API errors fire `StopFailure` instead. | **Primary trigger.** Speak the response. |
+| `SubagentStop` | A subagent finishes. | Optional and off by default. Too noisy. |
+| **`Notification`** | `permission_prompt` (Claude needs approval, about 6 s after the prompt shows) and `idle_prompt` (about 60 s idle after finishing). | Speak a short "*\<project\> needs your approval*" alert. |
+| **`UserPromptSubmit`** | The user submits a new prompt. | **Barge-in:** stop or flush audio for that session. Once you've replied, the old response is stale. |
+| `SessionStart` / `SessionEnd` | Session lifecycle. | Register or unregister the session with the daemon (name, voice assignment). |
+| `MessageDisplay` | Assistant text is displayed. *Fields unverified.* | **Future:** stream speech while Claude is still writing. |
+| `StopFailure` | The turn ended in an API error. | Optional: "*\<project\> hit an error*". |
+
+### 4.2 The Stop payload already contains the text
+
+The documented `Stop` stdin JSON includes `last_assistant_message`, so **no transcript parsing is required.** The docs recommend this field over reading `transcript_path`, because the transcript JSONL may not be flushed when the hook runs.
+
+```json
+{
+  "session_id": "abc123",
+  "transcript_path": "~/.claude/projects/<proj>/<session>.jsonl",
+  "cwd": "/Users/Mau/code/projects/foo",
+  "permission_mode": "default",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "I've completed the refactoring..."
+}
+```
+
+Fallback if the field is ever missing: read the transcript JSONL and take the `text` blocks of the last `type == "assistant"` record. The JSONL schema is undocumented and may change, so this is fallback only.
+
+### 4.3 Configuration shape
+
+The `async: true` flag makes the hook non-blocking: Claude Code doesn't wait for it, and async hooks have no timeout.
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/mp-hook stop", "async": true }] }
+    ],
+    "Notification": [
+      { "matcher": "permission_prompt|idle_prompt",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/mp-hook notify", "async": true }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/mp-hook prompt", "async": true }] }
+    ]
+  }
+}
+```
+
+- **Hook types available:** `command`, `http`, `mcp_tool`, `prompt`, `agent`.
+- **The `http` type could POST straight to the daemon,** with no shell script in between. Its body format is unverified; see spike US-001.
+- **The thin hook client must:**
+  1. Read stdin.
+  2. POST to `127.0.0.1:<port>/v1/events` with a ~300 ms timeout.
+  3. Exit 0 no matter what. If the daemon is down, skip silently or optionally fall back to `say`.
+
+### 4.4 Packaging: clone + install script first, plugin later
+
+Mouthpiece only needs its hook entries registered with Claude Code. There are two ways to get them there; the hook script and daemon are identical either way.
+
+**v1: clone + install script, using user-scope hooks.**
+- Setup is three commands: `git clone …/mouthpiece && cd mouthpiece && ./install.sh`.
+- The script checks prerequisites, runs `bun install`, and links the CLI into `~/.local/bin`.
+- It writes the config and token, installs the launchd agent, and runs `mouthpiece install-hooks`.
+- It optionally stores a TTS key in the Keychain, then speaks a test line.
+- `mouthpiece install-hooks` merges the §4.3 entries into `~/.claude/settings.json`, pointing at the repo's `bin/mp-hook`. Slash commands go in `~/.claude/commands/`.
+- `./uninstall.sh` reverses everything. `git pull && ./install.sh` updates, and every step is idempotent.
+- No plugin machinery is involved. The hooks apply to every project, and iteration is fast.
+
+**Later: Claude Code plugin + marketplace (US-023).**
+- Users install with `/plugin marketplace add mautomic/mouthpiece` followed by `/plugin install mouthpiece`.
+- The plugin bundles the hooks, slash commands, and `mp-hook`.
+- The daemon and CLI ship separately as a compiled `mouthpiece` binary (Homebrew tap or GitHub release). The same binary serves Codex, Gemini, and pipe users.
+- If the binary is missing, the plugin's `SessionStart` hook prints the one-line install command.
+
+Plugin layout:
+
+```
+mouthpiece-plugin/
+├── .claude-plugin/plugin.json
+├── hooks/hooks.json            # same shape as settings.json "hooks"
+├── commands/                   # /mouthpiece:mode, :mute, :replay, :voice …
+└── bin/mp-hook                 # tiny client → daemon
+```
+
+- Use `${CLAUDE_PLUGIN_ROOT}` for paths and `${CLAUDE_PLUGIN_DATA}` for state.
+- Develop with `claude --plugin-dir ./mouthpiece-plugin`.
+
+### 4.5 Gotchas
+
+- **Stop fires on every main-agent turn,** including tiny "Done." responses. Add a minimum-length / "worth speaking" filter.
+- **Never return `decision: "block"`.** Mouthpiece is observe-only, so `stop_hook_active` loops can't happen.
+- **Nested `claude -p` loops.** The summarizer shells out to `claude -p`, which loads our own Stop hook, so the hook would try to speak the summarizer's output. `--bare` would skip hooks, but it requires `ANTHROPIC_API_KEY`, which defeats using the subscription. Instead, the daemon sets `MOUTHPIECE_CHILD=1` in the child's environment and every `mp-hook` exits immediately when that variable is set.
+- **Async hooks are killed when a `claude -p` run tears down.** The hook must hand off to the daemon quickly. The daemon does the slow work.
+- **Useful env vars:** `CLAUDE_PROJECT_DIR`, used for the project name and per-project voice.
+
+### 4.6 Alternatives considered (not chosen)
+
+| Option | Why not |
+|---|---|
+| Statusline script | Gets session and cost metadata but no message text. |
+| Output styles | Only changes what Claude writes. *Could* be paired with Mouthpiece to make Claude end responses with a "TL;DR for speech" line, removing the summarizer call. **Worth an experiment** (see Open Questions). |
+| `claude -p --output-format stream-json` | Only works for sessions we launch ourselves, not interactive ones. |
+| Agent SDK hooks | Only for apps built on the SDK. Relevant if Mouthpiece later wraps its own agent. |
+| Tailing transcript JSONL with fswatch | Works without hooks, but relies on an undocumented format and has flush-timing races. Kept as a fallback adapter only. |
+
+### 4.7 Codex integration insights (research, 2026-10-17)
+
+**Codex supports the same core integration shape:** a `Stop` lifecycle hook receives
+`last_assistant_message`, the completed assistant text for the turn. The adapter can send
+that text to `mouthpieced`; it does not need to parse a transcript. Codex does expose a
+`transcript_path` as a convenience, but the transcript format is explicitly not a stable
+hook interface, so it is fallback-only.
+
+| Need | Codex mechanism | Mouthpiece implication |
+|---|---|---|
+| React after an answer finishes | `Stop` hook | **Primary Codex adapter trigger.** Send `last_assistant_message` to the daemon. |
+| Never hold up the agent loop | Background command hook (`async: true`) | The hook should hand off to the local daemon quickly and tolerate failure. Background hooks are cancelled when the session ends, so the daemon—not the hook—owns all slow TTS work. |
+| Call a hosted TTS provider | Command hook or an already-connected MCP tool | Prefer the thin local hook client → daemon route; an MCP server can later provide an authenticated, structured TTS tool. |
+| Repeat the summary → TTS workflow intentionally | Skill + TTS MCP tool/CLI | A skill can guide Codex to produce a speech-ready summary and call TTS when the user invokes it (for example, `$voice-summary`). |
+| Fully automatic summary → TTS after every answer | `Stop` command/MCP hook | Hooks cannot automatically invoke a second skill: the current `prompt` and `agent` hook handlers are parsed but skipped. Put automatic summarization in the daemon/service instead. |
+
+A Codex `Stop` hook gets, at minimum, the `session_id`, `cwd`, `turn_id`,
+`stop_hook_active`, and `last_assistant_message` fields. It fires for each completed turn,
+so the existing trivial-response filter is necessary. `Stop` does **not** support a matcher;
+the adapter must decide in its client/daemon whether the message is worth speaking.
+
+Example adapter shape (exact configuration and payload still get a small smoke test in
+US-014):
+
+```json
+{
+  "hooks": {
+    "Stop": [{
+      "hooks": [{
+        "type": "command",
+        "command": "mp-hook codex-stop",
+        "async": true,
+        "timeout": 3
+      }]
+    }]
+  }
+}
+```
+
+- Configure Codex hooks in `~/.codex/hooks.json`, `~/.codex/config.toml`, or the trusted
+  project `.codex/` layer. Codex requires review/trust for non-managed hooks (`/hooks`).
+- Command hooks and local configuration are unavailable in some cloud-orchestrated Codex
+  setups; retain `mouthpiece say` / HTTP as the universal fallback entry point.
+- Do not make automatic speech depend on a skill. Skills are the reusable *instruction*
+  layer; MCP servers and command hooks are the controlled action layer.
+
+## 5. User Stories
+
+Stories are grouped by phase. Each should fit in one focused session.
+
+### Phase 0: Spikes (de-risk before building)
+
+#### US-001: Verify hook payloads end-to-end
+**Description:** As the developer, I want to capture real `Stop`, `Notification`, and `UserPromptSubmit` payloads so the daemon's input contract is based on facts, not docs.
+
+**Acceptance Criteria:**
+- [ ] A throwaway hook dumps stdin JSON to `~/.mouthpiece/spike/<event>-<ts>.json`
+- [ ] Confirmed: `last_assistant_message` is present on Stop, both for responses that include tool use and for those that don't
+- [ ] Confirmed: Notification `notification_type` values and the `message` text
+- [ ] Tested the `http` hook type against a local echo server; recorded the request body and headers in `docs/hook-payloads.md`
+- [ ] Measured hook overhead (the time Claude Code waits) with `async: true`: target ≈ 0 ms
+
+#### US-002: TTS and summarizer latency spike
+**Description:** As the user, I want to hear `say` and Inworld side by side and see measured latencies, so I can confirm the rollout plan and pick voices by ear and by numbers.
+
+**Acceptance Criteria:**
+- [ ] A script synthesizes three fixed samples (a short status line, a ~400-character summary, and a ~2,000-character response) on:
+  - macOS `say` (try 2–3 of the premium or Siri voices)
+  - Inworld TTS-2 Flash and TTS-2
+- [ ] Records time to first byte and total time for each, measured from this machine
+- [ ] Measures `claude -p --model haiku` summary latency: cold-start median and p90 over 10 runs, compared with a direct API call
+- [ ] Saves the audio files plus a `results.md` table
+- [ ] Records my ranking and chosen voices in this PRD
+- [ ] Deepgram Aura-2, ElevenLabs Flash or v4 Turbo, and OpenAI are added to the bake-off **only if** Inworld disappoints on quality or latency
+
+### Phase 1: MVP (speak Claude Code responses verbatim)
+
+#### US-003: Daemon skeleton
+**Description:** As a user, I want a background daemon that accepts text over local HTTP so any client can make it speak.
+
+**Acceptance Criteria:**
+- [ ] `mouthpieced` (Bun) listens on `127.0.0.1:7317`, configurable, and **binds to loopback only**
+- [ ] `GET /v1/health` returns `{ ok, version, provider, queueDepth }`
+- [ ] `POST /v1/speak` accepts `{ text, source?, sessionId?, project?, priority?, mode? }` and returns `202` immediately
+- [ ] Requires a shared token stored in `~/.mouthpiece/token`, so other local processes and web pages can't trigger speech. The CLI and hooks read the same file.
+- [ ] Typecheck and lint pass; unit tests cover request validation
+
+#### US-004: Text cleaning for speech
+**Description:** As a listener, I want markdown noise removed so I don't hear "asterisk asterisk" or code read aloud character by character.
+
+**Acceptance Criteria:**
+- [ ] Removes markdown syntax: headers, emphasis, links (keeps the link text), and table pipes
+- [ ] Fenced code blocks become "*(code block, N lines)*". Inline code is kept unless it is longer than 40 characters.
+- [ ] Long absolute paths are shortened to their basename ("`/Users/Mau/code/x/src/foo.ts`" → "foo.ts")
+- [ ] Bare URLs become their domain ("link to github.com")
+- [ ] Golden-file tests cover at least 10 real Claude Code responses captured in US-001
+
+#### US-005: TTS provider interface + first provider + playback
+**Description:** As a user, I want cleaned text synthesized and played through my speakers, with playback starting before the whole clip is generated.
+
+**Acceptance Criteria:**
+- [ ] Defines a `TtsProvider` interface:
+  ```ts
+  synthesize(text, voice, opts): AsyncIterable<Uint8Array>
+  ```
+  plus `name`, `formats`, `maxCharsPerRequest`, and `pricePerMillionChars`
+- [ ] Implements the `say` provider first; it is the MVP default
+- [ ] Implements Inworld TTS-2 Flash as the first cloud provider
+- [ ] Splits text at sentence boundaries to respect each provider's request limit
+- [ ] Plays Inworld audio as it arrives, by piping PCM to a native player or playing chunked mp3. First audio within 700 ms of the request.
+- [ ] Falls back to `say` and logs a warning when Inworld errors, takes more than 3 s to the first byte, or has no API key set
+
+#### US-006: Audio queue with no overlap
+**Description:** As a user running several sessions, I never want two voices talking over each other.
+
+**Acceptance Criteria:**
+- [ ] One playback at a time. Other items are queued.
+- [ ] Each item is prefixed with the project name when more than one session has been active in the last 10 minutes ("*mouthpiece: …*")
+- [ ] **Coalescing:** a new item from the same session replaces that session's queued (not yet playing) item
+- [ ] Priorities: `alert` (Notification) jumps ahead of `response`, but does not interrupt the item currently playing
+- [ ] Queue items expire after 5 minutes unplayed (configurable)
+
+#### US-007: Claude Code hook client
+**Description:** As a Claude Code user, I want responses spoken automatically after each turn.
+
+**Acceptance Criteria:**
+- [ ] The `mp-hook stop` script reads stdin, extracts `last_assistant_message`, `session_id`, and `cwd`, and POSTs to the daemon with a 300 ms timeout
+- [ ] Always exits 0. It never writes to stdout, because stdout could be read as a hook decision.
+- [ ] Exits immediately and sends nothing when `MOUTHPIECE_CHILD=1` is set, so summarizer runs are never spoken
+- [ ] Skips responses shorter than N characters or matching a "trivial" list (`Done.`, `OK`), configurable
+- [ ] Manual test: in a real session, a response is spoken and Claude Code's prompt is immediately interactive
+
+#### US-008: Barge-in on new prompt
+**Description:** As a user, when I start my next prompt I want the old response to stop talking.
+
+**Acceptance Criteria:**
+- [ ] A `UserPromptSubmit` hook sends `POST /v1/interrupt { sessionId }`
+- [ ] Stops playback if that session's item is playing, and drops its queued items. Other sessions are unaffected.
+- [ ] `mouthpiece stop` (all sessions) and `mouthpiece skip` (current item only) work from any terminal
+
+### Phase 2: Summary mode, modes, Claude Code install
+
+#### US-009: Summarizer
+**Description:** As a listener, I want long responses condensed into a short spoken summary that tells me what happened and what (if anything) Claude needs from me.
+
+**Acceptance Criteria:**
+- [ ] **Default backend:** runs `claude -p --model haiku` on the logged-in subscription, with no API key
+  - The child process gets `MOUTHPIECE_CHILD=1` in its environment (recursion guard; see §4.5)
+  - Tools are disabled for the child, and the summarize prompt is passed on stdin
+- [ ] **Optional backend:** calls `claude-haiku-5-5` through `@anthropic-ai/sdk` with `effort: "low"`, used only when `summarizer.backend = "api"` and a key is configured
+- [ ] Both backends share one prompt with a 1–3 sentence target of at most 350 characters
+- [ ] The prompt puts **questions and decisions for the user** first, then the outcome. It never reads code aloud.
+- [ ] Responses already shorter than the summary threshold (~300 characters after cleaning) skip the LLM call
+- [ ] Falls back to the first ~2 sentences of the cleaned text on error or timeout. Defaults: 6 s for `claude -p`, 2.5 s for the API; tune both from the US-002 measurements.
+- [ ] Stores both the summary and the full cleaned text for each item, for replay
+- [ ] Eval: 20 captured responses, summaries hand-reviewed; at least 18 of 20 judged "I'd act the same as if I'd read it"
+
+#### US-010: Mode switching + replay
+**Description:** As a user, I want to flip between summary and full, and hear the full version of the last message on demand.
+
+**Acceptance Criteria:**
+- [ ] Mode can be set globally and per session: `mouthpiece mode summary|full|off [--session <id>]`
+- [ ] `mouthpiece replay [--full]` replays the last item, served from the audio cache when possible
+- [ ] Audio cache is keyed by `sha256(provider|voice|text)` with an LRU size cap (default 200 MB)
+- [ ] `off` mode still plays `alert` items unless `--mute-alerts` is set
+
+#### US-011: Clone + install script, Claude Code hooks
+**Description:** As a new user, I want to clone the repo, run one script, and hear Mouthpiece working, without hand-editing settings.json or installing a plugin.
+
+**Acceptance Criteria:**
+- [ ] `./install.sh` checks for macOS and Bun (offers to install Bun if missing), then runs `bun install` and links `mouthpiece` into `~/.local/bin`
+- [ ] It creates the config and shared token, installs and loads the launchd agent, and runs `mouthpiece install-hooks`
+- [ ] It optionally prompts for an Inworld API key and stores it in the Keychain. Skipping keeps `say` as the provider.
+- [ ] It ends by speaking "*Mouthpiece is ready*" and printing next steps
+- [ ] Re-running it is safe (idempotent); `git pull && ./install.sh` is the update path
+- [ ] `./uninstall.sh` unloads the agent, removes the hooks, commands, and CLI link, and asks before deleting the config and cache
+- [ ] Tested on a clean macOS user account
+- [ ] `mouthpiece install-hooks` merges the Stop, Notification, UserPromptSubmit, and SessionStart entries into `~/.claude/settings.json`
+  - Backs up the file first
+  - Is idempotent and keeps existing hooks
+- [ ] `mouthpiece uninstall-hooks` removes only Mouthpiece's entries
+- [ ] Installs slash commands to `~/.claude/commands/`: `/mouthpiece-mode <summary|full|off>`, `/mouthpiece-replay`, `/mouthpiece-mute`, and `/mouthpiece-voice <name>`
+- [ ] If the daemon isn't running, `SessionStart` prints one line of context ("Mouthpiece daemon not running: `mouthpiece start`") and doesn't try again that session
+
+#### US-012: Spoken alerts from Notification
+**Description:** As a user who has walked away, I want to hear when a session is blocked on me.
+
+**Acceptance Criteria:**
+- [ ] `permission_prompt` speaks "*\<project\> needs approval*" and includes the tool name when the message contains it
+- [ ] `idle_prompt` is off by default (the response was already spoken). It can be configured.
+- [ ] De-duplicates repeated alerts within a 60-second window
+
+### Phase 3: Breadth
+
+#### US-013: Generic CLI + pipes
+**Description:** As a user, I want any script to make Mouthpiece talk.
+
+**Acceptance Criteria:**
+- [ ] `mouthpiece say "text"`, `cmd | mouthpiece say`, and `mouthpiece say --file x.md` all work
+- [ ] `--mode`, `--voice`, `--priority`, and `--source` flags
+- [ ] Exits non-zero with a helpful message if the daemon is down. `--fallback-say` makes it speak locally instead.
+
+#### US-014: Other AI CLI adapters
+**Description:** As a user of Codex, Gemini CLI, and other AI CLIs, I want the same spoken experience as in Claude Code.
+
+**Acceptance Criteria:**
+- [ ] **Codex CLI:** a `Stop` lifecycle-hook adapter that reads `last_assistant_message`, `session_id`, and `cwd`, then hands off to the same local daemon contract. It must not parse `transcript_path` except as a documented fallback.
+- [ ] **Codex CLI:** documents hook location, trust review (`/hooks`), and the limitation that local command hooks are unavailable in some cloud-orchestrated environments.
+- [ ] **Gemini CLI:** an adapter for its hooks system (*verify event names and payload*)
+- [ ] **Fallback adapter:** tails a JSONL or log file with a per-tool parser, for tools without hooks
+- [ ] Each adapter has an install doc and maps into the same `POST /v1/speak` contract
+
+#### US-015: Additional providers
+**Description:** As a user, I want to switch providers or voices by config to trade quality, cost, and latency.
+
+**Acceptance Criteria:**
+- [ ] At least 3 cloud providers plus `say` implemented behind `TtsProvider`
+- [ ] Per-project voice mapping in config, so each project sounds distinct
+- [ ] `mouthpiece voices [--provider x]` lists the available voices
+
+#### US-016: Usage meter, quota tracking + budget cap
+**Description:** As the person paying, I want to see character usage against each plan's quota and never get a surprise bill.
+
+**Acceptance Criteria:**
+- [ ] Every synthesis logs a row to SQLite: provider, voice, project, characters, cache hit or miss, and estimated cost
+- [ ] Every summarizer call is logged too: backend, duration, and tokens when they are available
+- [ ] Config holds each provider's plan, for example:
+  ```toml
+  [quota.inworld]
+  chars = 0
+  free_minutes = 70
+  resets = "monthly"
+  ```
+  plus the billing-cycle start day and a monthly dollar budget
+- [ ] `mouthpiece usage [--month]` shows, per provider and per project:
+  - characters used, remaining quota, and % used
+  - days left in the billing cycle
+  - projected month-end usage and cost at the current rate
+- [ ] Syncs with provider usage endpoints when they exist, for example ElevenLabs' subscription character count and limit; *verify each provider*. The local counter remains the source of truth.
+- [ ] At 80% of quota or budget, prints a CLI warning and speaks a one-time notice
+- [ ] At 100%, switches to the fallback provider (default `say`) and speaks a one-time notice
+
+### Phase 4: Polish (stretch)
+
+- **US-017:** Global hotkeys for stop, skip, replay, and mode toggle (via `skhd`/Hammerspoon or a tiny Swift helper).
+- **US-018:** Menubar indicator: speaking, idle, or muted; queue depth; current provider.
+- **US-019:** Local high-quality TTS (Kokoro-82M via MLX/Core ML) as a $0 provider.
+- **US-020:** Streaming speech while Claude is still writing, using the `MessageDisplay` hook, if its payload supports it.
+- **US-021:** Clipboard or selection "read this to me" hotkey.
+- **US-022:** Auto-ducking or pausing TTS while Wispr Flow is dictating, to avoid feedback.
+- **US-023:** Distribute as a Claude Code plugin through a marketplace repo, plus a compiled `mouthpiece` binary (Homebrew tap or GitHub release). See §4.4.
+  - The plugin bundles hooks, commands (`/mouthpiece:mode`, …), and `mp-hook`.
+  - `SessionStart` detects a missing binary and prints the install command.
+  - API keys come from plugin user-config options or `mouthpiece auth` (Keychain).
+  - Test with `claude --plugin-dir`, then with a real marketplace install on a clean machine.
+
+## 6. Functional Requirements
+
+- **FR-1:** The daemon must bind to `127.0.0.1` only and require a shared-secret token on every non-health endpoint.
+- **FR-2:** Hook clients must never block Claude Code. They must be `async: true`, send with a ≤ 300 ms timeout, always exit 0, and print nothing to stdout.
+- **FR-3:** Text cleaning must run before both summarization and verbatim speech.
+- **FR-4:** **summary** mode must produce at most 350 characters of speech per response. **full** mode must speak all cleaned text, split into chunks under each provider's per-request limit.
+- **FR-5:** Only one audio item may play at a time, system-wide.
+- **FR-6:** A `UserPromptSubmit` from session S must interrupt and flush only S's audio.
+- **FR-7:** Every spoken item must keep its source text (full and summary) for replay, for 24 hours or the last 100 items, whichever is smaller.
+- **FR-8:** Provider failure must fall back to the next provider in the configured chain, ending in macOS `say`, within 3 s.
+- **FR-9:** API keys must be read from env vars or the macOS Keychain, never from plain-text config committed anywhere.
+- **FR-10:** All characters sent to paid providers must be metered and checked against a monthly budget.
+- **FR-11:** Config lives at `~/.config/mouthpiece/config.toml` and is hot-reloaded on change.
+- **FR-12:** The daemon runs as a `launchd` user agent (`mouthpiece install-agent`) and also in the foreground for development.
+
+## 7. Non-Goals (v1)
+
+- No speech-to-text. Wispr Flow already covers input.
+- No voice *conversation* or agent: Mouthpiece speaks, it doesn't converse.
+- No cross-platform support in v1. macOS only, though Linux shouldn't be precluded.
+- No GUI beyond the optional menubar stretch goal.
+- No reading of tool output, diffs, or file contents. Only assistant prose.
+- No cloud hosting or multi-user anything. Single user, local only.
+- No custom voice cloning workflow in v1 (providers support it; revisit later).
+
+## 8. Technical Considerations
+
+### 8.1 Proposed layout (Bun monorepo)
+
+```
+mouthpiece/
+├── packages/
+│   ├── daemon/        # HTTP server, queue, pipeline, playback
+│   ├── core/          # cleaning, chunking, summarizer, provider interface, config
+│   ├── providers/     # inworld, deepgram, elevenlabs, openai, say, (kokoro)
+│   ├── cli/           # `mouthpiece` CLI
+│   └── cc-plugin/     # Claude Code plugin (hooks.json, commands, mp-hook)
+├── adapters/          # codex, gemini, file-tail
+├── tasks/             # PRDs
+└── docs/
+```
+
+### 8.2 Pipeline
+
+| Stage | What it does |
+|---|---|
+| `ingest` | Normalize the event into `{text, source, sessionId, project, kind}` |
+| `filter` | Drop trivial or too-short text; apply mute and mode |
+| `clean` | Markdown → speakable text |
+| `summarize?` | Only in summary mode, and only if the text is longer than the threshold |
+| `chunk` | Split at sentence boundaries |
+| `synthesize` | Stream from the provider (cache lookup first) |
+| `enqueue` / `play` | Hand the audio to the queue and player |
+
+### 8.3 Audio playback
+
+Easiest first: write mp3 to a temp file and run `afplay`. This adds latency, since playback waits for the whole file.
+
+Better: stream PCM into a long-lived player process (`ffplay -nodisp -`, `sox play`, or a small Swift CoreAudio helper) so playback starts on the first chunk. Decide this in the US-002 spike.
+
+### 8.4 Latency budget (summary mode)
+
+| Step | Target |
+|---|---|
+| Hook → daemon | ≈ 50 ms |
+| Haiku summary via `claude -p` (default) | ≈ 1.5–3.5 s, including process cold start (verify in US-002) |
+| Haiku summary via API (optional) | ≈ 500–900 ms |
+| TTS time to first byte | ≈ 100–300 ms (Inworld); ≈ 0 for `say` |
+| Player start | ≈ 50 ms |
+| **Total** | **≈ 2–4 s** via `claude -p`, **≈ 1–1.3 s** via the API |
+
+Full mode skips the summary call and is faster to first audio. If `claude -p` cold start dominates, options are:
+- a warm, long-lived `claude -p` process using streaming JSON input
+- the speech-TL;DR output style (Open Question 1)
+
+### 8.5 Privacy
+
+The full assistant text, which may include code context, file names, and secrets Claude echoed, goes to the summarizer and the TTS provider. Mitigations:
+
+- Send only cleaned text, with code blocks removed.
+- Redact anything that looks like a secret, using regexes for keys and tokens.
+- A per-project `local_only = true` setting forces `say` or Kokoro.
+
+### 8.6 Dependencies
+
+- Bun ≥ 1.2
+- `claude` CLI, already installed and logged in (default summarizer)
+- `@anthropic-ai/sdk` (optional API-key summarizer)
+- Provider SDKs, or plain `fetch` and WebSocket clients
+- `afplay`, which is built in
+
+## 9. Economics
+
+Research done 2026-10-17 from official pricing pages; see Appendix A for sources and caveats.
+
+**Usage model** (heavy day): 150 spoken responses/day.
+
+| Scenario | Characters per response | Characters/day | Characters/month (30 days) |
+|---|---|---|---|
+| **A — summary** | ~400 | 60K | **1.8M** |
+| **B — full** | ~2,000 | 300K | **9.0M** |
+
+### 9.1 TTS cost per month
+
+| Provider / model | Rate | A: summary (1.8M) | B: full (9M) | Notes |
+|---|---|---|---|---|
+| **Inworld TTS-2 Flash** | $15/1M (on-demand) | **$27** | $135 | 20 ms P90 time to first byte claimed; cheapest high-quality cloud option |
+| Inworld TTS-2 | $25/1M | $45 | $225 | Higher-quality tier; instant voice cloning |
+| **Deepgram Aura-2** | $30/1M | $54 | $270 | **$200 free credit** (≈ 3.7 months of A); 2,000-char request cap |
+| OpenAI tts-1 / gpt-4o-mini-tts | $15/1M / ≈ $0.015/min | $27 / $27–34 | $135 / $135–169 | gpt-4o-mini-tts is steerable ("speak briskly") |
+| **ElevenLabs Flash / v4 Turbo** | $40/1M (or Pro at $99 for 2.475M) | $72 | ≈ $360 | Best voices and cloning; plan credits expire monthly |
+| ElevenLabs v4 / v3 | $80/1M | $144 | $720 | Premium expressiveness |
+| Cartesia Sonic | $49 plan + $45/1M | ≈ $74 | ≈ $398 | Not competitive at this volume |
+| macOS `say` / Kokoro (local) | $0 | $0 | $0 | Kokoro quality is surprisingly good on Apple Silicon |
+
+### 9.2 Summarizer cost
+
+**Default: `claude -p` on the Claude subscription costs $0 extra.**
+- It counts toward the plan's usage window: about 150 small Haiku calls/day, roughly 150K input tokens/day.
+- Watch whether this noticeably eats into the limits during heavy coding days.
+
+**Optional API-key path:** Claude Haiku 5.5 at $0.10 / $0.50 per 1M input / output tokens.
+- **Input:** 150/day × ~1,000 tokens (system prompt plus response) × 30 = 4.5M tokens × $0.10/1M = **$0.45**
+- **Output:** 150/day × ~100 tokens × 30 = 450K tokens × $0.50/1M = **$0.23**
+- **Total:** **≈ $0.70/month.**
+
+Either way, the summarizer is negligible next to TTS, and it cuts TTS spend by about 5×.
+
+### 9.3 Takeaways
+
+1. **Summary mode is the main economic lever.** About $27–54/month vs $135–360/month for full. Summaries also make listening much more pleasant.
+2. **Build on `say` ($0), then move to Inworld TTS-2 Flash** (≈ $27/month in summary mode) as the first paid provider. ElevenLabs stays the quality benchmark, and Deepgram's $200 credit is a free backup option if Inworld disappoints.
+3. **Real usage is likely lower than these estimates.** Not every turn needs speaking: the triviality filter, mute, and replay come from cache. Re-estimate after two weeks of usage-meter data (US-016).
+
+## 10. Success Metrics
+
+- I use Mouthpiece in at least 80% of Claude Code sessions after 2 weeks (self-reported, plus a usage log).
+- Median latency from response end to first audio, measured by the daemon:
+  - **≤ 1.5 s** in full mode
+  - **≤ 4 s** in summary mode
+- Claude Code adds **0 ms** of perceived delay (hooks are async; verified in US-001).
+- In a 20-sample review, at least 90% of summaries are good enough that I'd act the same as if I'd read the full text.
+- Steady-state monthly cost is **≤ $50**.
+- I can step away from the screen during multi-session work and know which session needs me, by ear alone.
+
+## 11. Open Questions
+
+1. **Summarizer vs an output-style "speech TL;DR":** should Claude itself end each response with a `<speak>…</speak>` or "TL;DR:" line that Mouthpiece extracts, instead of a separate Haiku call? It's free and has the full context, but it clutters the visual output and depends on Claude following the instruction. **Experiment both.**
+2. **Default provider and voice:** decided by the US-002 bake-off.
+3. **Feedback with Wispr Flow:** if I dictate while Mouthpiece is speaking through speakers, does Wispr pick up the TTS audio? Options:
+   - Headphones only
+   - Auto-pause when the mic is active (detectable via CoreAudio "device in use")
+   - A hotkey
+4. **Multi-session UX:** is a spoken project-name prefix enough, or should each project get its own voice? Or both?
+5. **Interrupt semantics:** should a *new response* from the same session interrupt one that is currently playing, or wait?
+6. **What about long silent stretches?** For example, speak "*still working…*" during long autonomous runs. Probably no: that's noise.
+7. **Gemini hook payloads** need verification before US-014. Codex's documented `Stop` input includes `last_assistant_message`; smoke-test the installed Codex version and the command-hook configuration. How many other CLIs matter (Cursor agent, Aider, opencode)?
+8. **Distribution:** v1 is clone + `./install.sh` (US-011). Should we later publish the plugin and a Homebrew tap (US-023), or is the install script enough? This affects config and credential UX.
+9. **Remote and SSH sessions:** if Claude Code runs on a remote box, should the hook POST back through an SSH reverse tunnel? Out of scope for v1, but don't preclude it: the daemon port is configurable.
+
+## 12. Future direction: conversation mode (v2 sketch, not in scope)
+
+**Idea:** Mouthpiece becomes a two-way voice relay. You speak, and it sends your words into a Claude Code session. It speaks the reply, then listens again automatically. The result is a hands-free conversation with a coding agent.
+
+**What carries over from v1:** cleaning, summaries, TTS providers, the audio queue, interrupt-on-new-prompt, and the usage meter. The output half is unchanged.
+
+**What's new:**
+
+| Piece | Options | Leaning |
+|---|---|---|
+| **Session driver** (send input to Claude Code) | (a) `tmux send-keys` into a pane running interactive `claude`; (b) Mouthpiece runs `claude -p` with streaming JSON input/output, resuming the same session id; (c) focus the terminal and let Wispr type | **(a) first.** It keeps the terminal UI and reuses the Stop hook. (b) is the clean long-term route. |
+| **Speech input** | Wispr Flow (hotkey-driven; no known API, *verify*), or Mouthpiece's own STT: Deepgram streaming, or local Whisper/Parakeet | Own STT for hands-free mode. Wispr stays for normal typing. |
+| **Turn-taking** | Detect end of speech (silence detection), a "send it" keyword, or push-to-talk | Push-to-talk first, auto-listen later |
+| **Barge-in** | Stop playback as soon as you start talking | Needs headphones or echo cancellation |
+| **Permission prompts** | Speak "*Allow Bash: npm test?*" and accept a spoken yes/no | Only with driver (b), or a tmux keystroke |
+
+**v1 implications (cheap to do now):**
+- Treat input as a pluggable **SessionDriver** interface alongside `TtsProvider`, even if v1 only has a no-op driver.
+- Keep the session registry (session id → project, tmux pane, transcript) in the daemon, not in hooks.
+- The "no STT" non-goal applies to v1 only.
+
+**Open questions:**
+- Does Wispr Flow expose any trigger or output API?
+- Would conversation mode run alongside the terminal UI, or replace it?
+- How do we handle long autonomous runs mid-conversation, e.g. "I'll tell you when I'm done"?
+
+## Appendix A: TTS provider research notes (2026-10-17)
+
+| Provider | Models | Latency claim | Streaming | Formats | Free tier | Limits | Source |
+|---|---|---|---|---|---|---|---|
+| ElevenLabs | `eleven_flash_v2_5` (~75 ms), `eleven_v4_turbo` (~100 ms), `eleven_v4`, `eleven_v3_conversational` | 75–280 ms | HTTP stream + `stream-input` WebSocket | mp3, pcm 8–48 kHz, opus, μ-law | 10–20K chars/month | Concurrency: Starter 6/3, Creator 10/5, Pro 20/10 | elevenlabs.io/pricing/api, elevenlabs.io/docs/models |
+| Inworld | `inworld-tts-2`, `inworld-tts-2-flash` (TTS-1.x retired 2026-06-15) | 20 ms (Flash) / 100 ms (TTS-2) P90 server-side; docs conflict | HTTP stream, WebSocket, batch | mp3, pcm, wav, opus, μ-law | Up to 70 min on on-demand | 5 concurrent on-demand | inworld.ai/pricing, docs.inworld.ai/tts |
+| Deepgram | Aura-2 (`aura-2-<voice>-en`), Aura-1 | Sub-200 ms | REST chunked + WebSocket (linear16/μ-law only) | mp3, linear16, opus, flac, aac | **$200 credit**, no card | 2,000 chars/request; 45 concurrent | deepgram.com/pricing, developers.deepgram.com/docs/text-to-speech |
+| OpenAI | `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` | Not published | Chunked HTTP | mp3, opus, aac, flac, wav, pcm 24 kHz | — | — | developers.openai.com/api/docs/pricing |
+| Cartesia | `sonic-3.6` (older snapshots sunset 2026-10-20) | Sub-90 ms (secondary sources) | WebSocket | pcm_f32le, … | 20K credits | 2–15 concurrent | cartesia.ai/pricing |
+| macOS `say` | System and Siri voices | ≈ 0 | n/a | aiff / m4a via `-o` | Free | — | built in |
+| Kokoro-82M | Open weights (likely Apache-2.0, *verify*) | Local; Core ML port claims 12–79× realtime | n/a | wav | Free | — | huggingface.co/mattmireles/kokoro-coreml |
+
+**Unverified or flagged:**
+- ElevenLabs: the per-character overage rate, and which concurrency bucket v4 falls in.
+- Inworld: whether the plan fee is credited toward usage.
+- Deepgram: Growth-tier commitment terms.
+- OpenAI: the per-minute figure is a community estimate.
+- Kokoro: license unconfirmed.
+
+## Appendix B: Claude Code hooks references
+
+- Hooks reference: https://code.claude.com/docs/en/hooks
+- Settings: https://code.claude.com/docs/en/settings
+- Plugins and components: https://code.claude.com/docs/en/plugins/components
+- Headless / `claude -p`: https://code.claude.com/docs/en/headless
+- Output styles: https://code.claude.com/docs/en/output-styles
+- Agent SDK hooks: https://code.claude.com/docs/en/agent-sdk/hooks
+
+## Appendix C: Codex integration references
+
+- Hooks: https://learn.chatgpt.com/docs/hooks
+- Advanced configuration: https://learn.chatgpt.com/docs/config-file/config-advanced
+- Skills and MCP plugin architecture: https://developers.openai.com/plugins/concepts/plugins
+- Skills: https://developers.openai.com/plugins/concepts/skills
+
+**Unverified** (resolve in US-001):
+- `http` hook request body
+- `MessageDisplay` payload fields
+- The full common-field list on hook input
