@@ -30,6 +30,32 @@ export async function handleHook(event: string, input: unknown, deps: HookDeps):
     case "prompt":
       if (sessionId) await deps.interrupt({ source: SOURCE, conversationId: sessionId });
       return;
+    case "notify": {
+      // The label is already in the text, so `label` stays unset to avoid a double prefix (US-012).
+      const label = typeof input.cwd === "string" ? basename(input.cwd) : "Claude Code";
+      let text: string | undefined;
+      if (input.notification_type === "permission_prompt") {
+        const tool =
+          typeof input.message === "string"
+            ? /permission to use ([\w.:-]+)/i.exec(input.message)?.[1]
+            : undefined;
+        text = tool
+          ? `${label} needs your approval to use ${tool}.`
+          : `${label} needs your approval.`;
+      } else if (input.notification_type === "idle_prompt") {
+        text = `${label} is waiting for you.`;
+      }
+      if (text) {
+        await deps.speak({
+          text,
+          source: SOURCE,
+          conversationId: sessionId,
+          kind: "alert",
+          format: "plain",
+        });
+      }
+      return;
+    }
     default:
       return;
   }
