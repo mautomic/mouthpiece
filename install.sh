@@ -35,7 +35,7 @@ case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "Note: add $BIN_DIR to your PATH." 
 
 say_step "Building global hotkeys"
 if command -v swiftc >/dev/null 2>&1; then
-  run "$MP" build-hotkeys
+  run "$MP" build-hotkeys || echo "Hotkey build failed; continuing without hotkeys."
 else
   echo "swiftc not found; skipping build-hotkeys (install Xcode Command Line Tools to enable)."
 fi

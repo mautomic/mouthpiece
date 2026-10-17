@@ -53,6 +53,24 @@ test("install.sh dry run plans every step and writes nothing", async () => {
 test("uninstall.sh dry run plans removal and writes nothing", async () => {
   const r = await dryRun("uninstall.sh");
   expect(r.code).toBe(0);
-  for (const step of ["uninstall-agent", "uninstall-hooks"]) expect(r.out).toContain(step);
+  for (const step of ["uninstall-agent", "uninstall-hooks", "auth inworld --delete", "rm -rf"])
+    expect(r.out).toContain(step);
   expect(await readdir(home)).toEqual([]);
+});
+
+test("uninstall.sh deletes the Keychain key before removing the CLI link it runs through", async () => {
+  const r = await dryRun("uninstall.sh");
+  const lines = r.out.split("\n");
+  const auth = lines.findIndex((l) => l.includes("auth inworld --delete"));
+  const unlink = lines.findIndex(
+    (l) => l.startsWith("+ rm -f") && l.includes(".local/bin/mouthpiece"),
+  );
+  expect(auth).toBeGreaterThanOrEqual(0);
+  expect(unlink).toBeGreaterThan(auth);
+});
+
+test("install.sh treats a failed hotkey build as non-fatal", async () => {
+  const script = await Bun.file(join(REPO, "install.sh")).text();
+  const line = script.split("\n").find((l) => l.includes("build-hotkeys") && l.includes("run "));
+  expect(line).toMatch(/build-hotkeys \|\| /);
 });

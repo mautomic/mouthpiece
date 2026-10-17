@@ -10,12 +10,17 @@ MP="'$HOME/.local/bin/mouthpiece'"
 [ -x "$HOME/.local/bin/mouthpiece" ] || MP="'$BUN' '$REPO/packages/cli/src/main.ts'"
 
 run() { echo "+ $*"; if [ "$DRY_RUN" != 1 ]; then eval "$@"; fi; }
-ask() { [ "$DRY_RUN" != 1 ] && [ -t 0 ] && { read -rp "$1 [y/N] " a; [ "$a" = y ] || [ "$a" = Y ]; }; }
+# A dry run answers yes to every question (run only prints then), so the plan shows every step.
+ask() {
+  if [ "$DRY_RUN" = 1 ]; then echo "? $1 (dry run: planning yes)"; return 0; fi
+  [ -t 0 ] && { read -rp "$1 [y/N] " a; [ "$a" = y ] || [ "$a" = Y ]; }
+}
 
 run "$MP uninstall-agent"
 run "$MP uninstall-hooks"
-run "rm -f '$HOME/.local/bin/mouthpiece' '$HOME/.mouthpiece/bin/mouthpiece-hotkeys'"
+# Before the CLI link is removed: $MP may be that link.
 if ask "Delete the Inworld key from Keychain?"; then run "$MP auth inworld --delete"; fi
+run "rm -f '$HOME/.local/bin/mouthpiece' '$HOME/.mouthpiece/bin/mouthpiece-hotkeys'"
 if ask "Delete ~/.mouthpiece (token, cache, usage history) and ~/.config/mouthpiece?"; then
   run "rm -rf '$HOME/.mouthpiece' '$HOME/.config/mouthpiece'"
 fi
