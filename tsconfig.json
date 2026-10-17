@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "types": ["bun"]
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "adapters/*/src/**/*.ts",
+    "adapters/*/spike/**/*.ts",
+    "scripts/**/*.ts"
+  ]
+}

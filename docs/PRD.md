@@ -411,7 +411,7 @@ Stories are grouped by phase. Each should fit in one focused session.
 
 ### Phase 4: Polish (stretch)
 
-- **US-017:** Global hotkeys for stop, skip, replay, and mode toggle (via `skhd`/Hammerspoon or a tiny Swift helper).
+- **US-017:** Global hotkeys for stop, skip, replay, and mode toggle (via `skhd`/Hammerspoon or a tiny Swift helper). **Moved to Phase 2** (2026-10-17): users need a one-key way to stop speech; interim workaround is a macOS Shortcuts hotkey running `mouthpiece stop`.
 - **US-018:** Menubar indicator: speaking, idle, or muted; queue depth; current provider.
 - **US-019:** Local high-quality TTS (Kokoro-82M via MLX/Core ML) as a $0 provider.
 - **US-020:** Streaming speech while Claude is still writing, using the `MessageDisplay` hook, if its payload supports it.

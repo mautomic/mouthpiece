@@ -1,0 +1,91 @@
+import { expect, test } from "bun:test";
+import type { SpeakEvent } from "@mouthpiece/core";
+import { type CliDeps, type CliIO, run } from "./run.ts";
+
+function harness(opts: { stdin?: string; tty?: boolean; fail?: boolean } = {}) {
+  const out: string[] = [];
+  const err: string[] = [];
+  const spoken: SpeakEvent[] = [];
+  const io: CliIO = {
+    out: (s) => out.push(s),
+    err: (s) => err.push(s),
+    readStdin: async () => opts.stdin ?? "",
+    stdinIsTTY: opts.tty ?? true,
+  };
+  const failing = async () => {
+    throw new Error("mouthpiece daemon unreachable at http://127.0.0.1:7317");
+  };
+  const deps: CliDeps = {
+    client: {
+      speak: opts.fail
+        ? failing
+        : async (e) => {
+            spoken.push(e);
+            return { id: "abc" };
+          },
+      stop: async () => ({ stopped: true, dropped: 2 }),
+      skip: async () => ({ skipped: true }),
+      health: async () => ({ ok: true, version: "0.1.0", provider: "say", queueDepth: 0 }),
+    },
+    startDaemon: async () => ({ url: "http://127.0.0.1:7317" }),
+  };
+  return { io, deps, out, err, spoken };
+}
+
+test("say joins positional args", async () => {
+  const h = harness();
+  expect(await run(["say", "hello", "world", "--label", "web"], h.io, h.deps)).toBe(0);
+  expect(h.spoken[0]).toEqual({
+    text: "hello world",
+    source: "cli",
+    label: "web",
+    kind: "response",
+    format: "markdown",
+  });
+  expect(h.out.join("")).toContain("abc");
+});
+
+test("say reads stdin when piped", async () => {
+  const h = harness({ stdin: "from a pipe\n", tty: false });
+  expect(await run(["say", "--plain", "--source", "cron", "--kind", "alert"], h.io, h.deps)).toBe(
+    0,
+  );
+  expect(h.spoken[0]).toMatchObject({
+    text: "from a pipe",
+    source: "cron",
+    kind: "alert",
+    format: "plain",
+  });
+});
+
+test("say with no text is a usage error", async () => {
+  const h = harness();
+  expect(await run(["say"], h.io, h.deps)).toBe(2);
+  expect(h.err.join("")).toContain("nothing to say");
+});
+
+test("client errors exit 1 with the message", async () => {
+  const h = harness({ fail: true });
+  expect(await run(["say", "hi"], h.io, h.deps)).toBe(1);
+  expect(h.err.join("")).toContain("unreachable");
+});
+
+test("stop, skip, status", async () => {
+  const h = harness();
+  expect(await run(["stop"], h.io, h.deps)).toBe(0);
+  expect(await run(["skip"], h.io, h.deps)).toBe(0);
+  expect(await run(["status"], h.io, h.deps)).toBe(0);
+  expect(h.out.join("\n")).toContain('"provider": "say"');
+});
+
+test("start launches the daemon", async () => {
+  const h = harness();
+  expect(await run(["start"], h.io, h.deps)).toBe(0);
+  expect(h.err.join("")).toContain("listening on http://127.0.0.1:7317");
+});
+
+test("unknown command prints usage", async () => {
+  const h = harness();
+  expect(await run(["nope"], h.io, h.deps)).toBe(2);
+  expect(h.err.join("")).toContain("usage: mouthpiece");
+});
