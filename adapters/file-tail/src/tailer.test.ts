@@ -3,7 +3,7 @@ import { appendFile, mkdir, mkdtemp, rm, truncate, utimes, writeFile } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PARSERS } from "./parsers.ts";
-import { FileTailer, type LineParser, type TailMessage } from "./tailer.ts";
+import { FileTailer, type FileTailerOptions, type TailMessage } from "./tailer.ts";
 
 let dir: string;
 beforeEach(async () => {
@@ -13,13 +13,16 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-function tailer(path: string, opts: { pattern?: RegExp; parser?: LineParser } = {}) {
+function tailer(
+  path: string,
+  opts: Partial<Pick<FileTailerOptions, "pattern" | "parser" | "now" | "fs" | "idleMs">> = {},
+) {
   const messages: TailMessage[] = [];
   const followed: string[] = [];
   const t = new FileTailer({
+    parser: PARSERS.lines,
+    ...opts,
     path,
-    pattern: opts.pattern,
-    parser: opts.parser ?? PARSERS.lines,
     onMessage: (m) => messages.push(m),
     onFollow: (f) => followed.push(f),
   });
@@ -175,14 +178,97 @@ test("directory mode follows the newest matching file, nested by date", async ()
   expect(followed).toEqual([oldFile, newFile]);
   expect(texts()).toEqual(["old one", "old final", "new one"]);
 
-  // Later appends to the file we left are ignored, even though it is now the most recent.
+  // Both stay followed: later appends to either file are emitted, once each.
   await appendFile(oldFile, "old later\n");
   await t.poll();
   await appendFile(newFile, "new two\n");
   await t.poll();
   await t.poll();
-  expect(texts()).toEqual(["old one", "old final", "new one", "new two"]);
+  expect(texts()).toEqual(["old one", "old final", "new one", "old later", "new two"]);
   expect(followed).toEqual([oldFile, newFile]);
+  expect(t.following).toBe(newFile);
+});
+
+test("directory mode follows concurrent sessions: nothing from either file is lost", async () => {
+  const sessions = join(dir, "sessions");
+  const day = join(sessions, "2026", "10", "17");
+  await mkdir(day, { recursive: true });
+  const a = join(day, "rollout-a.jsonl");
+  await writeFile(a, "a history\n");
+  const { t, messages, followed } = tailer(sessions, {
+    pattern: ROLLOUT,
+    parser: (line, file) => ({ text: line, label: file === a ? "A" : "B" }),
+  });
+  await t.poll();
+  await appendFile(a, "a1\n");
+  await t.poll();
+  expect(followed).toEqual([a]);
+
+  const b = join(day, "rollout-b.jsonl");
+  await writeFile(b, "b1\n");
+  await t.poll();
+  expect(followed).toEqual([a, b]);
+  await appendFile(a, "a final\n");
+  await t.poll();
+  await appendFile(b, "b2\nb3\n");
+  await t.poll();
+  await appendFile(a, "a after b\n");
+  await appendFile(b, "b4\n");
+  await t.poll();
+  await t.poll();
+
+  const from = (label: string) => messages.filter((m) => m.label === label).map((m) => m.text);
+  expect(from("A")).toEqual(["a1", "a final", "a after b"]);
+  expect(from("B")).toEqual(["b1", "b2", "b3", "b4"]);
+  expect(messages).toHaveLength(7);
+  expect(followed).toEqual([a, b]);
+});
+
+test("a pre-existing session that is resumed later is read from where it was at start", async () => {
+  const sessions = join(dir, "sessions");
+  const day = join(sessions, "2026", "10", "17");
+  await mkdir(day, { recursive: true });
+  const older = join(day, "rollout-older.jsonl");
+  const newer = join(day, "rollout-newer.jsonl");
+  await writeFile(older, "older history\n");
+  await utimes(older, ago(300), ago(300));
+  await writeFile(newer, "newer history\n");
+  const { t, texts, followed } = tailer(sessions, { pattern: ROLLOUT });
+  await t.poll();
+  expect(followed).toEqual([newer]);
+  await appendFile(older, "resumed\n");
+  await t.poll();
+  await t.poll();
+  expect(texts()).toEqual(["resumed"]);
+  expect(followed).toEqual([newer, older]);
+  expect(t.following).toBe(older);
+});
+
+test("a session idle past idleMs is retired, and picked up again where it stopped", async () => {
+  const sessions = join(dir, "sessions");
+  await mkdir(sessions, { recursive: true });
+  const file = join(sessions, "rollout-x.jsonl");
+  await writeFile(file, "");
+  const clock = { t: 1_000_000 };
+  const { t, texts, followed } = tailer(sessions, {
+    pattern: ROLLOUT,
+    now: () => clock.t,
+    idleMs: 60_000,
+  });
+  await t.poll();
+  await appendFile(file, "one\nhal");
+  clock.t += 10_000;
+  await t.poll();
+  clock.t += 61_000;
+  await t.poll();
+  expect(t.following).toBeNull();
+  await appendFile(file, "f\ntwo\n");
+  clock.t += 10_000;
+  await t.poll();
+  await t.poll();
+  expect(texts()).toEqual(["one", "half", "two"]);
+  expect(followed).toEqual([file, file]);
+  expect(t.following).toBe(file);
 });
 
 test("directory mode with no session yet follows the first one from its beginning", async () => {

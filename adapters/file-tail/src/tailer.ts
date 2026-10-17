@@ -1,4 +1,4 @@
-// tailer.ts: follow a growing log file (or the newest matching file under a directory) and hand
+// tailer.ts: follow a growing log file (or every active matching file under a directory) and hand
 // each complete new line to a parser (US-014, the fallback for tools without hooks).
 import { open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -58,11 +58,14 @@ export interface FileTailerOptions {
   pattern?: RegExp;
   parser: LineParser;
   onMessage: (m: TailMessage) => void;
-  /** Called with the file being followed whenever that changes. */
+  /** Called with each file when it starts being followed. */
   onFollow?: (file: string) => void;
   /** Called with errors from the file system; the tailer keeps going. */
   onError?: (error: unknown) => void;
   pollMs?: number;
+  /** Directory mode: a file that has not grown for this long stops being followed (default 30 min). */
+  idleMs?: number;
+  now?: () => number;
   fs?: TailFs;
 }
 
@@ -73,6 +76,7 @@ const FINGERPRINT_BYTES = 64;
 /** At most this much is read per poll; the rest waits for the next one. */
 const MAX_READ_BYTES = 8 * 1024 * 1024;
 const NEWLINE = 0x0a;
+const DEFAULT_IDLE_MS = 30 * 60_000;
 
 interface Cursor {
   file: string;
@@ -84,6 +88,16 @@ interface Cursor {
   fingerprint: Uint8Array;
   /** Skip up to the next newline (we started in the middle of a line). */
   skipToNewline: boolean;
+  /** When it started being followed or last grew. */
+  activeAt: number;
+}
+
+/** A matching file that is not being followed: how it looked, and where to resume if it changes. */
+interface Baseline {
+  size: number;
+  mtimeMs: number;
+  ino?: number;
+  resumeAt: number;
 }
 
 const concat = (a: Uint8Array, b: Uint8Array) => {
@@ -100,30 +114,35 @@ const sameBytes = (a: Uint8Array, b: Uint8Array) =>
  * Semantics:
  * - It starts at the end of the file, so history is not spoken. A file (or, in directory mode,
  *   a matching file) that first appears after start is read from its beginning.
- * - Directory mode follows the most recently modified matching file, switching when a newer one
- *   appears. The old file is drained first, then never followed again.
+ * - Directory mode follows every matching file that changes, each with its own cursor, so
+ *   concurrent or resumed sessions are all heard. At start it follows the newest file; any other
+ *   file is followed once it changes, from its size when first seen. A file that has not grown
+ *   for idleMs is retired and followed again, from where it stopped, if it grows later.
  * - Partial lines are buffered between reads. Truncation or rotation restarts from 0.
  * - Offsets only move forward within one version of a file, so no line is emitted twice.
  */
 export class FileTailer {
   private readonly fs: TailFs;
   private readonly decoder = new TextDecoder();
-  private cursor: Cursor | null = null;
+  private readonly now: () => number;
+  /** Followed files, in the order they started being followed. */
+  private readonly cursors = new Map<string, Cursor>();
+  /** Directory mode: matching files seen but not followed. */
+  private readonly baselines = new Map<string, Baseline>();
+  private mostRecent: string | null = null;
   private initialized = false;
-  /** Sizes of files that existed at start (directory mode). */
-  private readonly sizesAtStart = new Map<string, number>();
-  private readonly abandoned = new Set<string>();
   private chain: Promise<void> = Promise.resolve();
   private busy = false;
   private timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(private readonly opts: FileTailerOptions) {
     this.fs = opts.fs ?? nodeTailFs;
+    this.now = opts.now ?? Date.now;
   }
 
-  /** The file being followed, or null before one exists. */
+  /** The most recently active followed file, or null when nothing is followed. */
   get following(): string | null {
-    return this.cursor?.file ?? null;
+    return this.mostRecent !== null && this.cursors.has(this.mostRecent) ? this.mostRecent : null;
   }
 
   start(): void {
@@ -164,36 +183,62 @@ export class FileTailer {
       return;
     }
     if (!root) return;
-    if (!this.cursor) await this.follow(this.opts.path, 0);
-    await this.drain();
+    let cursor = this.cursors.get(this.opts.path);
+    if (!cursor) cursor = await this.follow(this.opts.path, 0);
+    await this.drain(cursor);
   }
 
   private async pollDirectory(): Promise<void> {
-    const files = await this.listMatching();
     if (!this.initialized) {
       this.initialized = true;
-      for (const f of files) this.sizesAtStart.set(f.file, f.size);
+      const files = await this.listMatching();
+      for (const f of files) this.baselines.set(f.file, { ...f, resumeAt: f.size });
       const newest = files[0];
       if (newest) await this.follow(newest.file, newest.size);
       return;
     }
-    if (this.cursor) await this.drain();
-    const currentMtime = this.cursor
-      ? (files.find((f) => f.file === this.cursor?.file)?.mtimeMs ?? -1)
-      : -1;
-    const next = files.find(
-      (f) =>
-        f.file !== this.cursor?.file && !this.abandoned.has(f.file) && f.mtimeMs > currentMtime,
-    );
-    if (!next) return;
-    if (this.cursor) this.abandoned.add(this.cursor.file);
-    await this.follow(next.file, this.sizesAtStart.get(next.file) ?? 0);
-    await this.drain();
+    for (const cursor of this.cursors.values()) await this.drain(cursor);
+    await this.retireIdle();
+    await this.discover();
+  }
+
+  /** Starts following new files (from 0) and changed known ones (from their baseline), oldest first. */
+  private async discover(): Promise<void> {
+    const files = (await this.listMatching()).reverse();
+    for (const f of files) {
+      if (this.cursors.has(f.file)) continue;
+      const base = this.baselines.get(f.file);
+      if (base && f.size === base.size && f.mtimeMs === base.mtimeMs && f.ino === base.ino)
+        continue;
+      const sameFile = base !== undefined && f.ino === base.ino && f.size >= base.size;
+      this.baselines.delete(f.file);
+      await this.drain(await this.follow(f.file, sameFile ? base.resumeAt : 0));
+    }
+  }
+
+  /** Stops following files that have not grown for idleMs, remembering where to resume. */
+  private async retireIdle(): Promise<void> {
+    const now = this.now();
+    for (const cursor of [...this.cursors.values()]) {
+      if (now - cursor.activeAt < (this.opts.idleMs ?? DEFAULT_IDLE_MS)) continue;
+      this.cursors.delete(cursor.file);
+      const s = await this.fs.stat(cursor.file);
+      if (!s) continue;
+      // Resume before a buffered partial line, so it is read whole next time.
+      this.baselines.set(cursor.file, {
+        size: s.size,
+        mtimeMs: s.mtimeMs,
+        ino: s.ino,
+        resumeAt: Math.min(s.size, cursor.offset - cursor.partial.length),
+      });
+    }
   }
 
   /** Matching files up to MAX_DEPTH levels down, newest first. */
-  private async listMatching(): Promise<{ file: string; size: number; mtimeMs: number }[]> {
-    const found: { file: string; size: number; mtimeMs: number }[] = [];
+  private async listMatching(): Promise<
+    { file: string; size: number; mtimeMs: number; ino?: number }[]
+  > {
+    const found: { file: string; size: number; mtimeMs: number; ino?: number }[] = [];
     const walk = async (dir: string, depth: number): Promise<void> => {
       let entries: { name: string; isDirectory: boolean }[];
       try {
@@ -207,7 +252,9 @@ export class FileTailer {
           if (depth < MAX_DEPTH) await walk(path, depth + 1);
         } else if (!this.opts.pattern || this.opts.pattern.test(entry.name)) {
           const s = await this.fs.stat(path).catch(() => null);
-          if (s && !s.isDirectory) found.push({ file: path, size: s.size, mtimeMs: s.mtimeMs });
+          if (s && !s.isDirectory) {
+            found.push({ file: path, size: s.size, mtimeMs: s.mtimeMs, ino: s.ino });
+          }
         }
       }
     };
@@ -215,7 +262,7 @@ export class FileTailer {
     return found.sort((a, b) => b.mtimeMs - a.mtimeMs);
   }
 
-  private async follow(file: string, offset: number): Promise<void> {
+  private async follow(file: string, offset: number): Promise<Cursor> {
     const s = await this.fs.stat(file);
     const cursor: Cursor = {
       file,
@@ -224,11 +271,14 @@ export class FileTailer {
       partial: new Uint8Array(0),
       fingerprint: await this.readFingerprint(file, offset),
       skipToNewline: false,
+      activeAt: this.now(),
     };
     // Starting mid-file after an unterminated line: its rest is not a whole message.
     cursor.skipToNewline = offset > 0 && cursor.fingerprint.at(-1) !== NEWLINE;
-    this.cursor = cursor;
+    this.cursors.set(file, cursor);
+    this.mostRecent = file;
     this.opts.onFollow?.(file);
+    return cursor;
   }
 
   private readFingerprint(file: string, offset: number): Promise<Uint8Array> {
@@ -244,10 +294,8 @@ export class FileTailer {
     cursor.skipToNewline = false;
   }
 
-  /** Reads whatever was appended to the followed file and emits each complete line. */
-  private async drain(): Promise<void> {
-    const cursor = this.cursor;
-    if (!cursor) return;
+  /** Reads whatever was appended to a followed file and emits each complete line. */
+  private async drain(cursor: Cursor): Promise<void> {
     const s = await this.fs.stat(cursor.file);
     if (!s) return;
     if (
@@ -264,6 +312,8 @@ export class FileTailer {
     const data = await this.fs.readRange(cursor.file, cursor.offset, end);
     if (data.length === 0) return;
     cursor.offset += data.length;
+    cursor.activeAt = this.now();
+    this.mostRecent = cursor.file;
     const tail = concat(cursor.fingerprint, data);
     cursor.fingerprint = tail.slice(Math.max(0, tail.length - FINGERPRINT_BYTES));
 

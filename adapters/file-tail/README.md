@@ -11,7 +11,7 @@ mouthpiece tail --format lines --path build.log  # every new line
 
 Options: `--path <file-or-dir>`, `--source <name>` (default: the format, `cli` for `lines`),
 `--label <label>`. It runs in the foreground until Ctrl-C and prints `following <file>` to stderr
-whenever it switches files. If the daemon can't be reached, it prints a warning and keeps going.
+whenever it starts following a file. If the daemon can't be reached, it prints a warning and keeps going.
 
 ## Formats
 
@@ -28,10 +28,12 @@ The Codex and Gemini session formats are undocumented and may change. Prefer the
 
 - It starts at the **end** of the file, so history is never spoken. A file that appears after
   start is read from its beginning.
-- Given a directory, it follows the most recently modified file matching the format's pattern,
-  up to 4 levels deep. When a newer one appears, it reads the rest of the current file, then
-  switches and never goes back to the old one. Two sessions running at once are not both
-  followed: only the newest one is.
+- Given a directory, it follows every file matching the format's pattern (up to 4 levels deep)
+  that changes while it runs, each with its own read offset, so two sessions running at once, or
+  an older session that is resumed, are all spoken. At start it follows the newest file. Any
+  other file that existed at start is followed once it changes, from its size at start; a file
+  created later is read from its beginning. A file that hasn't grown for 30 minutes (`idleMs`)
+  stops being followed, and is picked up again from where it stopped if it grows later.
 - Partial lines are buffered until their newline arrives, including split multi-byte characters.
 - Truncation or rotation (a smaller file, a new inode, or changed bytes before the read offset)
   restarts from 0, so old content is not re-read and nothing is spoken twice.
