@@ -5,6 +5,7 @@ import {
   type Summarizer,
 } from "@mouthpiece/core";
 import type { Prepared, ResolveMode } from "./types.ts";
+import type { SummaryRecord } from "./usage.ts";
 
 // skipReason (request path), the preparer, and the speaker all need the cleaned text; clean each event once.
 const cleaned = new WeakMap<NormalizedSpeakEvent, string>();
@@ -32,6 +33,8 @@ export interface PreparerDeps {
   settings: () => PreparerSettings;
   log: Logger;
   now?: () => number;
+  /** Called after every summarizer call, on success and on failure, for usage stats (US-016). Not called for the fallback. */
+  onSummary?(stat: SummaryRecord): void;
 }
 
 export interface Preparer {
@@ -42,6 +45,13 @@ export interface Preparer {
 export function createPreparer(deps: PreparerDeps): Preparer {
   const now = deps.now ?? Date.now;
   const memo = new WeakMap<NormalizedSpeakEvent, Promise<Prepared>>();
+  const report = (stat: SummaryRecord) => {
+    try {
+      deps.onSummary?.(stat);
+    } catch (error) {
+      deps.log({ level: "warn", msg: "summary_stat_failed", error: String(error) });
+    }
+  };
 
   async function run(event: NormalizedSpeakEvent): Promise<Prepared> {
     const mode = deps.resolveMode(event);
@@ -55,13 +65,23 @@ export function createPreparer(deps: PreparerDeps): Preparer {
       const started = now();
       try {
         summary = await summarizer.summarize(full, { source: event.source });
-        deps.log({
-          msg: "summarized",
-          source: event.source,
-          ms: now() - started,
-          chars: summary.length,
+        const ms = now() - started;
+        deps.log({ msg: "summarized", source: event.source, ms, chars: summary.length });
+        report({
+          backend: summarizer.name,
+          ms,
+          charsIn: full.length,
+          charsOut: summary.length,
+          ok: true,
         });
       } catch (error) {
+        report({
+          backend: summarizer.name,
+          ms: now() - started,
+          charsIn: full.length,
+          charsOut: 0,
+          ok: false,
+        });
         deps.log({
           level: "warn",
           msg: "summary_failed",

@@ -13,13 +13,15 @@ export interface FakeProviderOptions {
   failWith?: Error;
   failMidStream?: boolean | ((text: string) => boolean);
   cacheKey?: string;
+  /** Default 0 (free). Set it to test metering, caching, quotas and budgets. */
+  pricePerMillionChars?: number;
 }
 
 /** Deterministic provider for tests: the "audio" is the UTF-8 text itself. */
 export class FakeProvider implements TtsProvider {
   readonly name: string;
   readonly maxCharsPerRequest: number;
-  readonly pricePerMillionChars = 0;
+  readonly pricePerMillionChars: number;
   readonly calls: string[] = [];
   readonly options: SynthesizeOptions[] = [];
   readonly cacheKey: string | undefined;
@@ -27,6 +29,7 @@ export class FakeProvider implements TtsProvider {
   constructor(private readonly opts: FakeProviderOptions = {}) {
     this.name = opts.name ?? "fake";
     this.cacheKey = opts.cacheKey;
+    this.pricePerMillionChars = opts.pricePerMillionChars ?? 0;
     this.maxCharsPerRequest = opts.maxCharsPerRequest ?? 1000;
   }
 

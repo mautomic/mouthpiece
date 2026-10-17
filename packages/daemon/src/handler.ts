@@ -28,20 +28,16 @@ export interface HandlerDeps {
   interrupt(request: InterruptRequest): InterruptResult;
   stopAll(): InterruptResult;
   skip(): { skipped: boolean };
-  /*
-   * Phase 2 (US-010, US-016). Optional only until the daemon wires them (Task 9);
-   * a route whose dep is missing answers 501.
-   */
-  getMode?(): ModeState;
-  setMode?(req: ModeRequest): ModeState;
-  replay?(req: ReplayRequest): ReplayResponse;
+  getMode(): ModeState;
+  setMode(req: ModeRequest): ModeState;
+  replay(req: ReplayRequest): ReplayResponse;
   /** Throws (or rejects) for a malformed month; the handler maps that to 400. */
-  usage?(month: string | undefined): UsageReport | Promise<UsageReport>;
+  usage(month: string | undefined): UsageReport | Promise<UsageReport>;
   /**
-   * Phase 3 (US-015). Every provider's voices, or only `provider`'s when given. One provider's
-   * failure is an `error` entry, not a rejection. Optional until the daemon wires it; 501 without.
+   * Every provider's voices (US-015), or only `provider`'s when given. One provider's failure is an
+   * `error` entry, not a rejection.
    */
-  voices?(provider: string | undefined): Promise<VoicesResponse>;
+  voices(provider: string | undefined): Promise<VoicesResponse>;
 }
 
 type Method = "GET" | "POST";
@@ -50,8 +46,6 @@ type Route = { auth: boolean; run: (body: unknown, url: URL) => Response | Promi
 function json(status: number, body: unknown, headers?: HeadersInit): Response {
   return Response.json(body, { status, headers });
 }
-
-const unavailable = () => json(501, { error: "not available" });
 
 export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Response> {
   const routes: Record<string, Partial<Record<Method, Route>>> = {
@@ -94,11 +88,10 @@ export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Resp
     "/v1/stop": { POST: { auth: true, run: () => json(200, deps.stopAll()) } },
     "/v1/skip": { POST: { auth: true, run: () => json(200, deps.skip()) } },
     "/v1/mode": {
-      GET: { auth: true, run: () => (deps.getMode ? json(200, deps.getMode()) : unavailable()) },
+      GET: { auth: true, run: () => json(200, deps.getMode()) },
       POST: {
         auth: true,
         run: (body) => {
-          if (!deps.setMode) return unavailable();
           const parsed = parseModeRequest(body);
           return parsed.ok
             ? json(200, deps.setMode(parsed.value))
@@ -110,7 +103,6 @@ export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Resp
       POST: {
         auth: true,
         run: (body) => {
-          if (!deps.replay) return unavailable();
           const parsed = parseReplayRequest(body);
           return parsed.ok
             ? json(200, deps.replay(parsed.value))
@@ -122,7 +114,6 @@ export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Resp
       GET: {
         auth: true,
         run: async (_body, url) => {
-          if (!deps.usage) return unavailable();
           try {
             return json(200, await deps.usage(url.searchParams.get("month") ?? undefined));
           } catch (error) {
@@ -135,7 +126,6 @@ export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Resp
       GET: {
         auth: true,
         run: async (_body, url) => {
-          if (!deps.voices) return unavailable();
           try {
             return json(200, await deps.voices(url.searchParams.get("provider") ?? undefined));
           } catch (error) {

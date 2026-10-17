@@ -90,3 +90,43 @@ test("memoized per event object", async () => {
   await Promise.all([preparer.prepare(event), preparer.prepare(event)]);
   expect(calls).toHaveLength(1);
 });
+
+test("onSummary reports each summarizer call, successful or failed", async () => {
+  const records: unknown[] = [];
+  let t = 0;
+  const make = (s: Summarizer) =>
+    createPreparer({
+      resolveMode: () => "summary",
+      settings: () => ({
+        summarizer: s,
+        fallback: new FirstSentencesSummarizer(60),
+        thresholdChars: 300,
+      }),
+      log: () => {},
+      now: () => (t += 5),
+      onSummary: (r) => records.push(r),
+    });
+  await make(fake("Short summary.").s).prepare(ev(long));
+  await make(fake(new Error("boom")).s).prepare(ev(long));
+  expect(records).toEqual([
+    { backend: "fake", ms: 5, charsIn: long.trim().length, charsOut: 14, ok: true },
+    { backend: "fake", ms: 5, charsIn: long.trim().length, charsOut: 0, ok: false },
+  ]);
+});
+
+test("onSummary is not called when no summarizer runs", async () => {
+  const records: unknown[] = [];
+  const preparer = createPreparer({
+    resolveMode: () => "summary",
+    settings: () => ({
+      summarizer: undefined,
+      fallback: new FirstSentencesSummarizer(60),
+      thresholdChars: 300,
+    }),
+    log: () => {},
+    onSummary: (r) => records.push(r),
+  });
+  await preparer.prepare(ev(long));
+  await preparer.prepare(ev("short"));
+  expect(records).toEqual([]);
+});

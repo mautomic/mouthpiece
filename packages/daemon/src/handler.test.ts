@@ -143,20 +143,6 @@ test("replay and usage", async () => {
   expect((await handle(req("GET", "/v1/usage", undefined, null))).status).toBe(401);
 });
 
-test("phase 2 routes answer 501 until their deps are wired", async () => {
-  const { handle } = setup({
-    getMode: undefined,
-    setMode: undefined,
-    replay: undefined,
-    usage: undefined,
-  });
-  expect((await handle(req("GET", "/v1/mode"))).status).toBe(501);
-  expect((await handle(req("POST", "/v1/mode", { mode: "off" }))).status).toBe(501);
-  expect((await handle(req("POST", "/v1/replay", {}))).status).toBe(501);
-  expect((await handle(req("GET", "/v1/usage"))).status).toBe(501);
-  expect((await handle(req("GET", "/v1/mode", undefined, null))).status).toBe(401);
-});
-
 test("voices lists every provider, including error entries", async () => {
   const { handle, voiceCalls } = setup();
   const res = await handle(req("GET", "/v1/voices"));
@@ -183,8 +169,7 @@ test("voices requires auth", async () => {
   expect(voiceCalls).toEqual([]);
 });
 
-test("voices answers 501 until its dep is wired and 500 when it throws", async () => {
-  expect((await setup({ voices: undefined }).handle(req("GET", "/v1/voices"))).status).toBe(501);
+test("voices answers 500 when it throws", async () => {
   const failing = setup({
     voices: async () => {
       throw new Error("boom");

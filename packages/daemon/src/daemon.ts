@@ -12,6 +12,8 @@ import {
   mouthpieceHome,
   type NormalizedSpeakEvent,
   type Player,
+  type ProviderUsage,
+  parseSpeakEvent,
   readOrCreateToken,
   resolveSecret,
   type SpeakResponse,
@@ -19,9 +21,10 @@ import {
   type SynthesizeOptions,
   type TtsProvider,
   tokenPath,
+  type VoicesResponse,
 } from "@mouthpiece/core";
 import { helperArgs, hotkeysBinary, superviseHotkeys } from "@mouthpiece/hotkeys";
-import { createProviderChain } from "@mouthpiece/providers";
+import { chainProviders, createProviders, PAID_PROVIDERS } from "@mouthpiece/providers";
 import { createSummarizer, FirstSentencesSummarizer } from "@mouthpiece/summarizers";
 import { CachingProvider } from "./cache.ts";
 import { AlertDeduper } from "./dedupe.ts";
@@ -32,17 +35,29 @@ import { ModeStore } from "./modes.ts";
 import { AfplayPlayer } from "./player.ts";
 import { createPreparer } from "./prepare.ts";
 import { SpeechQueue } from "./queue.ts";
+import { QuotaGatedProvider, QuotaGuard } from "./quota.ts";
 import { createSpeaker, skipReason } from "./speaker.ts";
 import { billingCycle, MeteredProvider, monthRange, UsageStore } from "./usage.ts";
 import { watchConfig } from "./watch.ts";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
+
+/** How long `GET /v1/voices` waits for one provider's voice list. */
+const VOICES_TIMEOUT_MS = 5_000;
+/** How long `GET /v1/usage` waits for one provider's own usage report. */
+const PROVIDER_USAGE_TIMEOUT_MS = 3_000;
 
 export interface DaemonOptions {
   env?: Env;
   port?: number;
   config?: Config;
+  /** Replaces the whole provider chain (metered only: no voice map, quota gate or cache). */
   provider?: TtsProvider;
+  /**
+   * Test seam: replaces `createProviders(config)`. The daemon still wraps and chains them as usual
+   * (voice map, quota gate, metering, cache for priced providers, fallback).
+   */
+  providers?: TtsProvider[];
   player?: Player;
   log?: Logger;
   /** null disables summarization; undefined builds it from config. */
@@ -91,22 +106,39 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
   const tmpDir = join(home, "tmp");
   const usage = new UsageStore(join(home, "usage.sqlite"));
   const meter = (p: TtsProvider) => new MeteredProvider(p, usage);
+  // Assigned once the queue exists; quota notices are only raised while speaking, after startup.
+  let notify: (text: string) => void = () => {};
+  let noticeSeq = 0;
+  const guard = new QuotaGuard({
+    store: usage,
+    config: () => config,
+    notify: (text) => notify(text),
+    log,
+  });
 
-  const buildProvider = async (c: Config): Promise<TtsProvider> => {
+  /** The configured providers, unwrapped: the voices and provider-usage routes call them directly. */
+  const buildProviders = async (c: Config): Promise<TtsProvider[]> => {
+    if (opts.provider) return [opts.provider];
+    if (opts.providers) return opts.providers;
+    const secrets: Record<string, string | undefined> = {};
+    for (const name of PAID_PROVIDERS) {
+      if (c.provider.chain.includes(name)) secrets[name] = await resolveSecret(name, { env, exec });
+    }
+    return createProviders(c, { env, tmpDir, log, secrets });
+  };
+  /** Outermost first: voice map (applied by the chain), quota gate, metering, cache for priced providers. */
+  const buildProvider = (c: Config, list: TtsProvider[]): TtsProvider => {
     if (opts.provider) return meter(opts.provider);
-    const inworld = c.provider.chain.includes("inworld")
-      ? await resolveSecret("inworld", { env, exec })
-      : undefined;
-    return createProviderChain(c, {
-      env,
-      tmpDir,
+    return chainProviders(list, c, {
       log,
-      secrets: { inworld },
       wrap: (p) =>
-        meter(
-          p.pricePerMillionChars > 0
-            ? new CachingProvider(p, { dir: join(home, "cache"), maxBytes: c.cache.maxBytes })
-            : p,
+        new QuotaGatedProvider(
+          meter(
+            p.pricePerMillionChars > 0
+              ? new CachingProvider(p, { dir: join(home, "cache"), maxBytes: c.cache.maxBytes })
+              : p,
+          ),
+          guard,
         ),
     });
   };
@@ -115,7 +147,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       ? createSummarizer(c, { home, env })
       : (opts.summarizer ?? undefined);
 
-  const provider = new ProviderSwitch(await buildProvider(config));
+  let providers = await buildProviders(config);
+  const provider = new ProviderSwitch(buildProvider(config, providers));
   let summarizer = buildSummarizer(config);
   const modes = new ModeStore(config.modes.default, config.profiles);
   const history = new History(config.history);
@@ -128,6 +161,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       thresholdChars: config.summarizer.thresholdChars,
     }),
     log,
+    onSummary: (stat) => usage.recordSummary(stat),
   });
   const player = opts.player ?? new AfplayPlayer({ tmpDir });
   // Replays are not recorded, so history keeps the original full + summary (US-010, FR-7).
@@ -158,6 +192,71 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     void preparer.prepare(event); // start summarizing now; overlaps whatever is playing
     return { id: queue.enqueue(event).id };
   };
+  notify = (text) => {
+    // A conversation per notice, so a second notice never replaces a first one still queued.
+    const parsed = parseSpeakEvent({
+      text,
+      source: "mouthpiece",
+      conversationId: `quota-${noticeSeq++}`,
+      kind: "alert",
+      format: "plain",
+    });
+    if (parsed.ok) enqueue(parsed.value);
+  };
+
+  const voices = async (name: string | undefined): Promise<VoicesResponse> => {
+    const list = name === undefined ? providers : providers.filter((p) => p.name === name);
+    if (name !== undefined && list.length === 0) {
+      return {
+        providers: [{ provider: name, voices: [], error: "not in the active provider chain" }],
+      };
+    }
+    return {
+      providers: await Promise.all(
+        list.map(async (p) => {
+          if (!p.listVoices) return { provider: p.name, voices: [] };
+          try {
+            return {
+              provider: p.name,
+              voices: await withTimeout(p.listVoices(), VOICES_TIMEOUT_MS, p.name),
+            };
+          } catch (error) {
+            return {
+              provider: p.name,
+              voices: [],
+              error: (error as Error).message ?? String(error),
+            };
+          }
+        }),
+      ),
+    };
+  };
+
+  const providerUsage = async (): Promise<Record<string, ProviderUsage>> => {
+    const out: Record<string, ProviderUsage> = {};
+    await Promise.all(
+      providers
+        .filter((p) => p.pricePerMillionChars > 0 && p.usageStatus)
+        .map(async (p) => {
+          try {
+            const reported = await withTimeout(
+              p.usageStatus?.() ?? Promise.resolve(undefined),
+              PROVIDER_USAGE_TIMEOUT_MS,
+              p.name,
+            );
+            if (reported) out[p.name] = reported;
+          } catch (error) {
+            log({
+              level: "warn",
+              msg: "provider_usage_failed",
+              provider: p.name,
+              error: String(error),
+            });
+          }
+        }),
+    );
+    return out;
+  };
 
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -187,8 +286,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
         replays.add(event);
         return { id: queue.enqueue(event).id };
       },
-      usage: (month) => {
+      usage: async (month) => {
         const now = new Date();
+        // Validate the month before any provider round trip.
         const range = month ? monthRange(month) : billingCycle(now, config.usage.resetDay);
         return usage.report({
           from: range.start,
@@ -196,8 +296,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
           quotas: config.usage.quotas,
           resetDay: config.usage.resetDay,
           now,
+          warnAt: config.usage.warnAt,
+          monthlyBudgetUsd: config.usage.monthlyBudgetUsd,
+          providerUsage: await providerUsage(),
         });
       },
+      voices,
     }),
   });
   const url = `http://127.0.0.1:${server.port}`;
@@ -230,13 +334,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       : watchConfig(cfgPath, {
           onChange: async (next) => {
             // Build the new chain before touching any state so a failure keeps the old config.
-            const nextProvider = await buildProvider(next);
+            const nextProviders = await buildProviders(next);
+            const nextProvider = buildProvider(next, nextProviders);
             config = next;
+            providers = nextProviders;
             provider.current = nextProvider;
             summarizer = buildSummarizer(next);
             modes.configure(next.modes.default, next.profiles);
             history.configure(next.history);
             deduper.windowMs = next.alerts.dedupeWindowMs;
+            queue.configure(next.queue);
             startHotkeys(next);
             log({ msg: "config_reloaded", provider: provider.name });
           },
@@ -259,4 +366,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       usage.close();
     },
   };
+}
+
+/** Rejects after `ms` (the underlying call is abandoned, not aborted). */
+function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what}: no answer within ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }

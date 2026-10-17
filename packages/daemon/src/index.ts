@@ -9,6 +9,7 @@ export * from "./modes.ts";
 export * from "./player.ts";
 export * from "./prepare.ts";
 export * from "./queue.ts";
+export * from "./quota.ts";
 export * from "./speaker.ts";
 export * from "./types.ts";
 export * from "./usage.ts";
