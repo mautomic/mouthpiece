@@ -4,6 +4,7 @@ export * from "./clean.ts";
 export * from "./config.ts";
 export * from "./contracts.ts";
 export * from "./envelope.ts";
+export * from "./exec.ts";
 export * from "./filter.ts";
 export * from "./guards.ts";
 export * from "./home.ts";

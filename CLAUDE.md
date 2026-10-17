@@ -33,12 +33,14 @@ Mouthpiece is a local, source-agnostic voice layer. A loopback daemon accepts te
 packages/core       contracts (types), envelope validation, cleaning, chunking, config, home/token
 packages/providers  TtsProvider implementations (say, inworld, …) + fallback chain
 packages/daemon     HTTP server, speech queue, speaker pipeline, player
-packages/client     @mouthpiece/client: speak/interrupt/stop/skip/health over HTTP
+packages/summarizers  Summarizer backends (claude -p) + first-sentence fallback
+packages/hotkeys    global hotkeys: Swift helper + TypeScript supervisor
+packages/client     @mouthpiece/client: speak/interrupt/stop/skip/health/mode/replay/usage over HTTP
 packages/cli        `mouthpiece` CLI
 adapters/*          everything source-specific (claude-code, codex, …)
 ```
 
-Dependency direction: `core` ← `providers`, `client` ← `daemon` ← `cli`. `adapters/*` may depend only on `core` and `client`.
+Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client` ← `daemon` ← `cli`. `daemon` may depend on `providers`, `summarizers`, and `hotkeys`; `cli` may also depend on `hotkeys`. `adapters/*` may depend only on `core` and `client`.
 
 ## Conventions
 
@@ -73,3 +75,4 @@ Dependency direction: `core` ← `providers`, `client` ← `daemon` ← `cli`. `
 3. **Hook scripts** never write to stdout, always exit 0, and give up after 300 ms. If they block Claude Code, that's a bug.
 4. **The daemon binds to `127.0.0.1` only.** Every endpoint except `GET /v1/health` requires `Authorization: Bearer <token>`.
 5. **Summarizer child processes** (`claude -p`) always run with `MOUTHPIECE_CHILD=1` in their environment. Hooks exit immediately when it is set.
+6. **Never run `install.sh`, `uninstall.sh`, `launchctl`, `security`, or `mouthpiece install-*`/`uninstall-*`/`auth` against the real system.** Use `MOUTHPIECE_DRY_RUN=1` with a temp `HOME`, and inject `exec` fakes.

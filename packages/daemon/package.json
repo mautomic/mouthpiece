@@ -8,7 +8,9 @@
   },
   "dependencies": {
     "@mouthpiece/core": "workspace:*",
-    "@mouthpiece/providers": "workspace:*"
+    "@mouthpiece/providers": "workspace:*",
+    "@mouthpiece/summarizers": "workspace:*",
+    "@mouthpiece/hotkeys": "workspace:*"
   },
   "devDependencies": {
     "@mouthpiece/client": "workspace:*"

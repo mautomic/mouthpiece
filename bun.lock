@@ -27,6 +27,7 @@
         "@mouthpiece/client": "workspace:*",
         "@mouthpiece/core": "workspace:*",
         "@mouthpiece/daemon": "workspace:*",
+        "@mouthpiece/hotkeys": "workspace:*",
       },
     },
     "packages/client": {
@@ -45,14 +46,30 @@
       "version": "0.1.0",
       "dependencies": {
         "@mouthpiece/core": "workspace:*",
+        "@mouthpiece/hotkeys": "workspace:*",
         "@mouthpiece/providers": "workspace:*",
+        "@mouthpiece/summarizers": "workspace:*",
       },
       "devDependencies": {
         "@mouthpiece/client": "workspace:*",
       },
     },
+    "packages/hotkeys": {
+      "name": "@mouthpiece/hotkeys",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/core": "workspace:*",
+      },
+    },
     "packages/providers": {
       "name": "@mouthpiece/providers",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/core": "workspace:*",
+      },
+    },
+    "packages/summarizers": {
+      "name": "@mouthpiece/summarizers",
       "version": "0.1.0",
       "dependencies": {
         "@mouthpiece/core": "workspace:*",
@@ -88,7 +105,11 @@
 
     "@mouthpiece/daemon": ["@mouthpiece/daemon@workspace:packages/daemon"],
 
+    "@mouthpiece/hotkeys": ["@mouthpiece/hotkeys@workspace:packages/hotkeys"],
+
     "@mouthpiece/providers": ["@mouthpiece/providers@workspace:packages/providers"],
+
+    "@mouthpiece/summarizers": ["@mouthpiece/summarizers@workspace:packages/summarizers"],
 
     "@types/bun": ["@types/bun@1.4.3", "", { "dependencies": { "bun-types": "1.4.3" } }, "sha512-N67Pqy8JXbAY/j0tNraS3V5mubGvc6rrrNDmDCtZLlFzccbUJPDb0tvgUBC5q4m8ybkP93Jcn1QB+RYQ6PvBhw=="],
 

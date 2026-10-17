@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { MAX_TEXT_CHARS, parseInterruptRequest, parseSpeakEvent } from "./envelope.ts";
+import type { ModeRequest } from "./contracts.ts";
+import {
+  MAX_TEXT_CHARS,
+  parseInterruptRequest,
+  parseModeRequest,
+  parseReplayRequest,
+  parseSpeakEvent,
+} from "./envelope.ts";
 
 describe("parseSpeakEvent", () => {
   test("applies defaults to a minimal event", () => {
@@ -91,5 +98,62 @@ describe("parseInterruptRequest", () => {
   });
   test("requires source", () => {
     expect(parseInterruptRequest({ conversationId: "s1" }).ok).toBe(false);
+  });
+});
+
+describe("parseModeRequest", () => {
+  test.each<[unknown, ModeRequest]>([
+    [
+      { mode: "full" },
+      {
+        mode: "full",
+        toggle: undefined,
+        clear: undefined,
+        source: undefined,
+        conversationId: undefined,
+      },
+    ],
+    [
+      { toggle: true },
+      {
+        mode: undefined,
+        toggle: true,
+        clear: undefined,
+        source: undefined,
+        conversationId: undefined,
+      },
+    ],
+    [
+      { clear: true, source: "claude-code", conversationId: "s1" },
+      {
+        mode: undefined,
+        toggle: undefined,
+        clear: true,
+        source: "claude-code",
+        conversationId: "s1",
+      },
+    ],
+  ])("accepts %p", (input, value) => {
+    expect(parseModeRequest(input)).toEqual({ ok: true, value });
+  });
+  test.each([
+    [{}, "exactly one of"],
+    [{ mode: "full", toggle: true }, "exactly one of"],
+    [{ mode: "loud" }, "mode must be one of"],
+    [{ toggle: "yes" }, "toggle must be a boolean"],
+    [{ mode: "off", conversationId: "s1" }, "conversationId requires source"],
+  ])("rejects %p", (input, message) => {
+    const r = parseModeRequest(input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain(message);
+  });
+});
+
+describe("parseReplayRequest", () => {
+  test("defaults full to false", () => {
+    expect(parseReplayRequest({})).toEqual({ ok: true, value: { full: false } });
+  });
+  test("rejects non-boolean full", () => {
+    expect(parseReplayRequest({ full: 1 }).ok).toBe(false);
   });
 });

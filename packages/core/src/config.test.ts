@@ -56,3 +56,43 @@ test("defaults are not shared mutable state", async () => {
   a.provider.chain.push("mutated");
   expect(DEFAULT_CONFIG.provider.chain).toEqual(["say"]);
 });
+
+test("phase 2 defaults", () => {
+  expect(DEFAULT_CONFIG.modes).toEqual({ default: "summary" });
+  expect(DEFAULT_CONFIG.summarizer).toEqual({
+    backend: "claude-cli",
+    command: "claude",
+    model: "haiku",
+    timeoutMs: 6000,
+    thresholdChars: 300,
+    maxChars: 350,
+  });
+  expect(DEFAULT_CONFIG.hotkeys).toEqual({
+    enabled: true,
+    stop: "ctrl+alt+s",
+    skip: "ctrl+alt+n",
+    replay: "ctrl+alt+r",
+    toggleMode: "ctrl+alt+m",
+  });
+  expect(DEFAULT_CONFIG.usage).toEqual({ resetDay: 1, quotas: {} });
+});
+
+test("profiles and quotas are open-keyed tables", () => {
+  const c = resolveConfig({
+    profiles: { "claude-code": { mode: "full" }, cron: {} },
+    usage: { resetDay: 15, quotas: { inworld: { chars: 275000 } } },
+  });
+  expect(c.profiles).toEqual({ "claude-code": { mode: "full" }, cron: { mode: undefined } });
+  expect(c.usage).toEqual({ resetDay: 15, quotas: { inworld: { chars: 275000 } } });
+});
+
+test.each([
+  [{ modes: { default: "loud" } }, "modes.default"],
+  [{ profiles: { x: { mode: "loud" } } }, "profiles.x.mode"],
+  [{ summarizer: { backend: "gpt" } }, "summarizer.backend"],
+  [{ usage: { resetDay: 31 } }, "usage.resetDay"],
+  [{ usage: { quotas: { inworld: { chars: 0 } } } }, "usage.quotas.inworld.chars"],
+  [{ hotkeys: { enabled: "yes" } }, "hotkeys.enabled"],
+])("rejects phase 2 %p", (raw, message) => {
+  expect(() => resolveConfig(raw)).toThrow(message);
+});

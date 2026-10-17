@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { MODES, type Mode } from "./contracts.ts";
 import { isRecord } from "./guards.ts";
 import type { Env } from "./home.ts";
 
@@ -13,6 +14,21 @@ export interface Config {
   filter: { minChars: number; trivial: string[] };
   queue: { expireAfterMs: number; labelWindowMs: number };
   fallback: { firstByteTimeoutMs: number };
+  modes: { default: Mode };
+  profiles: Record<string, { mode?: Mode }>;
+  summarizer: {
+    backend: "claude-cli" | "none";
+    command: string;
+    model: string;
+    timeoutMs: number;
+    thresholdChars: number;
+    maxChars: number;
+  };
+  history: { maxItems: number; maxAgeMs: number };
+  cache: { maxBytes: number };
+  usage: { resetDay: number; quotas: Record<string, { chars: number }> };
+  alerts: { dedupeWindowMs: number };
+  hotkeys: { enabled: boolean; stop: string; skip: string; replay: string; toggleMode: string };
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -24,6 +40,27 @@ export const DEFAULT_CONFIG: Config = {
   filter: { minChars: 20, trivial: ["done", "ok", "okay", "got it", "sounds good"] },
   queue: { expireAfterMs: 5 * 60_000, labelWindowMs: 10 * 60_000 },
   fallback: { firstByteTimeoutMs: 3000 },
+  modes: { default: "summary" },
+  profiles: {},
+  summarizer: {
+    backend: "claude-cli",
+    command: "claude",
+    model: "haiku",
+    timeoutMs: 6000,
+    thresholdChars: 300,
+    maxChars: 350,
+  },
+  history: { maxItems: 100, maxAgeMs: 24 * 60 * 60_000 },
+  cache: { maxBytes: 200 * 1024 * 1024 },
+  usage: { resetDay: 1, quotas: {} },
+  alerts: { dedupeWindowMs: 60_000 },
+  hotkeys: {
+    enabled: true,
+    stop: "ctrl+alt+s",
+    skip: "ctrl+alt+n",
+    replay: "ctrl+alt+r",
+    toggleMode: "ctrl+alt+m",
+  },
 };
 
 export class ConfigError extends Error {}
@@ -62,6 +99,13 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
   const filter = table(root.filter, "filter");
   const queue = table(root.queue, "queue");
   const fallback = table(root.fallback, "fallback");
+  const modes = table(root.modes, "modes");
+  const summarizer = table(root.summarizer, "summarizer");
+  const history = table(root.history, "history");
+  const cache = table(root.cache, "cache");
+  const usage = table(root.usage, "usage");
+  const alerts = table(root.alerts, "alerts");
+  const hotkeys = table(root.hotkeys, "hotkeys");
   return structuredClone({
     provider: {
       chain: optional(provider.chain, "provider.chain", nonEmptyStringList) ?? base.provider.chain,
@@ -94,6 +138,59 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
       firstByteTimeoutMs:
         optional(fallback.firstByteTimeoutMs, "fallback.firstByteTimeoutMs", positiveInt) ??
         base.fallback.firstByteTimeoutMs,
+    },
+    modes: {
+      default: optional(modes.default, "modes.default", oneOf(MODES)) ?? base.modes.default,
+    },
+    profiles: resolveProfiles(root.profiles, base.profiles),
+    summarizer: {
+      backend:
+        optional(
+          summarizer.backend,
+          "summarizer.backend",
+          oneOf(["claude-cli", "none"] as const),
+        ) ?? base.summarizer.backend,
+      command:
+        optional(summarizer.command, "summarizer.command", nonEmptyString) ??
+        base.summarizer.command,
+      model:
+        optional(summarizer.model, "summarizer.model", nonEmptyString) ?? base.summarizer.model,
+      timeoutMs:
+        optional(summarizer.timeoutMs, "summarizer.timeoutMs", positiveInt) ??
+        base.summarizer.timeoutMs,
+      thresholdChars:
+        optional(summarizer.thresholdChars, "summarizer.thresholdChars", nonNegativeInt) ??
+        base.summarizer.thresholdChars,
+      maxChars:
+        optional(summarizer.maxChars, "summarizer.maxChars", positiveInt) ??
+        base.summarizer.maxChars,
+    },
+    history: {
+      maxItems:
+        optional(history.maxItems, "history.maxItems", positiveInt) ?? base.history.maxItems,
+      maxAgeMs:
+        optional(history.maxAgeMs, "history.maxAgeMs", positiveInt) ?? base.history.maxAgeMs,
+    },
+    cache: {
+      maxBytes: optional(cache.maxBytes, "cache.maxBytes", nonNegativeInt) ?? base.cache.maxBytes,
+    },
+    usage: {
+      resetDay: optional(usage.resetDay, "usage.resetDay", dayOfMonth) ?? base.usage.resetDay,
+      quotas: resolveQuotas(usage.quotas, base.usage.quotas),
+    },
+    alerts: {
+      dedupeWindowMs:
+        optional(alerts.dedupeWindowMs, "alerts.dedupeWindowMs", nonNegativeInt) ??
+        base.alerts.dedupeWindowMs,
+    },
+    hotkeys: {
+      enabled: optional(hotkeys.enabled, "hotkeys.enabled", bool) ?? base.hotkeys.enabled,
+      stop: optional(hotkeys.stop, "hotkeys.stop", nonEmptyString) ?? base.hotkeys.stop,
+      skip: optional(hotkeys.skip, "hotkeys.skip", nonEmptyString) ?? base.hotkeys.skip,
+      replay: optional(hotkeys.replay, "hotkeys.replay", nonEmptyString) ?? base.hotkeys.replay,
+      toggleMode:
+        optional(hotkeys.toggleMode, "hotkeys.toggleMode", nonEmptyString) ??
+        base.hotkeys.toggleMode,
     },
   });
 }
@@ -143,4 +240,44 @@ function positiveInt(value: unknown, name: string): number {
   const n = nonNegativeInt(value, name);
   if (n === 0) throw new ConfigError(`${name} must be a positive integer`);
   return n;
+}
+
+function oneOf<T extends string>(allowed: readonly T[]) {
+  return (value: unknown, name: string): T => {
+    if (typeof value !== "string" || !(allowed as readonly string[]).includes(value)) {
+      throw new ConfigError(`${name} must be one of: ${allowed.join(", ")}`);
+    }
+    return value as T;
+  };
+}
+
+function bool(value: unknown, name: string): boolean {
+  if (typeof value !== "boolean") throw new ConfigError(`${name} must be true or false`);
+  return value;
+}
+
+function dayOfMonth(value: unknown, name: string): number {
+  const day = positiveInt(value, name);
+  if (day > 28) throw new ConfigError(`${name} must be between 1 and 28`);
+  return day;
+}
+
+function resolveProfiles(raw: unknown, base: Config["profiles"]): Config["profiles"] {
+  if (raw === undefined) return base;
+  const out: Config["profiles"] = {};
+  for (const [source, value] of Object.entries(table(raw, "profiles"))) {
+    const profile = table(value, `profiles.${source}`);
+    out[source] = { mode: optional(profile.mode, `profiles.${source}.mode`, oneOf(MODES)) };
+  }
+  return out;
+}
+
+function resolveQuotas(raw: unknown, base: Config["usage"]["quotas"]): Config["usage"]["quotas"] {
+  if (raw === undefined) return base;
+  const out: Config["usage"]["quotas"] = {};
+  for (const [provider, value] of Object.entries(table(raw, "usage.quotas"))) {
+    const quota = table(value, `usage.quotas.${provider}`);
+    out[provider] = { chars: positiveInt(quota.chars, `usage.quotas.${provider}.chars`) };
+  }
+  return out;
 }

@@ -64,11 +64,15 @@ export type AudioFormat = "aiff" | "mp3" | "wav";
 export interface AudioClip {
   format: AudioFormat;
   chunks: AsyncIterable<Uint8Array>;
+  /** True when served from the audio cache. */
+  cached?: boolean;
 }
 
 export interface SynthesizeOptions {
   voice?: string;
   signal?: AbortSignal;
+  /** Attribution for usage metering (the event's source). */
+  tag?: string;
 }
 
 export interface TtsProvider {
@@ -97,3 +101,62 @@ export interface ConversationDriver {
 }
 
 export type Logger = (record: Record<string, unknown>) => void;
+
+export interface ModeRequest {
+  /** Exactly one of mode, toggle, clear. */
+  mode?: Mode;
+  /** summary <-> full; off -> summary. */
+  toggle?: boolean;
+  /** Remove the runtime override at this scope. */
+  clear?: boolean;
+  /** Scope. Omitted: global. Source only: that source. Plus conversationId: that conversation. */
+  source?: string;
+  conversationId?: string;
+}
+
+export interface ModeOverride {
+  source: string;
+  conversationId?: string;
+  mode: Mode;
+}
+
+export interface ModeState {
+  /** Effective global mode (runtime override, else config). */
+  default: Mode;
+  overrides: ModeOverride[];
+}
+
+export interface ReplayRequest {
+  full?: boolean;
+}
+
+export interface ReplayResponse {
+  id: string | null;
+}
+
+export interface UsageRow {
+  provider: string;
+  source: string;
+  requests: number;
+  /** Billed characters (cache hits excluded). */
+  chars: number;
+  cacheHits: number;
+  costUsd: number;
+}
+
+export interface QuotaStatus {
+  provider: string;
+  limitChars: number;
+  usedChars: number;
+  remainingChars: number;
+  projectedChars: number;
+  cycleStart: string;
+  cycleEnd: string;
+}
+
+export interface UsageReport {
+  from: string;
+  to: string;
+  rows: UsageRow[];
+  quotas: QuotaStatus[];
+}

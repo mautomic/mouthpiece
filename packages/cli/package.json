@@ -9,6 +9,7 @@
   "dependencies": {
     "@mouthpiece/core": "workspace:*",
     "@mouthpiece/client": "workspace:*",
-    "@mouthpiece/daemon": "workspace:*"
+    "@mouthpiece/daemon": "workspace:*",
+    "@mouthpiece/hotkeys": "workspace:*"
   }
 }

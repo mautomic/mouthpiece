@@ -4,10 +4,15 @@ import {
   type HealthResponse,
   type InterruptRequest,
   type InterruptResult,
+  type ModeRequest,
+  type ModeState,
   mouthpieceHome,
+  type ReplayRequest,
+  type ReplayResponse,
   readToken,
   type SpeakEvent,
   type SpeakResponse,
+  type UsageReport,
 } from "@mouthpiece/core";
 
 export interface ClientOptions {
@@ -82,3 +87,16 @@ export const skip = (opts: ClientOptions = {}) =>
   request<{ skipped: boolean }>("POST", "/v1/skip", undefined, opts);
 export const health = (opts: ClientOptions = {}) =>
   request<HealthResponse>("GET", "/v1/health", undefined, opts);
+export const getMode = (opts: ClientOptions = {}) =>
+  request<ModeState>("GET", "/v1/mode", undefined, opts);
+export const setMode = (req: ModeRequest, opts: ClientOptions = {}) =>
+  request<ModeState>("POST", "/v1/mode", req, opts);
+export const replay = (req: ReplayRequest = {}, opts: ClientOptions = {}) =>
+  request<ReplayResponse>("POST", "/v1/replay", req, opts);
+export const usage = (opts: ClientOptions & { month?: string } = {}) =>
+  request<UsageReport>(
+    "GET",
+    `/v1/usage${opts.month ? `?month=${encodeURIComponent(opts.month)}` : ""}`,
+    undefined,
+    opts,
+  );

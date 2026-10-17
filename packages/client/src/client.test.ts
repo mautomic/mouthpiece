@@ -2,9 +2,24 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { health, interrupt, MouthpieceError, speak } from "./index.ts";
+import {
+  getMode,
+  health,
+  interrupt,
+  MouthpieceError,
+  replay,
+  setMode,
+  speak,
+  usage,
+} from "./index.ts";
 
-const seen: { path: string; auth: string | null; body: string }[] = [];
+const seen: {
+  method: string;
+  path: string;
+  search: string;
+  auth: string | null;
+  body: string;
+}[] = [];
 let server: ReturnType<typeof Bun.serve>;
 let home: string;
 let url: string;
@@ -16,8 +31,14 @@ beforeAll(async () => {
     hostname: "127.0.0.1",
     port: 0,
     async fetch(req) {
-      const path = new URL(req.url).pathname;
-      seen.push({ path, auth: req.headers.get("authorization"), body: await req.text() });
+      const { pathname: path, search } = new URL(req.url);
+      seen.push({
+        method: req.method,
+        path,
+        search,
+        auth: req.headers.get("authorization"),
+        body: await req.text(),
+      });
       if (path === "/v1/slow") await Bun.sleep(500);
       if (path === "/v1/health")
         return Response.json({ ok: true, version: "0.1.0", provider: "say", queueDepth: 0 });
@@ -79,4 +100,30 @@ test("timeoutMs bounds the call", async () => {
     speak({ text: "hi", source: "cli" }, { url: `${url}/v1/slow#`, token: "t", timeoutMs: 100 }),
   ).rejects.toBeInstanceOf(MouthpieceError);
   expect(performance.now() - started).toBeLessThan(400);
+});
+
+test("getMode is GET /v1/mode", async () => {
+  await getMode({ url, token: "t" });
+  expect(seen.at(-1)).toMatchObject({ method: "GET", path: "/v1/mode", body: "" });
+});
+
+test("setMode is POST /v1/mode with the request body", async () => {
+  await setMode({ mode: "full", source: "cli" }, { url, token: "t" });
+  const last = seen.at(-1);
+  expect(last).toMatchObject({ method: "POST", path: "/v1/mode" });
+  expect(JSON.parse(last?.body ?? "")).toEqual({ mode: "full", source: "cli" });
+});
+
+test("replay is POST /v1/replay and defaults to an empty body object", async () => {
+  await replay(undefined, { url, token: "t" });
+  expect(seen.at(-1)).toMatchObject({ method: "POST", path: "/v1/replay", body: "{}" });
+  await replay({ full: true }, { url, token: "t" });
+  expect(JSON.parse(seen.at(-1)?.body ?? "")).toEqual({ full: true });
+});
+
+test("usage is GET /v1/usage with an optional month", async () => {
+  await usage({ url, token: "t" });
+  expect(seen.at(-1)).toMatchObject({ method: "GET", path: "/v1/usage", search: "", body: "" });
+  await usage({ url, token: "t", month: "2026-10" });
+  expect(seen.at(-1)).toMatchObject({ method: "GET", path: "/v1/usage", search: "?month=2026-10" });
 });

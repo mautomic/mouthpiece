@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { SpeakEvent } from "@mouthpiece/core";
-import { type CliDeps, type CliIO, run } from "./run.ts";
+import { run } from "./run.ts";
+import type { CliDeps, CliIO } from "./types.ts";
 
 function harness(opts: { stdin?: string; tty?: boolean; fail?: boolean } = {}) {
   const out: string[] = [];
@@ -26,8 +27,15 @@ function harness(opts: { stdin?: string; tty?: boolean; fail?: boolean } = {}) {
       stop: async () => ({ stopped: true, dropped: 2 }),
       skip: async () => ({ skipped: true }),
       health: async () => ({ ok: true, version: "0.1.0", provider: "say", queueDepth: 0 }),
+      getMode: async () => ({ default: "summary", overrides: [] }),
+      setMode: async () => ({ default: "summary", overrides: [] }),
+      replay: async () => ({ id: null }),
+      usage: async () => ({ from: "2026-10-01", to: "2026-11-01", rows: [], quotas: [] }),
     },
     startDaemon: async () => ({ url: "http://127.0.0.1:7317" }),
+    env: {},
+    exec: async () => ({ code: 0, stdout: "", stderr: "" }),
+    paths: { repoRoot: "/repo", bun: "/bun" },
   };
   return { io, deps, out, err, spoken };
 }
@@ -88,4 +96,10 @@ test("unknown command prints usage", async () => {
   const h = harness();
   expect(await run(["nope"], h.io, h.deps)).toBe(2);
   expect(h.err.join("")).toContain("usage: mouthpiece");
+});
+
+test("mode routes to its command module", async () => {
+  const h = harness();
+  expect(await run(["mode"], h.io, h.deps)).toBe(1);
+  expect(h.err.join("")).toContain("not implemented");
 });
