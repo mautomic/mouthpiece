@@ -1,7 +1,11 @@
 const MAX_INLINE_CODE_CHARS = 40;
-const FENCE = /^(```|~~~)[^\n]*\n([\s\S]*?)^\1[ \t]*$/gm;
-const UNCLOSED_FENCE = /^(```|~~~)[^\n]*\n([\s\S]*)$/m;
 const PLACEHOLDER = /\uE000(\d+)\uE000/g;
+// Every pattern below must stay linear: the daemon cleans untrusted text on its event loop.
+// Bracket text cannot contain brackets, and a URL allows one level of balanced parens, so a
+// failed match never rescans past the next bracket or paren.
+const LINK_URL = String.raw`\(([^()]*(?:\([^()]*\)[^()]*)*)\)`;
+const IMAGE = new RegExp(String.raw`!\[([^[\]]*)\]${LINK_URL}`, "g");
+const LINK = new RegExp(String.raw`\[([^[\]]+)\]${LINK_URL}`, "g");
 
 export function cleanForSpeech(markdown: string): string {
   const text = replaceFences(markdown.replace(/\r\n?/g, "\n"));
@@ -15,12 +19,30 @@ export function cleanForSpeech(markdown: string): string {
     .trim();
 }
 
+/** One pass over the lines; an unclosed fence swallows the rest of the text. */
 function replaceFences(text: string): string {
-  const describe = (_: string, __: string, body: string) => {
-    const lines = body.replace(/\n$/, "").split("\n").length;
-    return `(code block, ${lines} ${lines === 1 ? "line" : "lines"})`;
-  };
-  return text.replace(FENCE, describe).replace(UNCLOSED_FENCE, describe);
+  const lines = text.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    const fence = line.startsWith("```") ? "```" : line.startsWith("~~~") ? "~~~" : null;
+    if (!fence || i === lines.length - 1) {
+      out.push(line);
+      continue;
+    }
+    let end = i + 1;
+    while (end < lines.length && !isFenceClose(lines[end] ?? "", fence)) end++;
+    const body = lines.slice(i + 1, end);
+    if (end === lines.length && body.at(-1) === "") body.pop();
+    const count = Math.max(1, body.length);
+    out.push(`(code block, ${count} ${count === 1 ? "line" : "lines"})`);
+    i = end;
+  }
+  return out.join("\n");
+}
+
+function isFenceClose(line: string, fence: string): boolean {
+  return line.startsWith(fence) && /^[ \t]*$/.test(line.slice(fence.length));
 }
 
 function cleanLine(raw: string): string {
@@ -51,15 +73,17 @@ function cleanInline(line: string): string {
   });
   const cleaned = shortenPaths(
     protectedLine
-      .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(IMAGE, "$1")
+      .replace(LINK, "$1")
       .replace(/\bhttps?:\/\/(?:www\.)?([^\s/)?#]+)[^\s)]*/g, "link to $1"),
   )
     .replace(/(\*\*|__)(.+?)\1/g, "$2")
     .replace(/~~(.+?)~~/g, "$1")
-    .replace(/(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])/g, "$1")
-    .replace(/(?<![\w_])_(?!\s)(.+?)(?<!\s)_(?![\w_])/g, "$1")
-    .replace(/<\/?[a-zA-Z][^>]*>/g, "");
+    // Inside emphasis, only an intraword delimiter (2*3, snake_case) may appear, so a
+    // failed match stops at the next possible opener instead of rescanning the line.
+    .replace(/(?<![\w*])\*(?!\s)((?:[^*]|(?<=\w)\*(?=\w))+?)(?<!\s)\*(?![\w*])/g, "$1")
+    .replace(/(?<![\w_])_(?!\s)((?:[^_]|(?<=\w)_(?=\w))+?)(?<!\s)_(?![\w_])/g, "$1")
+    .replace(/<\/?[a-zA-Z][^<>]*>/g, "");
   return cleaned.replace(PLACEHOLDER, (_, i: string) => codes[Number(i)] ?? "");
 }
 

@@ -47,4 +47,39 @@ describe("cleanForSpeech", () => {
       "Name, Cost. Inworld, $27.",
     );
   });
+
+  test("links with a title, with parens in the URL, and nested brackets", () => {
+    expect(cleanForSpeech('See [docs](https://x.dev/a "Title") now')).toBe("See docs now.");
+    expect(cleanForSpeech("See [Foo](https://en.wikipedia.org/wiki/Foo_(bar)) now")).toBe(
+      "See Foo now.",
+    );
+    expect(cleanForSpeech("![a [b] c](x.png) ok")).toBe("![a [b] c](x.png) ok.");
+  });
+
+  test("unclosed emphasis and tags are left alone", () => {
+    expect(cleanForSpeech("a *b *c")).toBe("a *b *c.");
+    expect(cleanForSpeech("_foo_bar_ and *2*3* and **a*b**")).toBe("foo_bar and 2*3 and a*b.");
+    expect(cleanForSpeech("1 < 2 and <b>bold</b>")).toBe("1 < 2 and bold.");
+  });
+
+  // Review Focus #4: hostile input must not stall the daemon's event loop.
+  test.each([
+    "[",
+    "![",
+    "<a",
+    "[a](",
+    "![a](",
+    "```x\n",
+    "~~~x\n",
+    " *a",
+    " _a",
+    " **a",
+    " ~~a",
+    "`a",
+  ])("cleans 100k chars of %p in linear time", (unit) => {
+    const input = unit.repeat(Math.ceil(100_000 / unit.length));
+    const started = performance.now();
+    cleanForSpeech(input);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
 });

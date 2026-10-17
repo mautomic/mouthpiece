@@ -50,3 +50,29 @@ test("a failing chunk stream rejects", async () => {
     player.play({ format: "mp3", chunks: broken() }, new AbortController().signal),
   ).rejects.toThrow("stream broke");
 });
+
+/** A signal that aborts right after its `aborted` flag has been read `n` times. */
+function abortAfterChecks(n: number): AbortSignal {
+  const controller = new AbortController();
+  const { signal } = controller;
+  const read = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "aborted")?.get;
+  let checks = 0;
+  Object.defineProperty(signal, "aborted", {
+    get() {
+      const value = read?.call(signal) as boolean;
+      if (++checks === n) controller.abort();
+      return value;
+    },
+  });
+  return signal;
+}
+
+test("an abort that lands between the last check and spawn still stops playback", async () => {
+  const player = new AfplayPlayer({ tmpDir: dir, command: ["/bin/sh", "-c", "exec sleep 5"] });
+  for (let n = 1; n <= 4; n++) {
+    const started = performance.now();
+    await player.play(clip(), abortAfterChecks(n));
+    expect(performance.now() - started).toBeLessThan(1000);
+  }
+  expect(await readdir(dir)).toEqual([]);
+});

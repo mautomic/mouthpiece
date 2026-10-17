@@ -20,8 +20,17 @@ export interface SpeakerDeps {
 
 type Synthesis = { ok: true; clip: AudioClip } | { ok: false; error: unknown };
 
-const speakable = (e: NormalizedSpeakEvent) =>
-  e.format === "plain" ? e.text : cleanForSpeech(e.text);
+// skipReason (request path) and the speaker both need the cleaned text; clean each event once.
+const cleaned = new WeakMap<NormalizedSpeakEvent, string>();
+function speakable(e: NormalizedSpeakEvent): string {
+  if (e.format === "plain") return e.text;
+  let text = cleaned.get(e);
+  if (text === undefined) {
+    text = cleanForSpeech(e.text);
+    cleaned.set(e, text);
+  }
+  return text;
+}
 
 /** clean → label → chunk → synthesize (next chunk prefetched while the current one plays) → play. */
 export function createSpeaker(deps: SpeakerDeps): PlayFn {

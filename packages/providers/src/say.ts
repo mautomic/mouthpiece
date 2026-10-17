@@ -31,9 +31,12 @@ export class SayProvider implements TtsProvider {
       const args = [this.opts.command ?? "say", "-f", inPath, "-o", outPath];
       const voice = options.voice ?? this.opts.voice;
       if (voice) args.push("-v", voice);
+      options.signal?.throwIfAborted();
       const proc = Bun.spawn(args, { stdout: "ignore", stderr: "pipe" });
       const onAbort = () => proc.kill();
       options.signal?.addEventListener("abort", onAbort, { once: true });
+      // An abort that landed before the listener existed would otherwise never fire.
+      if (options.signal?.aborted) proc.kill();
       try {
         const code = await proc.exited;
         options.signal?.throwIfAborted();
