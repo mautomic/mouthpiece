@@ -9,5 +9,8 @@
   "dependencies": {
     "@mouthpiece/core": "workspace:*",
     "@mouthpiece/providers": "workspace:*"
+  },
+  "devDependencies": {
+    "@mouthpiece/client": "workspace:*"
   }
 }

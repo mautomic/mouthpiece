@@ -45,6 +45,9 @@
         "@mouthpiece/core": "workspace:*",
         "@mouthpiece/providers": "workspace:*",
       },
+      "devDependencies": {
+        "@mouthpiece/client": "workspace:*",
+      },
     },
     "packages/providers": {
       "name": "@mouthpiece/providers",
