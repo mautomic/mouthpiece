@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { NormalizedSpeakEvent } from "@mouthpiece/core";
-import { type PlayContext, type QueueItem, SpeechQueue } from "./queue.ts";
+import { NOTICE_SOURCE, type PlayContext, type QueueItem, SpeechQueue } from "./queue.ts";
 
 function event(text: string, extra: Partial<NormalizedSpeakEvent> = {}): NormalizedSpeakEvent {
   return {
@@ -159,15 +159,44 @@ describe("SpeechQueue", () => {
     expect(p.started[2]?.ctx.announceLabel).toBe(false);
   });
 
-  test("an unlabeled event (e.g. a quota notice) does not count as another conversation", async () => {
+  test("a quota notice does not count as another conversation", async () => {
     const { queue, p } = setup();
-    queue.enqueue(event("notice", { source: "mouthpiece", conversationId: "quota-0" }));
+    queue.enqueue(event("notice", { source: NOTICE_SOURCE, conversationId: "quota-0" }));
     expect(p.started[0]?.ctx.announceLabel).toBe(false);
     p.started[0]?.release();
     await tick();
     queue.enqueue(event("real", { conversationId: "1", label: "web" }));
     await tick();
     expect(p.texts()).toEqual(["notice", "real"]);
+    expect(p.started[1]?.ctx.announceLabel).toBe(false);
+    p.started[1]?.release();
+    await queue.idle();
+  });
+
+  test("an unlabeled alert from another session makes a labeled response announce its label", async () => {
+    const { queue, p } = setup();
+    queue.enqueue(
+      event("Claude needs your approval in api", { conversationId: "B", kind: "alert" }),
+    );
+    p.started[0]?.release();
+    await tick();
+    queue.enqueue(event("done", { conversationId: "A", label: "web" }));
+    await tick();
+    expect(p.texts()).toEqual(["Claude needs your approval in api", "done"]);
+    expect(p.started[1]?.ctx.announceLabel).toBe(true);
+    p.started[1]?.release();
+    await queue.idle();
+  });
+
+  test("a daemon notice (source NOTICE_SOURCE) does not make a response announce its label", async () => {
+    const { queue, p } = setup();
+    queue.enqueue(
+      event("notice", { source: NOTICE_SOURCE, conversationId: "quota-0", label: "x" }),
+    );
+    p.started[0]?.release();
+    await tick();
+    queue.enqueue(event("done", { conversationId: "A", label: "web" }));
+    await tick();
     expect(p.started[1]?.ctx.announceLabel).toBe(false);
     p.started[1]?.release();
     await queue.idle();

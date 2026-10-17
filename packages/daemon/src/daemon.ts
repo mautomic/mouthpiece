@@ -34,7 +34,7 @@ import { jsonLogger } from "./log.ts";
 import { ModeStore } from "./modes.ts";
 import { AfplayPlayer } from "./player.ts";
 import { createPreparer } from "./prepare.ts";
-import { SpeechQueue } from "./queue.ts";
+import { NOTICE_SOURCE, SpeechQueue } from "./queue.ts";
 import { QuotaGatedProvider, QuotaGuard } from "./quota.ts";
 import { createSpeaker, skipReason } from "./speaker.ts";
 import { billingCycle, MeteredProvider, monthRange, UsageStore } from "./usage.ts";
@@ -196,7 +196,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     // A conversation per notice, so a second notice never replaces a first one still queued.
     const parsed = parseSpeakEvent({
       text,
-      source: "mouthpiece",
+      source: NOTICE_SOURCE,
       conversationId: `quota-${noticeSeq++}`,
       kind: "alert",
       format: "plain",

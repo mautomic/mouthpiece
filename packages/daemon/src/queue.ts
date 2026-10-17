@@ -7,10 +7,16 @@ export interface QueueItem {
 }
 
 export interface PlayContext {
-  /** True when more than one labeled conversation was active within labelWindowMs (US-006). */
+  /**
+   * True when the event is labeled and more than one conversation (daemon notices aside) was
+   * active within labelWindowMs (US-006).
+   */
   announceLabel: boolean;
   signal: AbortSignal;
 }
+
+/** The source of the daemon's own notices (e.g. quota), which are not conversations. */
+export const NOTICE_SOURCE = "mouthpiece";
 
 export type PlayFn = (item: QueueItem, ctx: PlayContext) => Promise<void>;
 
@@ -58,9 +64,9 @@ export class SpeechQueue {
   enqueue(event: NormalizedSpeakEvent): QueueItem {
     const now = this.#now();
     const key = conversationKey(event);
-    // Only labeled events count as active conversations (US-006): an unlabeled one, such as a
-    // quota notice, has no label to tell apart, so it must not make others announce theirs.
-    if (event.label !== undefined) this.#lastSeen.set(key, now);
+    // Every conversation counts as active (US-006), labeled or not: an approval alert from another
+    // session carries its label in its text. Only the daemon's own notices are not conversations.
+    if (event.source !== NOTICE_SOURCE) this.#lastSeen.set(key, now);
     this.#pending = this.#pending.filter((p) => conversationKey(p.event) !== key);
     const item: QueueItem = {
       id: `${now.toString(36)}-${(this.#seq++).toString(36)}`,

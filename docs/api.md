@@ -17,7 +17,7 @@ Body (generic event envelope, PRD §8.3):
 | `text` | string, required | | ≤ 100,000 chars; markdown unless `format: "plain"` |
 | `source` | string, required | | `^[a-z0-9][a-z0-9._-]{0,63}$`, e.g. `claude-code`, `discord`, `cli` |
 | `conversationId` | string | `"default"` | unit of coalescing and interrupts (≤ 256) |
-| `label` | string | none | spoken prefix when several labeled conversations are active (≤ 100) |
+| `label` | string | none | spoken prefix when several conversations are active (≤ 100) |
 | `kind` | `response` \| `alert` \| `info` | `response` | `response` items are subject to the trivial-text filter |
 | `priority` | `high` \| `normal` \| `low` | `high` for alerts, else `normal` | higher priority jumps the queue, never interrupts |
 | `mode` | `summary` \| `full` \| `off` | runtime override, then source profile, then `modes.default` | see `POST /v1/mode` for precedence |
