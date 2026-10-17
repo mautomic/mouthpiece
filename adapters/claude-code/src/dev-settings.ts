@@ -14,6 +14,7 @@ console.log(
     hooks: {
       Stop: [{ hooks: [hook("stop")] }],
       UserPromptSubmit: [{ hooks: [hook("prompt")] }],
+      Notification: [{ matcher: "permission_prompt", hooks: [hook("notify")] }],
     },
   }),
 );
