@@ -264,15 +264,21 @@ export class FileTailer {
     const now = this.now();
     for (const cursor of [...this.cursors.values()]) {
       if (now - cursor.activeAt < (this.opts.idleMs ?? DEFAULT_IDLE_MS)) continue;
-      this.cursors.delete(cursor.file);
       const s = await this.fs.stat(cursor.file);
-      if (!s) continue;
+      if (!s) {
+        this.cursors.delete(cursor.file);
+        continue;
+      }
+      // It changed since drain read it: keep following, or the bytes since then would be lost.
+      const replaced = s.ino !== undefined && cursor.ino !== undefined && s.ino !== cursor.ino;
+      if (s.size !== cursor.offset || replaced) continue;
+      this.cursors.delete(cursor.file);
       // Resume before a buffered partial line, so it is read whole next time.
       this.baselines.set(cursor.file, {
-        size: s.size,
+        size: cursor.offset,
         mtimeMs: s.mtimeMs,
         ino: s.ino,
-        resumeAt: Math.min(s.size, cursor.offset - cursor.partial.length),
+        resumeAt: cursor.offset - cursor.partial.length,
       });
     }
   }

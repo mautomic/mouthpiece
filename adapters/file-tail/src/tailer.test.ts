@@ -438,3 +438,42 @@ test("a resumed session in an old date directory is found by the periodic full s
   await t.poll();
   expect(texts()).toEqual(["resumed", "and followed from then on"]);
 });
+
+test("a line written while a session is being retired is still read", async () => {
+  const sessions = join(dir, "sessions");
+  await mkdir(sessions, { recursive: true });
+  const file = join(sessions, "rollout-x.jsonl");
+  await writeFile(file, "");
+  // Once armed, the second stat of the file (the retire check, after drain's) appends a line first.
+  const hook = { armed: false, stats: 0 };
+  const fs: TailFs = {
+    ...nodeTailFs,
+    stat: async (path) => {
+      if (hook.armed && path === file && ++hook.stats === 2) {
+        hook.armed = false;
+        await appendFile(file, "task complete\n");
+      }
+      return nodeTailFs.stat(path);
+    },
+  };
+  const clock = { t: 1_000_000 };
+  const { t, texts } = tailer(sessions, {
+    pattern: ROLLOUT,
+    fs,
+    now: () => clock.t,
+    idleMs: 60_000,
+  });
+  await t.poll();
+  await appendFile(file, "one\n");
+  clock.t += 10_000;
+  await t.poll();
+  clock.t += 61_000;
+  hook.armed = true;
+  await t.poll();
+  expect(hook.stats).toBeGreaterThanOrEqual(2);
+  for (let i = 0; i < 3; i++) {
+    clock.t += 1000;
+    await t.poll();
+  }
+  expect(texts()).toEqual(["one", "task complete"]);
+});
