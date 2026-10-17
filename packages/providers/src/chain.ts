@@ -7,6 +7,10 @@ export interface ChainDeps {
   env: Env;
   tmpDir: string;
   log: Logger;
+  /** Keys resolved outside the env (e.g. the Keychain); env vars take precedence. */
+  secrets?: { inworld?: string };
+  /** Applied to each provider individually (caching, metering). */
+  wrap?: (p: TtsProvider) => TtsProvider;
 }
 
 export function createProviderChain(config: Config, deps: ChainDeps): FallbackProvider {
@@ -18,13 +22,13 @@ export function createProviderChain(config: Config, deps: ChainDeps): FallbackPr
         providers.push(say());
         break;
       case "inworld": {
-        const apiKey = deps.env.INWORLD_API_KEY;
+        const apiKey = deps.env.INWORLD_API_KEY ?? deps.secrets?.inworld;
         if (!apiKey) {
           deps.log({
             level: "warn",
             msg: "provider_skipped",
             provider: "inworld",
-            reason: "INWORLD_API_KEY not set",
+            reason: "no INWORLD_API_KEY or Keychain entry",
           });
           break;
         }
@@ -35,8 +39,10 @@ export function createProviderChain(config: Config, deps: ChainDeps): FallbackPr
         throw new Error(`unknown provider: ${name}`);
     }
   }
-  if (providers.length === 0) providers.push(say());
-  return new FallbackProvider(providers, {
+  // FR-8: the chain always ends in macOS say (also bounds a trailing paid provider by the timeout).
+  if (providers.at(-1)?.name !== "say") providers.push(say());
+  const wrap = deps.wrap ?? ((p: TtsProvider) => p);
+  return new FallbackProvider(providers.map(wrap), {
     firstByteTimeoutMs: config.fallback.firstByteTimeoutMs,
     onFallback: (from, error) =>
       deps.log({ level: "warn", msg: "provider_fallback", provider: from, error: String(error) }),

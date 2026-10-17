@@ -35,3 +35,28 @@ test("unknown provider names are a config error", () => {
   const config = resolveConfig({ provider: { chain: ["nope"] } });
   expect(() => createProviderChain(config, deps().deps)).toThrow("unknown provider: nope");
 });
+
+test("say is appended when the chain doesn't end in it", () => {
+  const config = resolveConfig({ provider: { chain: ["inworld"] } });
+  expect(createProviderChain(config, deps({ INWORLD_API_KEY: "k" }).deps).name).toBe("inworld>say");
+});
+
+test("keychain secret is used when the env var is absent", () => {
+  const config = resolveConfig({ provider: { chain: ["inworld", "say"] } });
+  expect(createProviderChain(config, { ...deps().deps, secrets: { inworld: "kc" } }).name).toBe(
+    "inworld>say",
+  );
+});
+
+test("wrap is applied to every provider", () => {
+  const wrapped: string[] = [];
+  const config = resolveConfig({ provider: { chain: ["inworld", "say"] } });
+  createProviderChain(config, {
+    ...deps({ INWORLD_API_KEY: "k" }).deps,
+    wrap: (p) => {
+      wrapped.push(p.name);
+      return p;
+    },
+  });
+  expect(wrapped).toEqual(["inworld", "say"]);
+});
