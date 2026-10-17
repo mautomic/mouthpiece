@@ -13,7 +13,10 @@ export interface SayProviderOptions {
   tmpDir: string;
   voice?: string;
   command?: string;
-  /** Receives a warning when a voice is not installed and `say` falls back to the system voice. */
+  /**
+   * Receives a warning when a voice is not installed and `say` falls back to the system voice.
+   * macOS currently falls back on its own (`say -v <unknown>` exits 0); the retry covers non-zero exits.
+   */
   log?: Logger;
 }
 
