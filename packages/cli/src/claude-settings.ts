@@ -1,21 +1,15 @@
 import { chmod, mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { type Env, isRecord } from "@mouthpiece/core";
+import { dirname } from "node:path";
+import { isRecord } from "@mouthpiece/core";
+import { type HookSpec, type HookTarget, TARGETS } from "./hook-targets.ts";
 
-/** Our hook entries are recognized by this path in their command. */
-export const HOOK_MARKER = "/adapters/claude-code/src/main.ts";
+export { claudeSettingsPath, type HookSpec } from "./hook-targets.ts";
 
-export interface HookSpec {
-  bun: string;
-  hookMain: string;
-  idleAlerts: boolean;
-}
+/** Our Claude Code hook entries are recognized by this path in their command. */
+export const HOOK_MARKER = TARGETS["claude-code"].marker;
 
-type Group = Record<string, unknown> & { hooks: unknown[] };
-
-const isOurs = (hook: unknown) =>
-  isRecord(hook) && typeof hook.command === "string" && hook.command.includes(HOOK_MARKER);
+const isOurs = (hook: unknown, marker: string) =>
+  isRecord(hook) && typeof hook.command === "string" && hook.command.includes(marker);
 
 function asObject(settings: unknown): Record<string, unknown> {
   if (settings === undefined) return {};
@@ -23,25 +17,11 @@ function asObject(settings: unknown): Record<string, unknown> {
   return structuredClone(settings);
 }
 
-function ourGroups(spec: HookSpec): Record<string, Group[]> {
-  const command = (event: string) => ({
-    type: "command",
-    command: `${JSON.stringify(spec.bun)} ${JSON.stringify(spec.hookMain)} ${event}`,
-    async: true,
-  });
-  return {
-    Stop: [{ hooks: [command("stop")] }],
-    UserPromptSubmit: [{ hooks: [command("prompt")] }],
-    Notification: [
-      {
-        matcher: spec.idleAlerts ? "permission_prompt|idle_prompt" : "permission_prompt",
-        hooks: [command("notify")],
-      },
-    ],
-  };
-}
-
-export function removeHooks(settings: unknown): {
+/** Removes the target's entries (claude-code by default), pruning groups and events left empty. */
+export function removeHooks(
+  settings: unknown,
+  target: HookTarget = TARGETS["claude-code"],
+): {
   settings: Record<string, unknown>;
   removed: number;
 } {
@@ -58,7 +38,7 @@ export function removeHooks(settings: unknown): {
         continue;
       }
       const remaining = group.hooks.filter((hook) => {
-        if (!isOurs(hook)) return true;
+        if (!isOurs(hook, target.marker)) return true;
         removed++;
         return false;
       });
@@ -71,21 +51,28 @@ export function removeHooks(settings: unknown): {
   return { settings: out, removed };
 }
 
-export function mergeHooks(settings: unknown, spec: HookSpec): Record<string, unknown> {
-  const { settings: clean } = removeHooks(settings);
+/** Replaces the target's entries (claude-code when called with two arguments); idempotent. */
+export function mergeHooks(settings: unknown, spec: HookSpec): Record<string, unknown>;
+export function mergeHooks(
+  settings: unknown,
+  target: HookTarget,
+  spec: HookSpec,
+): Record<string, unknown>;
+export function mergeHooks(
+  settings: unknown,
+  targetOrSpec: HookTarget | HookSpec,
+  maybeSpec?: HookSpec,
+): Record<string, unknown> {
+  const [target, spec] = maybeSpec
+    ? [targetOrSpec as HookTarget, maybeSpec]
+    : [TARGETS["claude-code"], targetOrSpec as HookSpec];
+  const { settings: clean } = removeHooks(settings, target);
   const hooks: Record<string, unknown> = isRecord(clean.hooks) ? clean.hooks : {};
-  for (const [event, groups] of Object.entries(ourGroups(spec))) {
+  for (const [event, groups] of Object.entries(target.groups(spec))) {
     const existing = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
     hooks[event] = [...existing, ...groups];
   }
   return { ...clean, hooks };
-}
-
-export function claudeSettingsPath(env: Env): string {
-  return (
-    env.MOUTHPIECE_CLAUDE_SETTINGS ||
-    join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "settings.json")
-  );
 }
 
 /**
