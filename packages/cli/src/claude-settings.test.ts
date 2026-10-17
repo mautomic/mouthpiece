@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { claudeSettingsPath, mergeHooks, removeHooks, updateJsonFile } from "./claude-settings.ts";
@@ -76,6 +86,27 @@ test("updateJsonFile backs up, writes atomically, and refuses invalid JSON", asy
   await expect(updateJsonFile(path, () => ({}), "s3")).rejects.toThrow();
   expect(await readFile(path, "utf8")).toBe("{oops");
   expect((await readdir(dir)).some((f) => f.includes(".tmp-"))).toBe(false);
+});
+
+test("updateJsonFile writes through a symlink and keeps the file's mode", async () => {
+  await mkdir(join(dir, "dotfiles"));
+  await mkdir(join(dir, "claude"));
+  const target = join(dir, "dotfiles", "settings.json");
+  const link = join(dir, "claude", "settings.json");
+  await writeFile(target, '{"model":"opus"}', { mode: 0o600 });
+  await symlink(target, link);
+  const { backup } = await updateJsonFile(link, (c) => ({ ...(c as object), b: 2 }), "s1");
+  expect((await lstat(link)).isSymbolicLink()).toBe(true);
+  expect(JSON.parse(await readFile(target, "utf8"))).toEqual({ model: "opus", b: 2 });
+  expect((await stat(target)).mode & 0o777).toBe(0o600);
+  expect((await stat(backup ?? "")).mode & 0o777).toBe(0o600);
+  expect(await readFile(backup ?? "", "utf8")).toBe('{"model":"opus"}');
+});
+
+test("updateJsonFile creates a new settings file readable only by the owner", async () => {
+  const path = join(dir, "new", "settings.json");
+  await updateJsonFile(path, () => ({ a: 1 }), "s1");
+  expect((await stat(path)).mode & 0o777).toBe(0o600);
 });
 
 test("claudeSettingsPath precedence", () => {

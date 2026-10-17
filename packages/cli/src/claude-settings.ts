@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Env, isRecord } from "@mouthpiece/core";
@@ -88,15 +88,25 @@ export function claudeSettingsPath(env: Env): string {
   );
 }
 
-/** Read-modify-write with a backup and an atomic rename. Invalid JSON throws before anything is written. */
+/**
+ * Read-modify-write with a backup and an atomic rename. Invalid JSON throws before anything is written.
+ * A symlinked path is written through to its target, and the file's mode is kept (0600 for a new file),
+ * since settings can hold secrets.
+ */
 export async function updateJsonFile(
   path: string,
   update: (current: unknown) => unknown,
   stamp: string,
 ): Promise<{ backup: string | null }> {
+  const target = await realpath(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return path;
+    throw error;
+  });
   let text: string | null = null;
+  let mode = 0o600;
   try {
-    text = await readFile(path, "utf8");
+    text = await readFile(target, "utf8");
+    mode = (await stat(target)).mode & 0o777;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
@@ -104,11 +114,13 @@ export async function updateJsonFile(
   let backup: string | null = null;
   if (text !== null) {
     backup = `${path}.bak-mouthpiece-${stamp}`;
-    await writeFile(backup, text);
+    await writeFile(backup, text, { mode });
+    await chmod(backup, mode);
   }
-  await mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp-${process.pid}`;
-  await writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`);
-  await rename(tmp, path);
+  await mkdir(dirname(target), { recursive: true });
+  const tmp = `${target}.tmp-${process.pid}`;
+  await writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode });
+  await chmod(tmp, mode);
+  await rename(tmp, target);
   return { backup };
 }
