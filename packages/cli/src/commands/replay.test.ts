@@ -26,6 +26,7 @@ function harness(response: ReplayResponse) {
         return response;
       },
       usage: async () => ({ from: "", to: "", rows: [], quotas: [] }),
+      voices: async () => ({ providers: [] }),
     },
     startDaemon: async () => ({ url: "http://127.0.0.1:7317" }),
     env: {},

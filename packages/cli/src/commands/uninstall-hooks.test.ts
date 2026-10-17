@@ -38,6 +38,7 @@ function harness() {
       setMode: unused,
       replay: unused,
       usage: unused,
+      voices: unused,
     },
     startDaemon: unused,
     env: { MOUTHPIECE_CLAUDE_SETTINGS: settingsPath },

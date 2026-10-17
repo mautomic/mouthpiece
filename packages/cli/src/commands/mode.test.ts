@@ -29,6 +29,7 @@ function harness() {
       },
       replay: async () => ({ id: null }),
       usage: async () => ({ from: "", to: "", rows: [], quotas: [] }),
+      voices: async () => ({ providers: [] }),
     },
     startDaemon: async () => ({ url: "http://127.0.0.1:7317" }),
     env: {},

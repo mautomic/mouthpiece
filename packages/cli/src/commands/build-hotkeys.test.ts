@@ -39,6 +39,7 @@ function harness(exec: Exec) {
       setMode: unused,
       replay: unused,
       usage: unused,
+      voices: unused,
     },
     startDaemon: unused,
     env: { MOUTHPIECE_HOME: home },

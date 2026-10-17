@@ -1,14 +1,15 @@
-import { parseArgs } from "node:util";
-import { KINDS, type Kind, type SpeakEvent } from "@mouthpiece/core";
 import { authCommand } from "./commands/auth.ts";
 import { buildHotkeysCommand } from "./commands/build-hotkeys.ts";
 import { installAgentCommand } from "./commands/install-agent.ts";
 import { installHooksCommand } from "./commands/install-hooks.ts";
 import { modeCommand } from "./commands/mode.ts";
 import { replayCommand } from "./commands/replay.ts";
+import { sayCommand } from "./commands/say.ts";
+import { tailCommand } from "./commands/tail.ts";
 import { uninstallAgentCommand } from "./commands/uninstall-agent.ts";
 import { uninstallHooksCommand } from "./commands/uninstall-hooks.ts";
 import { usageCommand } from "./commands/usage.ts";
+import { voicesCommand } from "./commands/voices.ts";
 import type { CliDeps, CliIO } from "./types.ts";
 
 export type { CliDeps, CliIO } from "./types.ts";
@@ -21,6 +22,9 @@ const USAGE = `usage: mouthpiece <command>
   mode [summary|full|off|toggle|clear] [--source s] [--conversation c]
   replay [--full]
   usage [--month YYYY-MM]
+  voices [--provider p]                   list each provider's voices
+  tail --format codex|gemini|lines [--path p] [--source s] [--label l]
+                                          speak new messages from a session log
   install-hooks [--idle-alerts] | uninstall-hooks
   install-agent | uninstall-agent
   auth <provider> [--delete]          (key on stdin)
@@ -36,7 +40,7 @@ export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<num
         return 0;
       }
       case "say":
-        return await say(rest, io, deps);
+        return await sayCommand(rest, io, deps);
       case "stop":
         io.out(`${JSON.stringify(await deps.client.stop())}\n`);
         return 0;
@@ -52,6 +56,10 @@ export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<num
         return await replayCommand(rest, io, deps);
       case "usage":
         return await usageCommand(rest, io, deps);
+      case "voices":
+        return await voicesCommand(rest, io, deps);
+      case "tail":
+        return await tailCommand(rest, io, deps);
       case "install-hooks":
         return await installHooksCommand(rest, io, deps);
       case "uninstall-hooks":
@@ -72,42 +80,4 @@ export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<num
     io.err(`mouthpiece: ${(error as Error).message}\n`);
     return 1;
   }
-}
-
-async function say(args: string[], io: CliIO, deps: CliDeps): Promise<number> {
-  const { values, positionals } = parseArgs({
-    args,
-    allowPositionals: true,
-    options: {
-      source: { type: "string", default: "cli" },
-      label: { type: "string" },
-      kind: { type: "string", default: "response" },
-      plain: { type: "boolean", default: false },
-    },
-  });
-  if (!KINDS.includes(values.kind as Kind)) {
-    io.err(`mouthpiece: --kind must be one of ${KINDS.join(", ")}\n`);
-    return 2;
-  }
-  const text = (await readText(positionals, io)).trim();
-  if (!text) {
-    io.err("mouthpiece: nothing to say (pass text or pipe it in)\n");
-    return 2;
-  }
-  const event: SpeakEvent = {
-    text,
-    source: values.source,
-    ...(values.label ? { label: values.label } : {}),
-    kind: values.kind as Kind,
-    format: values.plain ? "plain" : "markdown",
-  };
-  io.out(`${JSON.stringify(await deps.client.speak(event))}\n`);
-  return 0;
-}
-
-/** Positional text wins; otherwise read piped stdin (never block on an interactive terminal). */
-async function readText(positionals: string[], io: CliIO): Promise<string> {
-  if (positionals.length > 0) return positionals.join(" ");
-  if (io.stdinIsTTY) return "";
-  return io.readStdin();
 }

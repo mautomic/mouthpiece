@@ -13,6 +13,7 @@ const ev = (text: string, extra: Partial<NormalizedSpeakEvent> = {}): Normalized
   priority: "normal",
   mode: undefined,
   format: "plain",
+  voice: undefined,
   ...extra,
 });
 

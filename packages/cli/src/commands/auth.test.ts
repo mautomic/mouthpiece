@@ -26,6 +26,7 @@ function harness(opts: { stdin?: string; tty?: boolean; code?: number } = {}) {
       setMode: unused,
       replay: unused,
       usage: unused,
+      voices: unused,
     },
     startDaemon: unused,
     env: {},

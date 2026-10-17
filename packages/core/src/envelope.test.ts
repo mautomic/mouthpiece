@@ -21,8 +21,20 @@ describe("parseSpeakEvent", () => {
         priority: "normal",
         mode: undefined,
         format: "markdown",
+        voice: undefined,
       },
     });
+  });
+
+  test("voice is optional, kept when set, and present as undefined when absent", () => {
+    const set = parseSpeakEvent({ text: "x", source: "cli", voice: "Samantha" });
+    expect(set.ok && set.value.voice).toBe("Samantha");
+    const absent = parseSpeakEvent({ text: "x", source: "cli" });
+    expect(absent.ok).toBe(true);
+    if (absent.ok) {
+      expect("voice" in absent.value).toBe(true);
+      expect(absent.value.voice).toBeUndefined();
+    }
   });
 
   test("alerts default to high priority; explicit priority wins", () => {
@@ -76,6 +88,8 @@ describe("parseSpeakEvent", () => {
       { text: "x", source: "cli", conversationId: "c".repeat(257) },
       "conversationId must be at most 256 characters",
     ],
+    [{ text: "x", source: "cli", voice: "v".repeat(101) }, "voice must be at most 100 characters"],
+    [{ text: "x", source: "cli", voice: 3 }, "voice must be a string"],
   ])("rejects %p", (input, message) => {
     const r = parseSpeakEvent(input);
     expect(r.ok).toBe(false);

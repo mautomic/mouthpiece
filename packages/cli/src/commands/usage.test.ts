@@ -26,6 +26,7 @@ const REPORT: UsageReport = {
       projectedChars: 13_020,
       cycleStart: "2026-10-01T07:00:00.000Z",
       cycleEnd: "2026-11-01T07:00:00.000Z",
+      level: "ok",
     },
   ],
 };
@@ -53,6 +54,7 @@ function harness(report: UsageReport) {
         usageCalls.push({ ...opts });
         return report;
       },
+      voices: async () => ({ providers: [] }),
     },
     startDaemon: async () => ({ url: "http://127.0.0.1:7317" }),
     env: {},

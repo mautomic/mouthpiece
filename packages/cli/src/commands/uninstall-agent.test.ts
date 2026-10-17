@@ -38,6 +38,7 @@ function harness(bootoutCode = 0) {
       setMode: unused,
       replay: unused,
       usage: unused,
+      voices: unused,
     },
     startDaemon: unused,
     env: { MOUTHPIECE_LAUNCH_AGENTS_DIR: dir, MOUTHPIECE_HOME: join(dir, "home") },

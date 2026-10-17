@@ -11,7 +11,7 @@ export interface CliIO {
 export interface CliDeps {
   client: Pick<
     typeof Client,
-    "speak" | "stop" | "skip" | "health" | "getMode" | "setMode" | "replay" | "usage"
+    "speak" | "stop" | "skip" | "health" | "getMode" | "setMode" | "replay" | "usage" | "voices"
   >;
   startDaemon(): Promise<{ url: string }>;
   env: Env;

@@ -25,6 +25,8 @@ export interface SpeakEvent {
   priority?: Priority;
   mode?: Mode;
   format?: Format;
+  /** Provider voice for this event; overrides the per-label map and the provider default (≤ 100 chars). */
+  voice?: string;
 }
 
 /** A SpeakEvent after validation, with defaults applied. */
@@ -37,6 +39,7 @@ export interface NormalizedSpeakEvent {
   priority: Priority;
   mode: Mode | undefined;
   format: Format;
+  voice: string | undefined;
 }
 
 export type SpeakResponse = { id: string } | { id: null; skipped: string };
@@ -73,6 +76,22 @@ export interface SynthesizeOptions {
   signal?: AbortSignal;
   /** Attribution for usage metering (the event's source). */
   tag?: string;
+  /** The event's label (e.g. a project name); selects a per-label voice from `[voices.<provider>]`. */
+  label?: string;
+}
+
+export interface VoiceInfo {
+  id: string;
+  name: string;
+  language?: string;
+}
+
+/** Usage as reported by the provider itself, for providers with a usage API. */
+export interface ProviderUsage {
+  usedChars: number;
+  limitChars: number;
+  /** ISO 8601. */
+  resetsAt?: string;
 }
 
 export interface TtsProvider {
@@ -83,6 +102,10 @@ export interface TtsProvider {
   readonly cacheKey?: string;
   /** Resolves once audio starts arriving; chunks stream afterwards. Rejects on failure to start. */
   synthesize(text: string, opts?: SynthesizeOptions): Promise<AudioClip>;
+  /** Voices this provider offers. */
+  listVoices?(): Promise<VoiceInfo[]>;
+  /** Usage reported by the provider for its current billing period; undefined when unavailable. */
+  usageStatus?(): Promise<ProviderUsage | undefined>;
 }
 
 export interface Player {
@@ -146,6 +169,14 @@ export interface UsageRow {
   costUsd: number;
 }
 
+export interface VoicesResponse {
+  /** One entry per provider; a provider whose listing failed has `voices: []` and `error`. */
+  providers: { provider: string; voices: VoiceInfo[]; error?: string }[];
+}
+
+/** `ok` below `usage.warnAt`, `warn` at or above it, `exceeded` at or above 100%. */
+export type QuotaLevel = "ok" | "warn" | "exceeded";
+
 export interface QuotaStatus {
   provider: string;
   limitChars: number;
@@ -154,6 +185,9 @@ export interface QuotaStatus {
   projectedChars: number;
   cycleStart: string;
   cycleEnd: string;
+  level: QuotaLevel;
+  /** What the provider itself reports, when it has a usage API. */
+  providerReported?: ProviderUsage;
 }
 
 export interface UsageReport {
@@ -161,4 +195,8 @@ export interface UsageReport {
   to: string;
   rows: UsageRow[];
   quotas: QuotaStatus[];
+  /** Present when `usage.monthlyBudgetUsd` is configured; covers the current billing cycle. */
+  budget?: { limitUsd: number; spentUsd: number; projectedUsd: number; level: QuotaLevel };
+  /** Summarizer calls in the report range. */
+  summaries?: { calls: number; failures: number; medianMs: number | null };
 }

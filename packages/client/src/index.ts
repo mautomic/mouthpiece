@@ -13,6 +13,7 @@ import {
   type SpeakEvent,
   type SpeakResponse,
   type UsageReport,
+  type VoicesResponse,
 } from "@mouthpiece/core";
 
 export interface ClientOptions {
@@ -97,6 +98,13 @@ export const usage = (opts: ClientOptions & { month?: string } = {}) =>
   request<UsageReport>(
     "GET",
     `/v1/usage${opts.month ? `?month=${encodeURIComponent(opts.month)}` : ""}`,
+    undefined,
+    opts,
+  );
+export const voices = (opts: ClientOptions & { provider?: string } = {}) =>
+  request<VoicesResponse>(
+    "GET",
+    `/v1/voices${opts.provider ? `?provider=${encodeURIComponent(opts.provider)}` : ""}`,
     undefined,
     opts,
   );

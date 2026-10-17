@@ -21,6 +21,7 @@ function item(text: string, extra: Partial<NormalizedSpeakEvent> = {}): QueueIte
       priority: "normal",
       mode: undefined,
       format: "markdown",
+      voice: undefined,
       ...extra,
     },
   };

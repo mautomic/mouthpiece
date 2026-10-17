@@ -12,6 +12,7 @@ function event(text: string, extra: Partial<NormalizedSpeakEvent> = {}): Normali
     priority: "normal",
     mode: undefined,
     format: "plain",
+    voice: undefined,
     ...extra,
   };
 }

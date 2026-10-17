@@ -10,7 +10,13 @@ export interface Config {
     chain: string[];
     say: { voice?: string };
     inworld: { model: string; voice: string };
+    elevenlabs: { model: string; voice: string };
+    /** Deepgram's voice is its model (e.g. `aura-2-thalia-en`). */
+    deepgram: { model: string };
+    openai: { model: string; voice: string; instructions?: string };
   };
+  /** `[voices.<provider>] "<label>" = "<voice>"`: per-label (e.g. per-project) voice for each provider. */
+  voices: Record<string, Record<string, string>>;
   filter: { minChars: number; trivial: string[] };
   queue: { expireAfterMs: number; labelWindowMs: number };
   fallback: { firstByteTimeoutMs: number };
@@ -26,7 +32,14 @@ export interface Config {
   };
   history: { maxItems: number; maxAgeMs: number };
   cache: { maxBytes: number };
-  usage: { resetDay: number; quotas: Record<string, { chars: number }> };
+  usage: {
+    resetDay: number;
+    quotas: Record<string, { chars: number }>;
+    /** Fraction of a quota or budget (0 < x < 1) at which a warning is spoken. */
+    warnAt: number;
+    /** Optional cap on total provider cost per billing cycle. */
+    monthlyBudgetUsd?: number;
+  };
   alerts: { dedupeWindowMs: number };
   hotkeys: { enabled: boolean; stop: string; skip: string; replay: string; toggleMode: string };
 }
@@ -36,7 +49,11 @@ export const DEFAULT_CONFIG: Config = {
     chain: ["say"],
     say: {},
     inworld: { model: "inworld-tts-2-flash", voice: "Ashley" },
+    elevenlabs: { model: "eleven_flash_v2_5", voice: "JBFqnCBsd6RMkjVDRZzb" },
+    deepgram: { model: "aura-2-thalia-en" },
+    openai: { model: "tts-1", voice: "alloy" },
   },
+  voices: {},
   filter: { minChars: 20, trivial: ["done", "ok", "okay", "got it", "sounds good"] },
   queue: { expireAfterMs: 5 * 60_000, labelWindowMs: 10 * 60_000 },
   fallback: { firstByteTimeoutMs: 3000 },
@@ -52,7 +69,7 @@ export const DEFAULT_CONFIG: Config = {
   },
   history: { maxItems: 100, maxAgeMs: 24 * 60 * 60_000 },
   cache: { maxBytes: 200 * 1024 * 1024 },
-  usage: { resetDay: 1, quotas: {} },
+  usage: { resetDay: 1, quotas: {}, warnAt: 0.8 },
   alerts: { dedupeWindowMs: 60_000 },
   hotkeys: {
     enabled: true,
@@ -96,6 +113,9 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
   const provider = table(root.provider, "provider");
   const say = table(provider.say, "provider.say");
   const inworld = table(provider.inworld, "provider.inworld");
+  const elevenlabs = table(provider.elevenlabs, "provider.elevenlabs");
+  const deepgram = table(provider.deepgram, "provider.deepgram");
+  const openai = table(provider.openai, "provider.openai");
   const filter = table(root.filter, "filter");
   const queue = table(root.queue, "queue");
   const fallback = table(root.fallback, "fallback");
@@ -120,7 +140,22 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
           optional(inworld.voice, "provider.inworld.voice", nonEmptyString) ??
           base.provider.inworld.voice,
       },
+      elevenlabs: {
+        model:
+          optional(elevenlabs.model, "provider.elevenlabs.model", nonEmptyString) ??
+          base.provider.elevenlabs.model,
+        voice:
+          optional(elevenlabs.voice, "provider.elevenlabs.voice", nonEmptyString) ??
+          base.provider.elevenlabs.voice,
+      },
+      deepgram: {
+        model:
+          optional(deepgram.model, "provider.deepgram.model", nonEmptyString) ??
+          base.provider.deepgram.model,
+      },
+      openai: resolveOpenAi(openai, base.provider.openai),
     },
+    voices: resolveVoices(root.voices, base.voices),
     filter: {
       minChars:
         optional(filter.minChars, "filter.minChars", nonNegativeInt) ?? base.filter.minChars,
@@ -177,6 +212,12 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
     usage: {
       resetDay: optional(usage.resetDay, "usage.resetDay", dayOfMonth) ?? base.usage.resetDay,
       quotas: resolveQuotas(usage.quotas, base.usage.quotas),
+      warnAt: optional(usage.warnAt, "usage.warnAt", fraction) ?? base.usage.warnAt,
+      ...optionalField(
+        "monthlyBudgetUsd",
+        optional(usage.monthlyBudgetUsd, "usage.monthlyBudgetUsd", positiveNumber) ??
+          base.usage.monthlyBudgetUsd,
+      ),
     },
     alerts: {
       dedupeWindowMs:
@@ -242,6 +283,26 @@ function positiveInt(value: unknown, name: string): number {
   return n;
 }
 
+function positiveNumber(value: unknown, name: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new ConfigError(`${name} must be a positive number`);
+  }
+  return value;
+}
+
+/** A number strictly between 0 and 1. */
+function fraction(value: unknown, name: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value >= 1) {
+    throw new ConfigError(`${name} must be a number between 0 and 1 (exclusive)`);
+  }
+  return value;
+}
+
+/** `{ [key]: value }` when value is defined, else `{}`, so absent optional keys stay absent. */
+function optionalField<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
+  return (value === undefined ? {} : { [key]: value }) as { [P in K]?: V };
+}
+
 function oneOf<T extends string>(allowed: readonly T[]) {
   return (value: unknown, name: string): T => {
     if (typeof value !== "string" || !(allowed as readonly string[]).includes(value)) {
@@ -278,6 +339,35 @@ function resolveQuotas(raw: unknown, base: Config["usage"]["quotas"]): Config["u
   for (const [provider, value] of Object.entries(table(raw, "usage.quotas"))) {
     const quota = table(value, `usage.quotas.${provider}`);
     out[provider] = { chars: positiveInt(quota.chars, `usage.quotas.${provider}.chars`) };
+  }
+  return out;
+}
+
+function resolveOpenAi(
+  raw: Record<string, unknown>,
+  base: Config["provider"]["openai"],
+): Config["provider"]["openai"] {
+  return {
+    model: optional(raw.model, "provider.openai.model", nonEmptyString) ?? base.model,
+    voice: optional(raw.voice, "provider.openai.voice", nonEmptyString) ?? base.voice,
+    ...optionalField(
+      "instructions",
+      optional(raw.instructions, "provider.openai.instructions", nonEmptyString) ??
+        base.instructions,
+    ),
+  };
+}
+
+function resolveVoices(raw: unknown, base: Config["voices"]): Config["voices"] {
+  if (raw === undefined) return base;
+  const out: Config["voices"] = {};
+  for (const [provider, value] of Object.entries(table(raw, "voices"))) {
+    if (!isRecord(value)) throw new ConfigError(`voices.${provider} must be a table`);
+    const map: Record<string, string> = {};
+    for (const [label, voice] of Object.entries(value)) {
+      map[label] = nonEmptyString(voice, `voices.${provider}.${label}`);
+    }
+    out[provider] = map;
   }
   return out;
 }

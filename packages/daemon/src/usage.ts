@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import type {
   AudioClip,
   Config,
+  QuotaLevel,
   SynthesizeOptions,
   TtsProvider,
   UsageReport,
@@ -89,6 +90,12 @@ export class UsageStore {
         projectedChars: Math.round((used / elapsedDays) * cycleDays),
         cycleStart: cycle.start.toISOString(),
         cycleEnd: cycle.end.toISOString(),
+        // Placeholder until Phase 3 Task 4 (levelFor with usage.warnAt).
+        level: (used >= limitChars
+          ? "exceeded"
+          : used >= limitChars * 0.8
+            ? "warn"
+            : "ok") as QuotaLevel,
       };
     });
     return { from: opts.from.toISOString(), to: opts.to.toISOString(), rows, quotas };

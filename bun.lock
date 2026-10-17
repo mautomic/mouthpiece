@@ -55,6 +55,14 @@
         "@mouthpiece/client": "workspace:*",
       },
     },
+    "packages/hook-kit": {
+      "name": "@mouthpiece/hook-kit",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/client": "workspace:*",
+        "@mouthpiece/core": "workspace:*",
+      },
+    },
     "packages/hotkeys": {
       "name": "@mouthpiece/hotkeys",
       "version": "0.1.0",
@@ -105,6 +113,8 @@
     "@mouthpiece/core": ["@mouthpiece/core@workspace:packages/core"],
 
     "@mouthpiece/daemon": ["@mouthpiece/daemon@workspace:packages/daemon"],
+
+    "@mouthpiece/hook-kit": ["@mouthpiece/hook-kit@workspace:packages/hook-kit"],
 
     "@mouthpiece/hotkeys": ["@mouthpiece/hotkeys@workspace:packages/hotkeys"],
 

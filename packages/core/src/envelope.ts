@@ -13,6 +13,7 @@ import { isRecord } from "./guards.ts";
 export const MAX_TEXT_CHARS = 100_000;
 export const MAX_CONVERSATION_ID_CHARS = 256;
 export const MAX_LABEL_CHARS = 100;
+export const MAX_VOICE_CHARS = 100;
 export const DEFAULT_CONVERSATION_ID = "default";
 const SOURCE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
@@ -92,6 +93,7 @@ export function parseSpeakEvent(input: unknown): ParseResult<NormalizedSpeakEven
         optionalEnum(input, "priority", PRIORITIES) ?? (kind === "alert" ? "high" : "normal"),
       mode: optionalEnum(input, "mode", MODES),
       format: optionalEnum(input, "format", FORMATS) ?? "markdown",
+      voice: optionalString(input, "voice", MAX_VOICE_CHARS),
     };
   });
 }

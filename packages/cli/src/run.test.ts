@@ -31,6 +31,7 @@ function harness(opts: { stdin?: string; tty?: boolean; fail?: boolean } = {}) {
       setMode: async () => ({ default: "summary", overrides: [] }),
       replay: async () => ({ id: null }),
       usage: async () => ({ from: "2026-10-01", to: "2026-11-01", rows: [], quotas: [] }),
+      voices: async () => ({ providers: [] }),
     },
     startDaemon: async () => ({ url: "http://127.0.0.1:7317" }),
     env: {},
@@ -102,4 +103,17 @@ test("mode routes to its command module", async () => {
   const h = harness();
   expect(await run(["mode"], h.io, h.deps)).toBe(0);
   expect(JSON.parse(h.out.join(""))).toEqual({ default: "summary", overrides: [] });
+});
+
+test.each([["voices"], ["tail"]])("%s routes to its (not yet implemented) command", async (cmd) => {
+  const h = harness();
+  expect(await run([cmd], h.io, h.deps)).toBe(1);
+  expect(h.err.join("")).toContain("not implemented");
+});
+
+test("usage text lists say, voices and tail", async () => {
+  const h = harness();
+  await run([], h.io, h.deps);
+  const usage = h.err.join("");
+  for (const cmd of ["say", "voices", "tail"]) expect(usage).toContain(`  ${cmd} `);
 });

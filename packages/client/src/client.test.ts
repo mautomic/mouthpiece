@@ -11,6 +11,7 @@ import {
   setMode,
   speak,
   usage,
+  voices,
 } from "./index.ts";
 
 const seen: {
@@ -126,4 +127,11 @@ test("usage is GET /v1/usage with an optional month", async () => {
   expect(seen.at(-1)).toMatchObject({ method: "GET", path: "/v1/usage", search: "", body: "" });
   await usage({ url, token: "t", month: "2026-10" });
   expect(seen.at(-1)).toMatchObject({ method: "GET", path: "/v1/usage", search: "?month=2026-10" });
+});
+
+test("voices is GET /v1/voices with an optional provider", async () => {
+  await voices({ url, token: "t" });
+  expect(seen.at(-1)).toMatchObject({ method: "GET", path: "/v1/voices", search: "", body: "" });
+  await voices({ url, token: "t", provider: "say" });
+  expect(seen.at(-1)).toMatchObject({ method: "GET", path: "/v1/voices", search: "?provider=say" });
 });
