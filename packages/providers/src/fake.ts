@@ -20,6 +20,7 @@ export class FakeProvider implements TtsProvider {
   readonly maxCharsPerRequest: number;
   readonly pricePerMillionChars = 0;
   readonly calls: string[] = [];
+  readonly options: SynthesizeOptions[] = [];
 
   constructor(private readonly opts: FakeProviderOptions = {}) {
     this.name = opts.name ?? "fake";
@@ -28,6 +29,7 @@ export class FakeProvider implements TtsProvider {
 
   async synthesize(text: string, options: SynthesizeOptions = {}): Promise<AudioClip> {
     this.calls.push(text);
+    this.options.push(options);
     if (this.opts.delayMs) await delay(this.opts.delayMs, options.signal);
     if (this.opts.failWith) throw this.opts.failWith;
     const bytes = new TextEncoder().encode(text);

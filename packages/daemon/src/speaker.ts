@@ -2,45 +2,56 @@ import {
   type AudioClip,
   type Config,
   chunkText,
-  cleanForSpeech,
   type Logger,
   type NormalizedSpeakEvent,
   type Player,
   shouldSpeak,
   type TtsProvider,
 } from "@mouthpiece/core";
+import { speakable } from "./prepare.ts";
 import type { PlayFn } from "./queue.ts";
+import type { Prepared, SpokenRecord } from "./types.ts";
 
 export interface SpeakerDeps {
   provider: TtsProvider;
   player: Player;
   log: Logger;
   now?: () => number;
+  /**
+   * Decides what to say (see createPreparer). Defaults to speaking the full cleaned text,
+   * which keeps callers that predate the preparer working until they wire one in.
+   */
+  prepare?(event: NormalizedSpeakEvent): Promise<Prepared>;
+  onSpoken?(record: SpokenRecord): void;
 }
 
 type Synthesis = { ok: true; clip: AudioClip } | { ok: false; error: unknown };
 
-// skipReason (request path) and the speaker both need the cleaned text; clean each event once.
-const cleaned = new WeakMap<NormalizedSpeakEvent, string>();
-function speakable(e: NormalizedSpeakEvent): string {
-  if (e.format === "plain") return e.text;
-  let text = cleaned.get(e);
-  if (text === undefined) {
-    text = cleanForSpeech(e.text);
-    cleaned.set(e, text);
-  }
-  return text;
+async function prepareFull(event: NormalizedSpeakEvent): Promise<Prepared> {
+  const full = speakable(event);
+  return { mode: "full", full, summary: undefined, spoken: full };
 }
 
-/** clean → label → chunk → synthesize (next chunk prefetched while the current one plays) → play. */
+/** prepare → label → chunk → synthesize (next chunk prefetched while the current one plays) → play. */
 export function createSpeaker(deps: SpeakerDeps): PlayFn {
   const now = deps.now ?? Date.now;
+  const prepare = deps.prepare ?? prepareFull;
   return async (item, { announceLabel, signal }) => {
-    const body = speakable(item.event);
+    const prepared = await prepare(item.event);
+    if (signal.aborted) return;
+    deps.onSpoken?.({
+      id: item.id,
+      event: item.event,
+      full: prepared.full,
+      summary: prepared.summary,
+      spoken: prepared.spoken,
+      at: now(),
+    });
+    const body = prepared.spoken;
     const text = announceLabel && item.event.label ? `${item.event.label}: ${body}` : body;
     const chunks = chunkText(text, { maxChars: deps.provider.maxCharsPerRequest });
     const synthesize = (chunk: string): Promise<Synthesis> =>
-      deps.provider.synthesize(chunk, { signal }).then(
+      deps.provider.synthesize(chunk, { signal, tag: item.event.source }).then(
         (clip) => ({ ok: true, clip }),
         (error) => ({ ok: false, error }),
       );

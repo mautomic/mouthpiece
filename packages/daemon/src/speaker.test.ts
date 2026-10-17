@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test";
 import type { NormalizedSpeakEvent, TtsProvider } from "@mouthpiece/core";
 import { FakeProvider } from "@mouthpiece/providers";
+import { FirstSentencesSummarizer } from "@mouthpiece/summarizers";
 import { FakePlayer } from "./fake-player.ts";
+import { createPreparer } from "./prepare.ts";
 import type { QueueItem } from "./queue.ts";
 import { createSpeaker, skipReason } from "./speaker.ts";
+import type { SpokenRecord } from "./types.ts";
 
 function item(text: string, extra: Partial<NormalizedSpeakEvent> = {}): QueueItem {
   return {
@@ -26,12 +29,21 @@ const ctx = (announceLabel = false, signal = new AbortController().signal) => ({
   announceLabel,
   signal,
 });
+const prepare = createPreparer({
+  resolveMode: () => "full",
+  settings: () => ({
+    summarizer: undefined,
+    fallback: new FirstSentencesSummarizer(350),
+    thresholdChars: 300,
+  }),
+  log: () => {},
+}).prepare;
 
 test("cleans markdown, prefixes the label when asked, and plays chunk by chunk", async () => {
   const provider = new FakeProvider({ maxCharsPerRequest: 1000 });
   const player = new FakePlayer();
   const logs: Record<string, unknown>[] = [];
-  await createSpeaker({ provider, player, log: (r) => logs.push(r), now: () => 42 })(
+  await createSpeaker({ provider, player, log: (r) => logs.push(r), now: () => 42, prepare })(
     item("## Done\nI **fixed** the bug. Tests pass."),
     ctx(true),
   );
@@ -43,7 +55,7 @@ test("cleans markdown, prefixes the label when asked, and plays chunk by chunk",
 
 test("plain format skips cleaning", async () => {
   const player = new FakePlayer();
-  await createSpeaker({ provider: new FakeProvider(), player, log: () => {} })(
+  await createSpeaker({ provider: new FakeProvider(), player, log: () => {}, prepare })(
     item("**raw**", { format: "plain" }),
     ctx(),
   );
@@ -58,7 +70,7 @@ test("abort during prefetch plays nothing more and leaks no rejection", async ()
   const onUnhandled = (e: unknown) => unhandled.push(e);
   process.on("unhandledRejection", onUnhandled);
   setTimeout(() => controller.abort(), 45);
-  await createSpeaker({ provider, player, log: () => {} })(
+  await createSpeaker({ provider, player, log: () => {}, prepare })(
     item("One. Two. Three. Four."),
     ctx(false, controller.signal),
   );
@@ -75,7 +87,7 @@ test("continues with later chunks after a chunk fails mid-stream", async () => {
   });
   const player = new FakePlayer();
   const logs: Record<string, unknown>[] = [];
-  await createSpeaker({ provider, player, log: (r) => logs.push(r) })(
+  await createSpeaker({ provider, player, log: (r) => logs.push(r), prepare })(
     item("Good first. Bad second. Good third.", { format: "plain" }),
     ctx(),
   );
@@ -98,7 +110,7 @@ test("continues with later chunks after a chunk fails to synthesize", async () =
   };
   const player = new FakePlayer();
   const logs: Record<string, unknown>[] = [];
-  await createSpeaker({ provider: failing, player, log: (r) => logs.push(r) })(
+  await createSpeaker({ provider: failing, player, log: (r) => logs.push(r), prepare })(
     item("Good first. Bad second. Good third.", { format: "plain" }),
     ctx(),
   );
@@ -113,4 +125,45 @@ test("skipReason filters trivial responses but never alerts", () => {
   expect(skipReason(item("Done.").event, filter)).toBe("trivial");
   expect(skipReason(item("Done.", { kind: "alert" }).event, filter)).toBeNull();
   expect(skipReason(item("A meaningful response with detail.").event, filter)).toBeNull();
+});
+
+test("speaks the prepared summary, records history, and tags synthesis with the source", async () => {
+  const provider = new FakeProvider();
+  const player = new FakePlayer();
+  const records: SpokenRecord[] = [];
+  const prepare = async () => ({
+    mode: "summary" as const,
+    full: "Full text.",
+    summary: "Sum.",
+    spoken: "Sum.",
+  });
+  await createSpeaker({
+    provider,
+    player,
+    log: () => {},
+    prepare,
+    onSpoken: (r) => records.push(r),
+  })(item("ignored"), ctx());
+  expect(player.played).toEqual(["Sum."]);
+  expect(records[0]).toMatchObject({
+    id: "1",
+    full: "Full text.",
+    summary: "Sum.",
+    spoken: "Sum.",
+  });
+  expect(provider.options[0]?.tag).toBe("test");
+});
+
+test("abort while preparing plays nothing", async () => {
+  const c = new AbortController();
+  const player = new FakePlayer();
+  const prepare = async () => {
+    c.abort();
+    return { mode: "full" as const, full: "x", summary: undefined, spoken: "Something to say." };
+  };
+  await createSpeaker({ provider: new FakeProvider(), player, log: () => {}, prepare })(
+    item("x"),
+    ctx(false, c.signal),
+  );
+  expect(player.played).toEqual([]);
 });
