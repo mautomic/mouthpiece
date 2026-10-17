@@ -19,6 +19,7 @@
     "@biomejs/biome": "^2.5.15",
     "@mouthpiece/core": "workspace:*",
     "@mouthpiece/providers": "workspace:*",
+    "@mouthpiece/summarizers": "workspace:*",
     "@types/bun": "^1.4.3",
     "typescript": "^7.0.2"
   }

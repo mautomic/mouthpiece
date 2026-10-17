@@ -3,3 +3,4 @@ node_modules/
 .spike-home/
 bakeoff/
 .claude/worktrees/
+summary-eval.md
