@@ -1,6 +1,10 @@
-import type { AudioClip, SynthesizeOptions, TtsProvider } from "@mouthpiece/core";
+import type { AudioClip, SynthesizeOptions, TtsProvider, VoiceInfo } from "@mouthpiece/core";
+import { DEFAULT_STREAM_IDLE_TIMEOUT_MS, getJson, prepend } from "./http.ts";
+
+export { DEFAULT_STREAM_IDLE_TIMEOUT_MS };
 
 export const INWORLD_STREAM_URL = "https://api.inworld.ai/tts/v1/voice:stream";
+export const INWORLD_VOICES_URL = "https://api.inworld.ai/voices/v1/voices";
 
 export class InworldError extends Error {
   constructor(
@@ -18,11 +22,11 @@ export interface InworldOptions {
   voice: string;
   fetch?: typeof fetch;
   url?: string;
+  /** Voice list endpoint; injectable for tests. */
+  voicesUrl?: string;
   /** Fail the stream if no bytes arrive for this long after it starts. Default 10,000 ms. */
   streamIdleTimeoutMs?: number;
 }
-
-export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 10_000;
 
 export class InworldProvider implements TtsProvider {
   readonly name = "inworld";
@@ -64,17 +68,20 @@ export class InworldProvider implements TtsProvider {
     if (first.done) throw new InworldError("inworld stream ended without audio");
     return { format: "mp3", chunks: prepend(first.value, stream) };
   }
-}
 
-async function* prepend(
-  first: Uint8Array,
-  rest: AsyncIterator<Uint8Array>,
-): AsyncIterable<Uint8Array> {
-  try {
-    yield first;
-    for (let next = await rest.next(); !next.done; next = await rest.next()) yield next.value;
-  } finally {
-    await rest.return?.();
+  async listVoices(): Promise<VoiceInfo[]> {
+    const body = (await getJson(
+      this.opts.fetch ?? fetch,
+      this.name,
+      `${this.opts.voicesUrl ?? INWORLD_VOICES_URL}?pageSize=2000`,
+      { Authorization: `Basic ${this.opts.apiKey}` },
+    )) as { voices?: { voiceId: string; displayName?: string; languageCode?: string }[] };
+    return (body.voices ?? []).map((v) => {
+      const name = v.displayName || v.voiceId;
+      return v.languageCode
+        ? { id: v.voiceId, name, language: v.languageCode }
+        : { id: v.voiceId, name };
+    });
   }
 }
 

@@ -5,6 +5,7 @@ import {
   type SynthesizeOptions,
   singleChunk,
   type TtsProvider,
+  type VoiceInfo,
 } from "@mouthpiece/core";
 
 export interface SayProviderOptions {
@@ -54,4 +55,37 @@ export class SayProvider implements TtsProvider {
       await rm(outPath, { force: true });
     }
   }
+
+  /** Voices installed on this Mac, from `say -v '?'`. */
+  async listVoices(): Promise<VoiceInfo[]> {
+    const proc = Bun.spawn([this.opts.command ?? "say", "-v", "?"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    if (code !== 0) throw new Error(`say exited with ${code}: ${stderr.trim()}`);
+    return parseSayVoices(stdout);
+  }
+}
+
+/**
+ * `say -v '?'` lines look like `Ava (Premium)       en_US    # Hello, my name is Ava.`. Long names
+ * leave a single space before the locale (`Eddy (English (UK)) en_GB    # …`).
+ */
+const SAY_VOICE_LINE = /^(.+?)\s+([a-z]{2,3}[_-][A-Za-z0-9]+)\s+#/;
+
+/** Parses `say -v '?'` output; lines that don't match are skipped. */
+export function parseSayVoices(output: string): VoiceInfo[] {
+  const voices: VoiceInfo[] = [];
+  for (const line of output.split("\n")) {
+    const match = SAY_VOICE_LINE.exec(line);
+    const name = match?.[1]?.trim();
+    if (!match?.[2] || !name) continue;
+    voices.push({ id: name, name, language: match[2].replace("_", "-") });
+  }
+  return voices;
 }
