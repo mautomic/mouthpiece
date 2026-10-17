@@ -7,7 +7,7 @@ export interface QueueItem {
 }
 
 export interface PlayContext {
-  /** True when more than one conversation was active within labelWindowMs (US-006). */
+  /** True when more than one labeled conversation was active within labelWindowMs (US-006). */
   announceLabel: boolean;
   signal: AbortSignal;
 }
@@ -58,7 +58,9 @@ export class SpeechQueue {
   enqueue(event: NormalizedSpeakEvent): QueueItem {
     const now = this.#now();
     const key = conversationKey(event);
-    this.#lastSeen.set(key, now);
+    // Only labeled events count as active conversations (US-006): an unlabeled one, such as a
+    // quota notice, has no label to tell apart, so it must not make others announce theirs.
+    if (event.label !== undefined) this.#lastSeen.set(key, now);
     this.#pending = this.#pending.filter((p) => conversationKey(p.event) !== key);
     const item: QueueItem = {
       id: `${now.toString(36)}-${(this.#seq++).toString(36)}`,

@@ -159,6 +159,20 @@ describe("SpeechQueue", () => {
     expect(p.started[2]?.ctx.announceLabel).toBe(false);
   });
 
+  test("an unlabeled event (e.g. a quota notice) does not count as another conversation", async () => {
+    const { queue, p } = setup();
+    queue.enqueue(event("notice", { source: "mouthpiece", conversationId: "quota-0" }));
+    expect(p.started[0]?.ctx.announceLabel).toBe(false);
+    p.started[0]?.release();
+    await tick();
+    queue.enqueue(event("real", { conversationId: "1", label: "web" }));
+    await tick();
+    expect(p.texts()).toEqual(["notice", "real"]);
+    expect(p.started[1]?.ctx.announceLabel).toBe(false);
+    p.started[1]?.release();
+    await queue.idle();
+  });
+
   test("a failing play is reported and the queue continues", async () => {
     const errors: unknown[] = [];
     const played: string[] = [];

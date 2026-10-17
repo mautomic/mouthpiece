@@ -102,7 +102,12 @@ test("quota: a spoken 85% notice, then 'used up' and fallback to say (US-016)", 
   expect(usedUp.join(" ")).toStartWith("Inworld quota is used up. Using the system voice until ");
   expect(player.played[2]).toBe(second);
   expect(say.calls).toEqual(usedUp);
-  await speak({ text: "After the quota ran out.", source: "cli", format: "plain" }, o());
+  // Two quota notices played, but they are not conversations: a labeled event from the only real
+  // session is spoken without its label prefix.
+  await speak(
+    { text: "After the quota ran out.", source: "cli", label: "web", format: "plain" },
+    o(),
+  );
   await daemon.queue.idle();
   expect(say.calls.at(-1)).toBe("After the quota ran out.");
   expect(inworld.calls).toHaveLength(3);
