@@ -16,8 +16,10 @@ export type { CliDeps, CliIO } from "./types.ts";
 
 const USAGE = `usage: mouthpiece <command>
   start                                   run the daemon in the foreground
-  say [text…] [--source s] [--label l] [--kind response|alert|info] [--plain]
-                                          speak text (reads stdin when no text is given)
+  say [text…] [--file path] [--source s] [--label l] [--kind response|alert|info]
+      [--mode summary|full|off] [--voice v] [--priority high|normal|low]
+      [--plain | --markdown] [--fallback-say]
+                                          speak text (reads stdin when no text or --file is given)
   stop | skip | status
   mode [summary|full|off|toggle|clear] [--source s] [--conversation c]
   replay [--full]

@@ -120,6 +120,30 @@ describe("SpeechQueue", () => {
     expect(p.texts()).toEqual(["now"]);
   });
 
+  test("configure changes expiry for the next pump", async () => {
+    const { queue, p, nowRef } = setup();
+    queue.enqueue(event("playing", { conversationId: "1" }));
+    queue.enqueue(event("old", { conversationId: "2" }));
+    nowRef.t = 11;
+    queue.configure({ expireAfterMs: 10, labelWindowMs: 10 * 60_000 });
+    p.started[0]?.release();
+    await queue.idle();
+    expect(p.texts()).toEqual(["playing"]);
+  });
+
+  test("configure changes the label window", async () => {
+    const { queue, p, nowRef } = setup();
+    queue.enqueue(event("first", { conversationId: "1", label: "web" }));
+    p.started[0]?.release();
+    await queue.idle();
+    nowRef.t = 100;
+    queue.configure({ expireAfterMs: 5 * 60_000, labelWindowMs: 50 });
+    queue.enqueue(event("second", { conversationId: "2", label: "api" }));
+    expect(p.started[1]?.ctx.announceLabel).toBe(false);
+    p.started[1]?.release();
+    await queue.idle();
+  });
+
   test("label is announced only when more than one conversation is active in the window", async () => {
     const { queue, p, nowRef } = setup();
     queue.enqueue(event("solo", { conversationId: "1", label: "web" }));

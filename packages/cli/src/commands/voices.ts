@@ -1,7 +1,24 @@
+import { parseArgs } from "node:util";
 import type { CommandFn } from "../types.ts";
 
-/** `mouthpiece voices [--provider x]` (US-015). Stub until Phase 3 Task 9. */
-export const voicesCommand: CommandFn = async (_args, io) => {
-  io.err("mouthpiece: voices is not implemented yet\n");
-  return 1;
+/** `mouthpiece voices [--provider x]` (US-015): every provider's voices, one per line. */
+export const voicesCommand: CommandFn = async (args, io, deps) => {
+  const { values } = parseArgs({
+    args,
+    options: { provider: { type: "string" } },
+  });
+  const { providers } = await deps.client.voices(
+    values.provider ? { provider: values.provider } : {},
+  );
+  const lines: string[] = [];
+  for (const entry of providers) {
+    lines.push(`provider: ${entry.provider}`);
+    if (entry.error !== undefined) lines.push(`  (error: ${entry.error})`);
+    else if (entry.voices.length === 0) lines.push("  (no voices)");
+    for (const v of entry.voices) {
+      lines.push(`  ${[v.id, v.name, v.language].filter((f) => f !== undefined).join("  ")}`);
+    }
+  }
+  if (lines.length > 0) io.out(`${lines.join("\n")}\n`);
+  return 0;
 };

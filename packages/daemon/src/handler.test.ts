@@ -6,6 +6,7 @@ const TOKEN = "t".repeat(64);
 
 function setup(overrides: Partial<HandlerDeps> = {}) {
   const enqueued: NormalizedSpeakEvent[] = [];
+  const voiceCalls: (string | undefined)[] = [];
   const deps: HandlerDeps = {
     token: TOKEN,
     version: "0.1.0",
@@ -25,9 +26,18 @@ function setup(overrides: Partial<HandlerDeps> = {}) {
       if (month === "bad") throw new Error("month must be YYYY-MM");
       return { from: "a", to: "b", rows: [], quotas: [] };
     },
+    voices: async (provider) => {
+      voiceCalls.push(provider);
+      return {
+        providers: [
+          { provider: provider ?? "say", voices: [{ id: "Samantha", name: "Samantha" }] },
+          { provider: "inworld", voices: [], error: "HTTP 401" },
+        ],
+      };
+    },
     ...overrides,
   };
-  return { handle: createHandler(deps), enqueued };
+  return { handle: createHandler(deps), enqueued, voiceCalls };
 }
 
 const req = (method: string, path: string, body?: unknown, token: string | null = TOKEN) =>
@@ -145,4 +155,58 @@ test("phase 2 routes answer 501 until their deps are wired", async () => {
   expect((await handle(req("POST", "/v1/replay", {}))).status).toBe(501);
   expect((await handle(req("GET", "/v1/usage"))).status).toBe(501);
   expect((await handle(req("GET", "/v1/mode", undefined, null))).status).toBe(401);
+});
+
+test("voices lists every provider, including error entries", async () => {
+  const { handle, voiceCalls } = setup();
+  const res = await handle(req("GET", "/v1/voices"));
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({
+    providers: [
+      { provider: "say", voices: [{ id: "Samantha", name: "Samantha" }] },
+      { provider: "inworld", voices: [], error: "HTTP 401" },
+    ],
+  });
+  expect(voiceCalls).toEqual([undefined]);
+});
+
+test("voices passes ?provider= through", async () => {
+  const { handle, voiceCalls } = setup();
+  const res = await handle(req("GET", "/v1/voices?provider=openai"));
+  expect(res.status).toBe(200);
+  expect(voiceCalls).toEqual(["openai"]);
+});
+
+test("voices requires auth", async () => {
+  const { handle, voiceCalls } = setup();
+  expect((await handle(req("GET", "/v1/voices", undefined, null))).status).toBe(401);
+  expect(voiceCalls).toEqual([]);
+});
+
+test("voices answers 501 until its dep is wired and 500 when it throws", async () => {
+  expect((await setup({ voices: undefined }).handle(req("GET", "/v1/voices"))).status).toBe(501);
+  const failing = setup({
+    voices: async () => {
+      throw new Error("boom");
+    },
+  });
+  const res = await failing.handle(req("GET", "/v1/voices"));
+  expect(res.status).toBe(500);
+  expect(await res.json()).toEqual({ error: "boom" });
+});
+
+test("usage may be async; a rejected month is still 400", async () => {
+  const { handle } = setup({
+    usage: async (month) => {
+      if (month === "bad") throw new Error("month must be YYYY-MM");
+      return { from: month ?? "cycle", to: "b", rows: [], quotas: [] };
+    },
+  });
+  const ok = await handle(req("GET", "/v1/usage?month=2026-10"));
+  expect(ok.status).toBe(200);
+  expect(await ok.json()).toEqual({ from: "2026-10", to: "b", rows: [], quotas: [] });
+  const bad = await handle(req("GET", "/v1/usage?month=bad"));
+  expect(bad.status).toBe(400);
+  expect(await bad.json()).toEqual({ error: "month must be YYYY-MM" });
+  expect((await handle(req("GET", "/v1/usage", undefined, null))).status).toBe(401);
 });

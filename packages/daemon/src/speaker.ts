@@ -42,10 +42,17 @@ export function createSpeaker(deps: SpeakerDeps): PlayFn {
     const text = announceLabel && item.event.label ? `${item.event.label}: ${body}` : body;
     const chunks = chunkText(text, { maxChars: deps.provider.maxCharsPerRequest });
     const synthesize = (chunk: string): Promise<Synthesis> =>
-      deps.provider.synthesize(chunk, { signal, tag: item.event.source }).then(
-        (clip) => ({ ok: true, clip }),
-        (error) => ({ ok: false, error }),
-      );
+      deps.provider
+        .synthesize(chunk, {
+          signal,
+          tag: item.event.source,
+          voice: item.event.voice,
+          label: item.event.label,
+        })
+        .then(
+          (clip) => ({ ok: true, clip }),
+          (error) => ({ ok: false, error }),
+        );
     const logChunkFailure = (chunk: number, error: unknown) =>
       deps.log({ level: "error", msg: "chunk_failed", id: item.id, chunk, error: String(error) });
     const [firstChunk] = chunks;

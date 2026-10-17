@@ -105,10 +105,16 @@ test("mode routes to its command module", async () => {
   expect(JSON.parse(h.out.join(""))).toEqual({ default: "summary", overrides: [] });
 });
 
-test.each([["voices"], ["tail"]])("%s routes to its (not yet implemented) command", async (cmd) => {
+test.each([["tail"]])("%s routes to its (not yet implemented) command", async (cmd) => {
   const h = harness();
   expect(await run([cmd], h.io, h.deps)).toBe(1);
   expect(h.err.join("")).toContain("not implemented");
+});
+
+test("voices routes to its command module", async () => {
+  const h = harness();
+  expect(await run(["voices"], h.io, h.deps)).toBe(0);
+  expect(h.err.join("")).not.toContain("not implemented");
 });
 
 test("usage text lists say, voices and tail", async () => {
