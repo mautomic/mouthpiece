@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import type { CommandFn } from "../types.ts";
+import { type CommandFn, SLOW_REQUEST_TIMEOUT_MS } from "../types.ts";
 
 /** `mouthpiece voices [--provider x]` (US-015): every provider's voices, one per line. */
 export const voicesCommand: CommandFn = async (args, io, deps) => {
@@ -7,9 +7,10 @@ export const voicesCommand: CommandFn = async (args, io, deps) => {
     args,
     options: { provider: { type: "string" } },
   });
-  const { providers } = await deps.client.voices(
-    values.provider ? { provider: values.provider } : {},
-  );
+  const { providers } = await deps.client.voices({
+    timeoutMs: SLOW_REQUEST_TIMEOUT_MS,
+    ...(values.provider ? { provider: values.provider } : {}),
+  });
   const lines: string[] = [];
   for (const entry of providers) {
     lines.push(`provider: ${entry.provider}`);

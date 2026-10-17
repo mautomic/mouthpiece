@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { UsageReport } from "@mouthpiece/core";
+import { PROVIDER_USAGE_TIMEOUT_MS } from "@mouthpiece/daemon";
 import { run } from "../run.ts";
 import type { CliDeps, CliIO } from "../types.ts";
 
@@ -35,6 +36,7 @@ function harness(report: UsageReport) {
   const out: string[] = [];
   const err: string[] = [];
   const usageCalls: { month?: string }[] = [];
+  const timeouts: (number | undefined)[] = [];
   const io: CliIO = {
     out: (s) => out.push(s),
     err: (s) => err.push(s),
@@ -51,7 +53,8 @@ function harness(report: UsageReport) {
       setMode: async () => ({ default: "summary", overrides: [] }),
       replay: async () => ({ id: null }),
       usage: async (opts) => {
-        usageCalls.push({ ...opts });
+        usageCalls.push({ month: opts?.month });
+        timeouts.push(opts?.timeoutMs);
         return report;
       },
       voices: async () => ({ providers: [] }),
@@ -61,7 +64,7 @@ function harness(report: UsageReport) {
     exec: async () => ({ code: 0, stdout: "", stderr: "" }),
     paths: { repoRoot: "/repo", bun: "/bun" },
   };
-  return { io, deps, out, err, usageCalls };
+  return { io, deps, out, err, usageCalls, timeouts };
 }
 
 test("usage --month passes the month and prints rows, cost, and quota", async () => {
@@ -173,4 +176,12 @@ test("an empty report exits 0 with no quota, budget, or warnings", async () => {
   expect(text).not.toContain("budget");
   expect(text).not.toContain("summaries");
   expect(h.err).toEqual([]);
+});
+
+test("usage waits longer than the daemon's provider usage-report limit", async () => {
+  const h = harness(REPORT);
+  expect(await run(["usage"], h.io, h.deps)).toBe(0);
+  const [timeoutMs] = h.timeouts;
+  expect(timeoutMs).toBeGreaterThanOrEqual(8000);
+  expect(timeoutMs).toBeGreaterThan(PROVIDER_USAGE_TIMEOUT_MS);
 });

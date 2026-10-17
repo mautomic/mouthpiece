@@ -19,4 +19,11 @@ export interface CliDeps {
   paths: { repoRoot: string; bun: string };
 }
 
+/**
+ * Client timeout for requests where the daemon itself waits on providers: `voices` (up to
+ * VOICES_TIMEOUT_MS per provider) and `usage` (up to PROVIDER_USAGE_TIMEOUT_MS), both in
+ * packages/daemon/src/daemon.ts. Keep it above both, or the CLI gives up before the daemon replies.
+ */
+export const SLOW_REQUEST_TIMEOUT_MS = 10_000;
+
 export type CommandFn = (args: string[], io: CliIO, deps: CliDeps) => Promise<number>;

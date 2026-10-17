@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import type { QuotaLevel } from "@mouthpiece/core";
-import type { CommandFn } from "../types.ts";
+import { type CommandFn, SLOW_REQUEST_TIMEOUT_MS } from "../types.ts";
 
 const n = (x: number) => x.toLocaleString("en-US");
 const usd = (x: number) => `$${x.toFixed(2)}`;
@@ -9,7 +9,10 @@ const MARKERS: Record<QuotaLevel, string> = { ok: "", warn: " [WARN]", exceeded:
 /** `mouthpiece usage [--month YYYY-MM]`: rows, quota and budget levels, summarizer stats (US-016). */
 export const usageCommand: CommandFn = async (args, io, deps) => {
   const { values } = parseArgs({ args, options: { month: { type: "string" } } });
-  const report = await deps.client.usage(values.month ? { month: values.month } : {});
+  const report = await deps.client.usage({
+    timeoutMs: SLOW_REQUEST_TIMEOUT_MS,
+    ...(values.month ? { month: values.month } : {}),
+  });
   const header = ["provider", "source", "requests", "chars", "cached", "cost"];
   const rows = report.rows.map((r) => [
     r.provider,

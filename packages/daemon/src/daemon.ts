@@ -42,10 +42,10 @@ import { watchConfig } from "./watch.ts";
 
 export const VERSION = "0.3.0";
 
-/** How long `GET /v1/voices` waits for one provider's voice list. */
-const VOICES_TIMEOUT_MS = 5_000;
-/** How long `GET /v1/usage` waits for one provider's own usage report. */
-const PROVIDER_USAGE_TIMEOUT_MS = 3_000;
+/** How long `GET /v1/voices` waits for one provider's voice list. The CLI's SLOW_REQUEST_TIMEOUT_MS must exceed it. */
+export const VOICES_TIMEOUT_MS = 5_000;
+/** How long `GET /v1/usage` waits for one provider's own usage report. The CLI's SLOW_REQUEST_TIMEOUT_MS must exceed it. */
+export const PROVIDER_USAGE_TIMEOUT_MS = 3_000;
 
 export interface DaemonOptions {
   env?: Env;
