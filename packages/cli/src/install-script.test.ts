@@ -1,7 +1,7 @@
 // install-script.test.ts: dry run only; never executes real installation steps.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -138,4 +138,48 @@ test("install.sh treats a failed hotkey build as non-fatal", async () => {
   const script = await Bun.file(join(REPO, "install.sh")).text();
   const line = script.split("\n").find((l) => l.includes("build-hotkeys") && l.includes("run "));
   expect(line).toMatch(/build-hotkeys \|\| /);
+});
+
+/** The exact `bash -c` command install.sh runs to write the CLI wrapper, from its dry-run plan. */
+async function wrapperCommand(): Promise<string> {
+  const r = await dryRun("install.sh");
+  const prefix = "+ bash -c ";
+  const line = r.out
+    .split("\n")
+    .find(
+      (l) => l.startsWith(prefix) && l.includes("printf") && l.includes("/.local/bin/mouthpiece"),
+    );
+  expect(line).toBeDefined();
+  return (line ?? "").slice(prefix.length);
+}
+
+test("install.sh's CLI wrapper pins the repo's bunfig.toml and skips .env files", async () => {
+  const command = await wrapperCommand();
+  expect(command).toContain('exec "%s" --config="%s" --no-env-file "%s" "$@"');
+  expect(command).toContain(`'${REPO}/bunfig.toml' '${REPO}/packages/cli/src/main.ts'`);
+  expect(await readdir(home)).toEqual([]);
+});
+
+test("the wrapper install.sh writes runs the CLI unaffected by a project bunfig.toml", async () => {
+  // Run install.sh's own wrapper-writing command; its target is inside the temp HOME.
+  const command = await wrapperCommand();
+  expect(command).toContain(`'${home}/.local/bin/mouthpiece'`);
+  await mkdir(join(home, ".local", "bin"), { recursive: true });
+  expect(await Bun.spawn(["bash", "-c", command]).exited).toBe(0);
+  const project = await mkdtemp(join(tmpdir(), "mp-hostile-"));
+  fakeBins.push(project);
+  await writeFile(join(project, "bunfig.toml"), 'preload = ["./p.ts"]\n');
+  await writeFile(join(project, "p.ts"), 'console.log("preloaded");\n');
+  await writeFile(join(project, ".env"), "MOUTHPIECE_HOME=/nonexistent\n");
+  const proc = Bun.spawn([join(home, ".local", "bin", "mouthpiece"), "--help"], {
+    cwd: project,
+    env: { PATH: process.env.PATH ?? "", HOME: home, MOUTHPIECE_HOME: home },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const out = await new Response(proc.stdout).text();
+  const err = await new Response(proc.stderr).text();
+  await proc.exited;
+  expect(out + err).not.toContain("preloaded");
+  expect(out + err).toStartWith("usage: mouthpiece");
 });

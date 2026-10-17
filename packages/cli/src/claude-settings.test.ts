@@ -31,7 +31,8 @@ test("installs Stop, UserPromptSubmit, Notification as async commands", () => {
   expect(Object.keys(s.hooks).sort()).toEqual(["Notification", "Stop", "UserPromptSubmit"]);
   expect(s.hooks.Stop?.[0]?.hooks[0]).toEqual({
     type: "command",
-    command: '"/u/.bun/bin/bun" "/repo/adapters/claude-code/src/main.ts" stop',
+    command:
+      '"/u/.bun/bin/bun" --config="/repo/bunfig.toml" --no-env-file "/repo/adapters/claude-code/src/main.ts" stop',
     async: true,
   });
   expect(s.hooks.Notification?.[0]?.matcher).toBe("permission_prompt");

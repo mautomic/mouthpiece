@@ -64,7 +64,7 @@ test("writes hooks using the configured bun and repo, and prints the path", asyn
   expect(await installHooksCommand([], h.io, h.deps)).toBe(0);
   const s = await readSettings();
   expect(s.hooks.Stop?.[0]?.hooks[0]?.command).toBe(
-    '"/u/.bun/bin/bun" "/repo/adapters/claude-code/src/main.ts" stop',
+    '"/u/.bun/bin/bun" --config="/repo/bunfig.toml" --no-env-file "/repo/adapters/claude-code/src/main.ts" stop',
   );
   expect(s.hooks.UserPromptSubmit?.[0]?.hooks[0]?.command).toEndWith(" prompt");
   expect(s.hooks.Notification?.[0]?.matcher).toBe("permission_prompt");
@@ -120,7 +120,7 @@ test("--target codex writes hooks.json only, preserves foreign hooks, and prints
   const s = JSON.parse(await readFile(hooksPath, "utf8")) as Settings;
   expect(s.hooks.Stop?.[0]).toEqual(foreign.hooks.Stop[0]);
   expect(s.hooks.Stop?.[1]?.hooks[0]?.command).toBe(
-    '"/u/.bun/bin/bun" "/repo/adapters/codex/src/main.ts" stop',
+    '"/u/.bun/bin/bun" --config="/repo/bunfig.toml" --no-env-file "/repo/adapters/codex/src/main.ts" stop',
   );
   expect(Object.keys(s.hooks).sort()).toEqual([
     "Interrupt",

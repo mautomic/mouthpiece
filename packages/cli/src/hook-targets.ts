@@ -1,7 +1,7 @@
 // hook-targets.ts: where each hook-capable tool keeps its hooks, and the entries Mouthpiece adds
 // (US-011, US-014). All three tools share the {Event: [{matcher?, hooks: [...]}]} shape.
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Env } from "@mouthpiece/core";
 
 export interface HookSpec {
@@ -28,9 +28,16 @@ function markerFor(name: TargetName): string {
   return `/adapters/${name}/src/main.ts`;
 }
 
-/** `"<bun>" "<hookMain>" <arg>`, the same for every target. */
+/**
+ * `"<bun>" --config="<repoRoot>/bunfig.toml" --no-env-file "<hookMain>" <arg>`, the same for every
+ * target. Hosts run hooks with cwd at the user's project; pinning the config and skipping `.env`
+ * keeps that project's bunfig.toml (a logging or missing preload, bad TOML) from making the hook
+ * print or exit 1 before runHook starts. The marker (hookMain's tail) still matches.
+ */
 function commandLine(spec: HookSpec, arg: string): string {
-  return `${JSON.stringify(spec.bun)} ${JSON.stringify(spec.hookMain)} ${arg}`;
+  // hookMain is <repoRoot>/adapters/<name>/src/main.ts.
+  const config = join(dirname(spec.hookMain), "..", "..", "..", "bunfig.toml");
+  return `${JSON.stringify(spec.bun)} --config=${JSON.stringify(config)} --no-env-file ${JSON.stringify(spec.hookMain)} ${arg}`;
 }
 
 export function claudeSettingsPath(env: Env): string {

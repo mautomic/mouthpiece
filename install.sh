@@ -30,7 +30,8 @@ run bash -c "cd '$REPO' && '$BUN' install"
 
 say_step "Linking the mouthpiece CLI into $BIN_DIR"
 run mkdir -p "$BIN_DIR"
-run bash -c "printf '#!/usr/bin/env bash\nexec \"%s\" \"%s\" \"\$@\"\n' '$BUN' '$REPO/packages/cli/src/main.ts' > '$MP' && chmod +x '$MP'"
+# Pin the repo's bunfig.toml and skip .env so a project's own bunfig.toml can't break the CLI.
+run bash -c "printf '#!/usr/bin/env bash\nexec \"%s\" --config=\"%s\" --no-env-file \"%s\" \"\$@\"\n' '$BUN' '$REPO/bunfig.toml' '$REPO/packages/cli/src/main.ts' > '$MP' && chmod +x '$MP'"
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "Note: add $BIN_DIR to your PATH." ;; esac
 
 say_step "Building global hotkeys"

@@ -8,7 +8,8 @@ const specFor = (name: keyof typeof TARGETS, idleAlerts = false) => ({
   hookMain: hookMainFor("/repo", name),
   idleAlerts,
 });
-const cmd = (name: string, arg: string) => `"${BUN}" "/repo/adapters/${name}/src/main.ts" ${arg}`;
+const cmd = (name: string, arg: string) =>
+  `"${BUN}" --config="/repo/bunfig.toml" --no-env-file "/repo/adapters/${name}/src/main.ts" ${arg}`;
 
 test("hookMainFor points at the adapter's main.ts", () => {
   expect(hookMainFor("/repo", "codex")).toBe("/repo/adapters/codex/src/main.ts");
@@ -154,4 +155,28 @@ test("the two-argument forms still default to claude-code", () => {
   const merged = mergeHooks(undefined, specFor("claude-code"));
   expect(merged).toEqual(mergeHooks(undefined, TARGETS["claude-code"], specFor("claude-code")));
   expect(removeHooks(merged).removed).toBe(3);
+});
+
+test("an install from before the bunfig pinning is still recognized and replaced", () => {
+  const legacy = (name: string, arg: string) =>
+    `"${BUN}" "/repo/adapters/${name}/src/main.ts" ${arg}`;
+  const old = {
+    hooks: {
+      Stop: [
+        { hooks: [foreignStop] },
+        {
+          hooks: [{ type: "command", command: legacy("codex", "stop"), async: true, timeout: 10 }],
+        },
+      ],
+      UserPromptSubmit: [
+        { hooks: [{ type: "command", command: legacy("codex", "prompt"), timeout: 5 }] },
+      ],
+    },
+  };
+  expect(removeHooks(old, TARGETS.codex).removed).toBe(2);
+  const merged = mergeHooks(old, TARGETS.codex, specFor("codex"));
+  expect(merged).toEqual(
+    mergeHooks({ hooks: { Stop: [{ hooks: [foreignStop] }] } }, TARGETS.codex, specFor("codex")),
+  );
+  expect(JSON.stringify(merged)).not.toContain(legacy("codex", "stop"));
 });
