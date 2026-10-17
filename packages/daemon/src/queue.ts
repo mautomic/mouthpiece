@@ -33,8 +33,19 @@ export class SpeechQueue {
   #lastSeen = new Map<string, number>();
   #idleWaiters: (() => void)[] = [];
   #seq = 0;
+  #expireAfterMs: number;
+  #labelWindowMs: number;
 
-  constructor(private readonly opts: SpeechQueueOptions) {}
+  constructor(private readonly opts: SpeechQueueOptions) {
+    this.#expireAfterMs = opts.expireAfterMs;
+    this.#labelWindowMs = opts.labelWindowMs;
+  }
+
+  /** Hot reload: new expiry and label window take effect from the next pump. */
+  configure(opts: { expireAfterMs: number; labelWindowMs: number }): void {
+    this.#expireAfterMs = opts.expireAfterMs;
+    this.#labelWindowMs = opts.labelWindowMs;
+  }
 
   get depth(): number {
     return this.#pending.length;
@@ -98,7 +109,7 @@ export class SpeechQueue {
   #pump(): void {
     if (this.#current) return;
     const now = this.#now();
-    this.#pending = this.#pending.filter((p) => now - p.enqueuedAt <= this.opts.expireAfterMs);
+    this.#pending = this.#pending.filter((p) => now - p.enqueuedAt <= this.#expireAfterMs);
     const item = this.#pending.shift();
     if (!item) {
       for (const resolve of this.#idleWaiters.splice(0)) resolve();
@@ -131,7 +142,7 @@ export class SpeechQueue {
   #activeConversations(now: number): number {
     let active = 0;
     for (const [key, seen] of this.#lastSeen) {
-      if (now - seen <= this.opts.labelWindowMs) active++;
+      if (now - seen <= this.#labelWindowMs) active++;
       else this.#lastSeen.delete(key);
     }
     return active;

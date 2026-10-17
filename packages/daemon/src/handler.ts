@@ -14,6 +14,7 @@ import {
   type ReplayResponse,
   type SpeakResponse,
   type UsageReport,
+  type VoicesResponse,
 } from "@mouthpiece/core";
 
 export const MAX_BODY_BYTES = 1_000_000;
@@ -34,12 +35,17 @@ export interface HandlerDeps {
   getMode?(): ModeState;
   setMode?(req: ModeRequest): ModeState;
   replay?(req: ReplayRequest): ReplayResponse;
-  /** Throws for a malformed month; the handler maps that to 400. */
-  usage?(month: string | undefined): UsageReport;
+  /** Throws (or rejects) for a malformed month; the handler maps that to 400. */
+  usage?(month: string | undefined): UsageReport | Promise<UsageReport>;
+  /**
+   * Phase 3 (US-015). Every provider's voices, or only `provider`'s when given. One provider's
+   * failure is an `error` entry, not a rejection. Optional until the daemon wires it; 501 without.
+   */
+  voices?(provider: string | undefined): Promise<VoicesResponse>;
 }
 
 type Method = "GET" | "POST";
-type Route = { auth: boolean; run: (body: unknown, url: URL) => Response };
+type Route = { auth: boolean; run: (body: unknown, url: URL) => Response | Promise<Response> };
 
 function json(status: number, body: unknown, headers?: HeadersInit): Response {
   return Response.json(body, { status, headers });
@@ -115,12 +121,25 @@ export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Resp
     "/v1/usage": {
       GET: {
         auth: true,
-        run: (_body, url) => {
+        run: async (_body, url) => {
           if (!deps.usage) return unavailable();
           try {
-            return json(200, deps.usage(url.searchParams.get("month") ?? undefined));
+            return json(200, await deps.usage(url.searchParams.get("month") ?? undefined));
           } catch (error) {
             return json(400, { error: (error as Error).message });
+          }
+        },
+      },
+    },
+    "/v1/voices": {
+      GET: {
+        auth: true,
+        run: async (_body, url) => {
+          if (!deps.voices) return unavailable();
+          try {
+            return json(200, await deps.voices(url.searchParams.get("provider") ?? undefined));
+          } catch (error) {
+            return json(500, { error: (error as Error).message });
           }
         },
       },
