@@ -1,4 +1,7 @@
 import type { AudioClip, SynthesizeOptions, TtsProvider } from "@mouthpiece/core";
+import { DEFAULT_STREAM_IDLE_TIMEOUT_MS, prepend } from "./http.ts";
+
+export { DEFAULT_STREAM_IDLE_TIMEOUT_MS };
 
 export const INWORLD_STREAM_URL = "https://api.inworld.ai/tts/v1/voice:stream";
 
@@ -21,8 +24,6 @@ export interface InworldOptions {
   /** Fail the stream if no bytes arrive for this long after it starts. Default 10,000 ms. */
   streamIdleTimeoutMs?: number;
 }
-
-export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 10_000;
 
 export class InworldProvider implements TtsProvider {
   readonly name = "inworld";
@@ -63,18 +64,6 @@ export class InworldProvider implements TtsProvider {
     const first = await stream.next();
     if (first.done) throw new InworldError("inworld stream ended without audio");
     return { format: "mp3", chunks: prepend(first.value, stream) };
-  }
-}
-
-async function* prepend(
-  first: Uint8Array,
-  rest: AsyncIterator<Uint8Array>,
-): AsyncIterable<Uint8Array> {
-  try {
-    yield first;
-    for (let next = await rest.next(); !next.done; next = await rest.next()) yield next.value;
-  } finally {
-    await rest.return?.();
   }
 }
 
