@@ -31,6 +31,14 @@
         "@mouthpiece/hook-kit": "workspace:*",
       },
     },
+    "adapters/file-tail": {
+      "name": "@mouthpiece/adapter-file-tail",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/client": "workspace:*",
+        "@mouthpiece/core": "workspace:*",
+      },
+    },
     "adapters/gemini": {
       "name": "@mouthpiece/adapter-gemini",
       "version": "0.1.0",
@@ -44,6 +52,7 @@
       "name": "@mouthpiece/cli",
       "version": "0.1.0",
       "dependencies": {
+        "@mouthpiece/adapter-file-tail": "workspace:*",
         "@mouthpiece/client": "workspace:*",
         "@mouthpiece/core": "workspace:*",
         "@mouthpiece/daemon": "workspace:*",
@@ -126,6 +135,8 @@
     "@mouthpiece/adapter-claude-code": ["@mouthpiece/adapter-claude-code@workspace:adapters/claude-code"],
 
     "@mouthpiece/adapter-codex": ["@mouthpiece/adapter-codex@workspace:adapters/codex"],
+
+    "@mouthpiece/adapter-file-tail": ["@mouthpiece/adapter-file-tail@workspace:adapters/file-tail"],
 
     "@mouthpiece/adapter-gemini": ["@mouthpiece/adapter-gemini@workspace:adapters/gemini"],
 
