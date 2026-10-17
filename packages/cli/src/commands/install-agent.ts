@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { mouthpieceHome } from "@mouthpiece/core";
-import { AGENT_LABEL, agentPlist, launchAgentsDir } from "../launchd.ts";
+import { AGENT_LABEL, agentPlist, guiDomain, launchAgentsDir } from "../launchd.ts";
 import type { CommandFn } from "../types.ts";
 
 const PASSTHROUGH_ENV = ["MOUTHPIECE_HOME", "MOUTHPIECE_CONFIG", "MOUTHPIECE_PORT"] as const;
@@ -33,7 +33,7 @@ export const installAgentCommand: CommandFn = async (_args, io, deps) => {
       env,
     }),
   );
-  const domain = `gui/${process.getuid?.() ?? 501}`;
+  const domain = guiDomain();
   await deps.exec(["launchctl", "bootout", `${domain}/${AGENT_LABEL}`]); // not loaded yet is fine
   const boot = await deps.exec(["launchctl", "bootstrap", domain, plistPath]);
   if (boot.code !== 0) {

@@ -17,27 +17,18 @@ export interface SpeakerDeps {
   player: Player;
   log: Logger;
   now?: () => number;
-  /**
-   * Decides what to say (see createPreparer). Defaults to speaking the full cleaned text,
-   * which keeps callers that predate the preparer working until they wire one in.
-   */
-  prepare?(event: NormalizedSpeakEvent): Promise<Prepared>;
+  /** Decides what to say (see createPreparer). */
+  prepare(event: NormalizedSpeakEvent): Promise<Prepared>;
   onSpoken?(record: SpokenRecord): void;
 }
 
 type Synthesis = { ok: true; clip: AudioClip } | { ok: false; error: unknown };
 
-async function prepareFull(event: NormalizedSpeakEvent): Promise<Prepared> {
-  const full = speakable(event);
-  return { mode: "full", full, summary: undefined, spoken: full };
-}
-
 /** prepare → label → chunk → synthesize (next chunk prefetched while the current one plays) → play. */
 export function createSpeaker(deps: SpeakerDeps): PlayFn {
   const now = deps.now ?? Date.now;
-  const prepare = deps.prepare ?? prepareFull;
   return async (item, { announceLabel, signal }) => {
-    const prepared = await prepare(item.event);
+    const prepared = await deps.prepare(item.event);
     if (signal.aborted) return;
     deps.onSpoken?.({
       id: item.id,

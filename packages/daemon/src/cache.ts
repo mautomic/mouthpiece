@@ -77,21 +77,19 @@ export class CachingProvider implements TtsProvider {
   }
 
   async #evict(): Promise<void> {
-    const entries = (
-      await Promise.all(
-        (
-          await readdir(this.opts.dir)
-        ).map(async (name) => {
-          const path = join(this.opts.dir, name);
-          try {
-            const s = await stat(path);
-            return { path, size: s.size, mtime: s.mtimeMs };
-          } catch {
-            return undefined; // removed concurrently
-          }
-        }),
-      )
-    ).filter((e) => e !== undefined);
+    const names = await readdir(this.opts.dir);
+    const stats = await Promise.all(
+      names.map(async (name) => {
+        const path = join(this.opts.dir, name);
+        try {
+          const s = await stat(path);
+          return { path, size: s.size, mtime: s.mtimeMs };
+        } catch {
+          return undefined; // removed concurrently
+        }
+      }),
+    );
+    const entries = stats.filter((e) => e !== undefined);
     entries.sort((a, b) => a.mtime - b.mtime);
     let total = entries.reduce((sum, e) => sum + e.size, 0);
     for (const entry of entries) {

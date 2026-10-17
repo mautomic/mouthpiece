@@ -71,17 +71,16 @@ export class UsageStore {
       .all(opts.from.getTime(), opts.to.getTime()) as UsageRow[];
     const cycle = billingCycle(opts.now, opts.resetDay);
     const day = 86_400_000;
+    const elapsedDays = Math.max(1, (opts.now.getTime() - cycle.start.getTime()) / day);
+    const cycleDays = (cycle.end.getTime() - cycle.start.getTime()) / day;
+    const usedQuery = this.#db.query(
+      "SELECT SUM(chars) AS used FROM synth WHERE provider = ? AND cached = 0 AND ts >= ? AND ts < ?",
+    );
     const quotas = Object.entries(opts.quotas).map(([provider, { chars: limitChars }]) => {
-      const used =
-        (
-          this.#db
-            .query(
-              "SELECT SUM(chars) AS used FROM synth WHERE provider = ? AND cached = 0 AND ts >= ? AND ts < ?",
-            )
-            .get(provider, cycle.start.getTime(), cycle.end.getTime()) as { used: number | null }
-        ).used ?? 0;
-      const elapsedDays = Math.max(1, (opts.now.getTime() - cycle.start.getTime()) / day);
-      const cycleDays = (cycle.end.getTime() - cycle.start.getTime()) / day;
+      const row = usedQuery.get(provider, cycle.start.getTime(), cycle.end.getTime()) as {
+        used: number | null;
+      };
+      const used = row.used ?? 0;
       return {
         provider,
         limitChars,

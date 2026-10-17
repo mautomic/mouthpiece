@@ -24,6 +24,11 @@ export function launchAgentsDir(env: Env): string {
   return env.MOUTHPIECE_LAUNCH_AGENTS_DIR || join(homedir(), "Library", "LaunchAgents");
 }
 
+/** The current user's launchd GUI domain, e.g. `gui/501`. */
+export function guiDomain(): string {
+  return `gui/${process.getuid?.() ?? 501}`;
+}
+
 /** launchd user agent running `mouthpiece start`; restarted if it crashes (FR-12). */
 export function agentPlist(spec: AgentSpec): string {
   const envEntries = { PATH: spec.pathDirs.join(":"), ...spec.env };

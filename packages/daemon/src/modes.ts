@@ -1,12 +1,11 @@
 import type { Config, Mode, ModeRequest, ModeState, NormalizedSpeakEvent } from "@mouthpiece/core";
 
 const GLOBAL = "*";
-const keyFor = (source?: string, conversationId?: string) =>
-  source === undefined
-    ? GLOBAL
-    : conversationId === undefined
-      ? source
-      : `${source}\u0000${conversationId}`;
+function keyFor(source?: string, conversationId?: string): string {
+  if (source === undefined) return GLOBAL;
+  if (conversationId === undefined) return source;
+  return `${source}\u0000${conversationId}`;
+}
 const flip = (mode: Mode): Mode => (mode === "summary" ? "full" : "summary");
 
 /** Runtime mode overrides (API/hotkeys) layered over config (US-010). */
@@ -29,9 +28,11 @@ export class ModeStore {
 
   apply(req: ModeRequest): ModeState {
     const key = keyFor(req.source, req.conversationId);
-    if (req.clear) this.#overrides.delete(key);
-    else
+    if (req.clear) {
+      this.#overrides.delete(key);
+    } else {
       this.#overrides.set(key, req.mode ?? flip(this.#effective(req.source, req.conversationId)));
+    }
     return this.state();
   }
 

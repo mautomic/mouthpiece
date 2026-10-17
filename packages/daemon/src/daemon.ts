@@ -227,9 +227,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       : watchConfig(cfgPath, {
           onChange: async (next) => {
             // Build the new chain before touching any state so a failure keeps the old config.
-            const nextProvider = opts.provider ? undefined : await buildProvider(next);
+            const nextProvider = await buildProvider(next);
             config = next;
-            if (nextProvider) provider.current = nextProvider;
+            provider.current = nextProvider;
             summarizer = buildSummarizer(next);
             modes.configure(next.modes.default, next.profiles);
             history.configure(next.history);
