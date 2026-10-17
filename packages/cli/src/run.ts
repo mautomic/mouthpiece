@@ -24,12 +24,13 @@ const USAGE = `usage: mouthpiece <command>
   mode [summary|full|off|toggle|clear] [--source s] [--conversation c]
   replay [--full]
   usage [--month YYYY-MM]
-  voices [--provider p]                   list each provider's voices
+  voices [--provider x]                   list each provider's voices
   tail --format codex|gemini|lines [--path p] [--source s] [--label l]
                                           speak new messages from a session log
-  install-hooks [--idle-alerts] | uninstall-hooks
+  install-hooks [--target claude-code|codex|gemini] [--idle-alerts]
+  uninstall-hooks [--target claude-code|codex|gemini]
   install-agent | uninstall-agent
-  auth <provider> [--delete]          (key on stdin)
+  auth <provider> [--delete]              read the API key from stdin
   build-hotkeys`;
 
 export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<number> {

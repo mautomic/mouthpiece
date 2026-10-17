@@ -31,16 +31,20 @@ Mouthpiece is a local, source-agnostic voice layer. A loopback daemon accepts te
 
 ```
 packages/core       contracts (types), envelope validation, cleaning, chunking, config, home/token
-packages/providers  TtsProvider implementations (say, inworld, …) + fallback chain
-packages/daemon     HTTP server, speech queue, speaker pipeline, player
+packages/providers  TtsProvider implementations (say, inworld, elevenlabs, deepgram, openai), voice map, fallback chain
+packages/daemon     HTTP server, speech queue, speaker pipeline, player, usage metering, quota gate
 packages/summarizers  Summarizer backends (claude -p) + first-sentence fallback
 packages/hotkeys    global hotkeys: Swift helper + TypeScript supervisor
 packages/client     @mouthpiece/client: speak/interrupt/stop/skip/health/mode/replay/usage over HTTP
+packages/hook-kit   @mouthpiece/hook-kit: silent hook runtime (runHook, HookContext, labelFromCwd) shared by hook adapters
 packages/cli        `mouthpiece` CLI
-adapters/*          everything source-specific (claude-code, codex, …)
+adapters/claude-code  Claude Code hooks
+adapters/codex      Codex CLI hooks
+adapters/gemini     Gemini CLI hooks
+adapters/file-tail  session-log tailers for tools without hooks (`mouthpiece tail`)
 ```
 
-Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client` ← `daemon` ← `cli`. `daemon` may depend on `providers`, `summarizers`, and `hotkeys`; `cli` may also depend on `hotkeys`. `adapters/*` may depend only on `core` and `client`.
+Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client` ← `daemon` ← `cli`. `daemon` may depend on `providers`, `summarizers`, and `hotkeys`; `cli` may also depend on `hotkeys` and `adapters/file-tail`. `hook-kit` may depend only on `core` and `client`. `adapters/*` may depend only on `core`, `client`, and `hook-kit`.
 
 ## Conventions
 
@@ -64,15 +68,16 @@ Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client`
 
 1. **Never touch the real user environment from code, tests, or agents:**
    - `~/.claude/settings.json`
+   - `~/.codex` (`hooks.json`, `config.toml`, sessions) and `~/.gemini` (`settings.json`, chats)
    - `~/Library/LaunchAgents`
    - the macOS Keychain
    - the real `~/.mouthpiece`
 
-   Tests set `MOUTHPIECE_HOME` and `MOUTHPIECE_CONFIG` to a temp dir. Claude Code hooks are tried with `claude --settings <file-or-json>` and never by editing user settings.
+   Tests set `MOUTHPIECE_HOME` and `MOUTHPIECE_CONFIG` (and `MOUTHPIECE_CODEX_HOOKS` / `MOUTHPIECE_GEMINI_SETTINGS` for hook installs) to a temp dir. Claude Code hooks are tried with `claude --settings <file-or-json>` and never by editing user settings.
 2. **No audio and no paid API calls in automated tests.**
    - Use `FakeProvider` / `FakePlayer`.
    - Live tests (real `say` playback, Inworld) only run when `MOUTHPIECE_LIVE_TESTS=1`.
-3. **Hook scripts** never write to stdout, always exit 0, and give up after 300 ms. If they block Claude Code, that's a bug.
+3. **Hook scripts** run through `@mouthpiece/hook-kit` `runHook()`: they never write to stdout or stderr, always exit 0, and give up after 300 ms. If they block the host tool, that's a bug (Gemini CLI retries the turn on any output or non-zero exit).
 4. **The daemon binds to `127.0.0.1` only.** Every endpoint except `GET /v1/health` requires `Authorization: Bearer <token>`.
 5. **Summarizer child processes** (`claude -p`) always run with `MOUTHPIECE_CHILD=1` in their environment. Hooks exit immediately when it is set.
 6. **Never run `install.sh`, `uninstall.sh`, `launchctl`, `security`, or `mouthpiece install-*`/`uninstall-*`/`auth` against the real system.** Use `MOUTHPIECE_DRY_RUN=1` with a temp `HOME`, and inject `exec` fakes.

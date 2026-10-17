@@ -123,3 +123,25 @@ test("usage text lists say, voices and tail", async () => {
   const usage = h.err.join("");
   for (const cmd of ["say", "voices", "tail"]) expect(usage).toContain(`  ${cmd} `);
 });
+
+test("usage text shows every flag of say, voices, tail and the hook targets", async () => {
+  const h = harness();
+  await run([], h.io, h.deps);
+  const usage = h.err.join("");
+  for (const flag of [
+    "--file path",
+    "--source s",
+    "--label l",
+    "--kind response|alert|info",
+    "--mode summary|full|off",
+    "--voice v",
+    "--priority high|normal|low",
+    "--plain | --markdown",
+    "--fallback-say",
+    "voices [--provider x]",
+    "tail --format codex|gemini|lines [--path p]",
+    "install-hooks [--target claude-code|codex|gemini] [--idle-alerts]",
+    "uninstall-hooks [--target claude-code|codex|gemini]",
+  ])
+    expect(usage).toContain(flag);
+});
