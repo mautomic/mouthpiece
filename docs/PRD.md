@@ -648,7 +648,7 @@ Either way, the summarizer is negligible next to TTS, and it cuts TTS spend by a
 **v1 implications (cheap to do now):**
 - Treat input as a pluggable **ConversationDriver** interface alongside `TtsProvider`, even if v1 only has a no-op driver:
   ```ts
-  send(source, conversationId, text): Promise<void>
+  { readonly source: string; send(conversationId, text): Promise<void> }  // one driver per source
   ```
 - Keep the conversation registry in the daemon, not in hooks. It maps `source` + `conversationId` → label, tmux pane or Discord channel, and transcript.
 - The "no STT" non-goal applies to v1 only.
