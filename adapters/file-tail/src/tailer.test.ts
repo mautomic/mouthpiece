@@ -3,7 +3,14 @@ import { appendFile, mkdir, mkdtemp, rm, truncate, utimes, writeFile } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PARSERS } from "./parsers.ts";
-import { FileTailer, type FileTailerOptions, type TailMessage } from "./tailer.ts";
+import {
+  FileTailer,
+  type FileTailerOptions,
+  FULL_SCAN_EVERY,
+  nodeTailFs,
+  type TailFs,
+  type TailMessage,
+} from "./tailer.ts";
 
 let dir: string;
 beforeEach(async () => {
@@ -13,14 +20,21 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+/** Tests run "on" 2026-10-17 (local), so date directories below are recent whatever today is. */
+const TODAY = new Date(2026, 9, 17, 12).getTime();
+
 function tailer(
   path: string,
-  opts: Partial<Pick<FileTailerOptions, "pattern" | "parser" | "now" | "fs" | "idleMs">> = {},
+  opts: Partial<
+    Pick<FileTailerOptions, "pattern" | "parser" | "now" | "fs" | "idleMs" | "rescanMs">
+  > = {},
 ) {
   const messages: TailMessage[] = [];
   const followed: string[] = [];
   const t = new FileTailer({
     parser: PARSERS.lines,
+    now: () => TODAY,
+    rescanMs: 0,
     ...opts,
     path,
     onMessage: (m) => messages.push(m),
@@ -330,4 +344,97 @@ test("start() polls on an interval and stop() ends it", async () => {
   await appendFile(file, "after stop\n");
   await Bun.sleep(30);
   expect(messages.map((m) => m.text)).toEqual(["via interval"]);
+});
+
+/** The real file system, recording every directory listed. */
+function countingFs(): TailFs & { listed: string[] } {
+  const listed: string[] = [];
+  return {
+    ...nodeTailFs,
+    listed,
+    listDir: (path) => {
+      listed.push(path);
+      return nodeTailFs.listDir(path);
+    },
+  };
+}
+
+test("polls drain followed files every time but rescan the tree at most every rescanMs", async () => {
+  const sessions = join(dir, "sessions");
+  const day = join(sessions, "2026", "10", "17");
+  await mkdir(day, { recursive: true });
+  const file = join(day, "rollout-a.jsonl");
+  await writeFile(file, "");
+  const fs = countingFs();
+  const clock = { t: TODAY };
+  const { t, texts, followed } = tailer(sessions, {
+    pattern: ROLLOUT,
+    fs,
+    now: () => clock.t,
+    rescanMs: 5000,
+  });
+  await t.poll();
+  const oneScan = fs.listed.length;
+  expect(oneScan).toBe(4); // sessions, 2026, 10, 17
+  const later = join(day, "rollout-b.jsonl");
+  await writeFile(later, "b1\n");
+  for (let i = 0; i < 9; i++) {
+    clock.t += 500;
+    await appendFile(file, `a${i}\n`);
+    await t.poll();
+  }
+  expect(fs.listed).toHaveLength(oneScan);
+  expect(texts()).toEqual(["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"]);
+  expect(followed).toEqual([file]);
+
+  clock.t += 500;
+  await t.poll();
+  expect(fs.listed).toHaveLength(2 * oneScan);
+  expect(followed).toEqual([file, later]);
+  expect(texts().at(-1)).toBe("b1");
+});
+
+test("rescans skip date directories older than the day before start", async () => {
+  const sessions = join(dir, "sessions");
+  const old = join(sessions, "2026", "09", "30");
+  const yesterday = join(sessions, "2026", "10", "16");
+  const lastYear = join(sessions, "2025", "12", "31");
+  for (const d of [old, yesterday, lastYear]) await mkdir(d, { recursive: true });
+  await writeFile(join(old, "rollout-old.jsonl"), "");
+  const fs = countingFs();
+  const { t, texts } = tailer(sessions, { pattern: ROLLOUT, fs });
+  await t.poll();
+  fs.listed.length = 0;
+  await writeFile(join(yesterday, "rollout-y.jsonl"), "from yesterday\n");
+  await mkdir(join(sessions, "2026", "10", "17"));
+  await writeFile(join(sessions, "2026", "10", "17", "rollout-t.jsonl"), "from today\n");
+  await t.poll();
+  expect(texts().sort()).toEqual(["from today", "from yesterday"]);
+  expect(fs.listed).not.toContain(old);
+  expect(fs.listed).not.toContain(join(sessions, "2025"));
+  expect(fs.listed).toContain(yesterday);
+});
+
+test("a resumed session in an old date directory is found by the periodic full scan", async () => {
+  const sessions = join(dir, "sessions");
+  const old = join(sessions, "2026", "09", "30");
+  await mkdir(old, { recursive: true });
+  const resumed = join(old, "rollout-old.jsonl");
+  await writeFile(resumed, "history\n");
+  await utimes(resumed, ago(300), ago(300));
+  const today = join(sessions, "2026", "10", "17");
+  await mkdir(today, { recursive: true });
+  await writeFile(join(today, "rollout-today.jsonl"), "newest at start\n");
+  const fs = countingFs();
+  const { t, texts } = tailer(sessions, { pattern: ROLLOUT, fs });
+  await t.poll(); // the first scan is full: it notes where the old session ends
+  await appendFile(resumed, "resumed\n");
+  for (let i = 1; i < FULL_SCAN_EVERY; i++) await t.poll();
+  expect(texts()).toEqual([]);
+  expect(fs.listed.filter((d) => d === old)).toHaveLength(1);
+  await t.poll();
+  expect(texts()).toEqual(["resumed"]);
+  await appendFile(resumed, "and followed from then on\n");
+  await t.poll();
+  expect(texts()).toEqual(["resumed", "and followed from then on"]);
 });

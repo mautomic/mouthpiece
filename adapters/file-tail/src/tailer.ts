@@ -65,6 +65,11 @@ export interface FileTailerOptions {
   pollMs?: number;
   /** Directory mode: a file that has not grown for this long stops being followed (default 30 min). */
   idleMs?: number;
+  /**
+   * Directory mode: how often to walk the tree for new or changed files (default 5 s). Followed
+   * files are still read on every poll.
+   */
+  rescanMs?: number;
   now?: () => number;
   fs?: TailFs;
 }
@@ -77,6 +82,35 @@ const FINGERPRINT_BYTES = 64;
 const MAX_READ_BYTES = 8 * 1024 * 1024;
 const NEWLINE = 0x0a;
 const DEFAULT_IDLE_MS = 30 * 60_000;
+const DEFAULT_RESCAN_MS = 5000;
+/**
+ * Every this many rescans (and at start) the walk is full, old date directories included, so a
+ * resumed old session is still found (within about a minute at the default rescanMs).
+ */
+export const FULL_SCAN_EVERY = 12;
+const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * The date so far along a `YYYY/MM/DD` directory path (Codex's sessions layout), or null when
+ * `name` doesn't continue one. Directories that aren't dates (Gemini's `tmp/<project>/chats`) are
+ * never pruned.
+ */
+function datePrefix(prefix: number[], name: string): number[] | null {
+  if (prefix.length === 0 ? !/^\d{4}$/.test(name) : prefix.length > 2 || !/^\d{2}$/.test(name)) {
+    return null;
+  }
+  return [...prefix, Number(name)];
+}
+
+/** True when a date prefix (year, then month, then day) is wholly before the cutoff date. */
+function isBefore(prefix: number[], cutoff: number[]): boolean {
+  for (let i = 0; i < prefix.length; i++) {
+    const a = prefix[i] ?? 0;
+    const b = cutoff[i] ?? 0;
+    if (a !== b) return a < b;
+  }
+  return false;
+}
 
 interface Cursor {
   file: string;
@@ -131,6 +165,10 @@ export class FileTailer {
   private readonly baselines = new Map<string, Baseline>();
   private mostRecent: string | null = null;
   private initialized = false;
+  private lastScanAt = 0;
+  private scans = 0;
+  /** Directory mode: [year, month, day] of the day before start; older date directories are skipped. */
+  private cutoff: number[] = [];
   private chain: Promise<void> = Promise.resolve();
   private busy = false;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -191,7 +229,9 @@ export class FileTailer {
   private async pollDirectory(): Promise<void> {
     if (!this.initialized) {
       this.initialized = true;
-      const files = await this.listMatching();
+      const dayBefore = new Date(this.now() - DAY_MS);
+      this.cutoff = [dayBefore.getFullYear(), dayBefore.getMonth() + 1, dayBefore.getDate()];
+      const files = await this.listMatching(true);
       for (const f of files) this.baselines.set(f.file, { ...f, resumeAt: f.size });
       const newest = files[0];
       if (newest) await this.follow(newest.file, newest.size);
@@ -199,12 +239,15 @@ export class FileTailer {
     }
     for (const cursor of this.cursors.values()) await this.drain(cursor);
     await this.retireIdle();
-    await this.discover();
+    if (this.now() - this.lastScanAt >= (this.opts.rescanMs ?? DEFAULT_RESCAN_MS)) {
+      await this.discover();
+    }
   }
 
   /** Starts following new files (from 0) and changed known ones (from their baseline), oldest first. */
   private async discover(): Promise<void> {
-    const files = (await this.listMatching()).reverse();
+    const full = ++this.scans % FULL_SCAN_EVERY === 0;
+    const files = (await this.listMatching(full)).reverse();
     for (const f of files) {
       if (this.cursors.has(f.file)) continue;
       const base = this.baselines.get(f.file);
@@ -234,12 +277,16 @@ export class FileTailer {
     }
   }
 
-  /** Matching files up to MAX_DEPTH levels down, newest first. */
-  private async listMatching(): Promise<
-    { file: string; size: number; mtimeMs: number; ino?: number }[]
-  > {
+  /**
+   * Matching files up to MAX_DEPTH levels down, newest first. Unless `full`, date directories older
+   * than the day before start are skipped, so the walk stays small as history grows.
+   */
+  private async listMatching(
+    full: boolean,
+  ): Promise<{ file: string; size: number; mtimeMs: number; ino?: number }[]> {
     const found: { file: string; size: number; mtimeMs: number; ino?: number }[] = [];
-    const walk = async (dir: string, depth: number): Promise<void> => {
+    this.lastScanAt = this.now();
+    const walk = async (dir: string, depth: number, date: number[]): Promise<void> => {
       let entries: { name: string; isDirectory: boolean }[];
       try {
         entries = await this.fs.listDir(dir);
@@ -249,7 +296,10 @@ export class FileTailer {
       for (const entry of entries) {
         const path = join(dir, entry.name);
         if (entry.isDirectory) {
-          if (depth < MAX_DEPTH) await walk(path, depth + 1);
+          const next = datePrefix(date, entry.name);
+          if (depth < MAX_DEPTH && (full || !next || !isBefore(next, this.cutoff))) {
+            await walk(path, depth + 1, next ?? []);
+          }
         } else if (!this.opts.pattern || this.opts.pattern.test(entry.name)) {
           const s = await this.fs.stat(path).catch(() => null);
           if (s && !s.isDirectory) {
@@ -258,7 +308,7 @@ export class FileTailer {
         }
       }
     };
-    await walk(this.opts.path, 1);
+    await walk(this.opts.path, 1, []);
     return found.sort((a, b) => b.mtimeMs - a.mtimeMs);
   }
 
