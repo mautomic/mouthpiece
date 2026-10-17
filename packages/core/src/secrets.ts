@@ -24,19 +24,20 @@ export async function resolveSecret(
   return r.code === 0 && value ? value : undefined;
 }
 
+/** Double-quotes a token for `security -i`, which splits its input lines like a shell. */
+const quoted = (s: string) => `"${s.replace(/[\\"]/g, "\\$&")}"`;
+
+/** Sends the command to `security -i` on stdin so the secret never appears in argv (the process list). */
 export async function storeSecret(name: string, value: string, exec: Exec): Promise<void> {
-  const r = await exec([
-    SECURITY,
-    "add-generic-password",
-    "-U",
-    "-s",
-    KEYCHAIN_SERVICE,
-    "-a",
-    name,
-    "-w",
-    value,
-  ]);
-  if (r.code !== 0) throw new Error(`security add-generic-password failed: ${r.stderr.trim()}`);
+  if (/[\r\n]/.test(name) || /[\r\n]/.test(value)) {
+    throw new Error("secret name and value must be a single line");
+  }
+  const command = `add-generic-password -U -s ${KEYCHAIN_SERVICE} -a ${quoted(name)} -w ${quoted(value)}`;
+  const r = await exec([SECURITY, "-i"], { stdin: `${command}\n` });
+  // Interactive mode may exit 0 after a failed command, so stderr output other than the
+  // "security> " prompt also counts as failure.
+  const error = r.stderr.replaceAll("security> ", "").trim();
+  if (r.code !== 0 || error) throw new Error(`security add-generic-password failed: ${error}`);
 }
 
 export async function deleteSecret(name: string, exec: Exec): Promise<boolean> {

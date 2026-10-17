@@ -6,6 +6,7 @@ function harness(opts: { stdin?: string; tty?: boolean; code?: number } = {}) {
   const out: string[] = [];
   const err: string[] = [];
   const calls: string[][] = [];
+  const stdins: (string | undefined)[] = [];
   const io: CliIO = {
     out: (s) => out.push(s),
     err: (s) => err.push(s),
@@ -28,31 +29,21 @@ function harness(opts: { stdin?: string; tty?: boolean; code?: number } = {}) {
     },
     startDaemon: unused,
     env: {},
-    exec: async (cmd) => {
+    exec: async (cmd, o) => {
       calls.push(cmd);
+      stdins.push(o?.stdin);
       return { code: opts.code ?? 0, stdout: "", stderr: "" };
     },
     paths: { repoRoot: "/repo", bun: "/bun" },
   };
-  return { io, deps, out, err, calls };
+  return { io, deps, out, err, calls, stdins };
 }
 
 test("stores a piped key in the Keychain", async () => {
   const h = harness({ stdin: "key\n", tty: false });
   expect(await authCommand(["inworld"], h.io, h.deps)).toBe(0);
-  expect(h.calls).toEqual([
-    [
-      "/usr/bin/security",
-      "add-generic-password",
-      "-U",
-      "-s",
-      "mouthpiece",
-      "-a",
-      "inworld",
-      "-w",
-      "key",
-    ],
-  ]);
+  expect(h.calls).toEqual([["/usr/bin/security", "-i"]]);
+  expect(h.stdins).toEqual(['add-generic-password -U -s mouthpiece -a "inworld" -w "key"\n']);
   expect(h.out.join("")).toContain("Stored inworld key");
 });
 

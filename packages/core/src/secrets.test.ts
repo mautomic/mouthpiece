@@ -4,11 +4,13 @@ import { deleteSecret, resolveSecret, storeSecret } from "./secrets.ts";
 
 function fakeExec(result: { code: number; stdout?: string; stderr?: string }) {
   const calls: string[][] = [];
-  const exec: Exec = async (cmd) => {
+  const stdins: (string | undefined)[] = [];
+  const exec: Exec = async (cmd, opts) => {
     calls.push(cmd);
+    stdins.push(opts?.stdin);
     return { code: result.code, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
   };
-  return { exec, calls };
+  return { exec, calls, stdins };
 }
 
 test("env var wins and skips the keychain", async () => {
@@ -37,19 +39,26 @@ test("falls back to the keychain; missing item is undefined", async () => {
 test("store and delete", async () => {
   const ok = fakeExec({ code: 0 });
   await storeSecret("inworld", "abc", ok.exec);
-  expect(ok.calls[0]).toEqual([
-    "/usr/bin/security",
-    "add-generic-password",
-    "-U",
-    "-s",
-    "mouthpiece",
-    "-a",
-    "inworld",
-    "-w",
-    "abc",
-  ]);
+  // The key goes to `security -i` on stdin, never on argv (visible in the process list).
+  expect(ok.calls[0]).toEqual(["/usr/bin/security", "-i"]);
+  expect(ok.stdins[0]).toBe('add-generic-password -U -s mouthpiece -a "inworld" -w "abc"\n');
   await expect(
     storeSecret("inworld", "abc", fakeExec({ code: 1, stderr: "denied" }).exec),
   ).rejects.toThrow("denied");
+  // Interactive mode can exit 0 after a failed command; its error goes to stderr.
+  await expect(
+    storeSecret("inworld", "abc", fakeExec({ code: 0, stderr: "denied" }).exec),
+  ).rejects.toThrow("denied");
+  await storeSecret("inworld", "abc", fakeExec({ code: 0, stderr: "security> security> " }).exec);
   expect(await deleteSecret("inworld", ok.exec)).toBe(true);
+});
+
+test("storeSecret quotes the value for security -i and rejects multi-line values", async () => {
+  const ok = fakeExec({ code: 0 });
+  await storeSecret("inworld", 'a"b\\c d', ok.exec);
+  expect(ok.stdins[0]).toBe(
+    'add-generic-password -U -s mouthpiece -a "inworld" -w "a\\"b\\\\c d"\n',
+  );
+  await expect(storeSecret("inworld", "a\nb", ok.exec)).rejects.toThrow();
+  expect(ok.calls).toHaveLength(1);
 });
