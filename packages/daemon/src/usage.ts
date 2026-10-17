@@ -1,12 +1,15 @@
 import { Database } from "bun:sqlite";
-import type {
-  AudioClip,
-  Config,
-  QuotaLevel,
-  SynthesizeOptions,
-  TtsProvider,
-  UsageReport,
-  UsageRow,
+import {
+  type AudioClip,
+  type Config,
+  DEFAULT_CONFIG,
+  type ProviderUsage,
+  type QuotaLevel,
+  type QuotaStatus,
+  type SynthesizeOptions,
+  type TtsProvider,
+  type UsageReport,
+  type UsageRow,
 } from "@mouthpiece/core";
 
 export interface UsageRecord {
@@ -15,6 +18,34 @@ export interface UsageRecord {
   chars: number;
   cached: boolean;
   costUsd: number;
+}
+
+export interface SummaryRecord {
+  backend: string;
+  ms: number;
+  charsIn: number;
+  charsOut: number;
+  ok: boolean;
+}
+
+export interface UsageReportOptions {
+  from: Date;
+  to: Date;
+  quotas: Config["usage"]["quotas"];
+  resetDay: number;
+  now: Date;
+  /** Fraction of a quota or budget at which the level becomes `warn`. Default: `DEFAULT_CONFIG.usage.warnAt`. */
+  warnAt?: number;
+  /** Adds `budget` for the current billing cycle. */
+  monthlyBudgetUsd?: number;
+  /** Provider-reported usage, attached to the matching configured quota. */
+  providerUsage?: Record<string, ProviderUsage>;
+}
+
+/** `ok` below `warnAt` of `limit`, `warn` at or above it, `exceeded` at or above 100%. */
+export function levelFor(used: number, limit: number, warnAt: number): QuotaLevel {
+  if (used >= limit) return "exceeded";
+  return used / limit >= warnAt ? "warn" : "ok";
 }
 
 export function billingCycle(now: Date, resetDay: number): { start: Date; end: Date } {
@@ -45,6 +76,13 @@ export class UsageStore {
       "CREATE TABLE IF NOT EXISTS synth (ts INTEGER NOT NULL, provider TEXT NOT NULL, source TEXT NOT NULL, chars INTEGER NOT NULL, cached INTEGER NOT NULL, cost_usd REAL NOT NULL)",
     );
     this.#db.run("CREATE INDEX IF NOT EXISTS synth_ts ON synth(ts)");
+    this.#db.run(
+      "CREATE TABLE IF NOT EXISTS notices (provider TEXT NOT NULL, cycle_start INTEGER NOT NULL, level TEXT NOT NULL, PRIMARY KEY (provider, cycle_start, level))",
+    );
+    this.#db.run(
+      "CREATE TABLE IF NOT EXISTS summaries (ts INTEGER NOT NULL, backend TEXT NOT NULL, ms INTEGER NOT NULL, chars_in INTEGER NOT NULL, chars_out INTEGER NOT NULL, ok INTEGER NOT NULL)",
+    );
+    this.#db.run("CREATE INDEX IF NOT EXISTS summaries_ts ON summaries(ts)");
   }
 
   record(r: UsageRecord): void {
@@ -55,13 +93,42 @@ export class UsageStore {
       .run(this.now(), r.provider, r.source, r.chars, r.cached ? 1 : 0, r.costUsd);
   }
 
-  report(opts: {
-    from: Date;
-    to: Date;
-    quotas: Config["usage"]["quotas"];
-    resetDay: number;
-    now: Date;
-  }): UsageReport {
+  recordSummary(r: SummaryRecord): void {
+    this.#db
+      .query(
+        "INSERT INTO summaries (ts, backend, ms, chars_in, chars_out, ok) VALUES (?, ?, ?, ?, ?, ?)",
+      )
+      .run(this.now(), r.backend, Math.round(r.ms), r.charsIn, r.charsOut, r.ok ? 1 : 0);
+  }
+
+  /** Records that a notice was given; true only the first time for this provider, cycle and level. */
+  markNotice(provider: string, cycleStart: Date, level: QuotaLevel): boolean {
+    const result = this.#db
+      .query("INSERT OR IGNORE INTO notices (provider, cycle_start, level) VALUES (?, ?, ?)")
+      .run(provider, cycleStart.getTime(), level);
+    return result.changes > 0;
+  }
+
+  /** Billed characters (cache hits excluded) for one provider in [from, to). */
+  usedChars(provider: string, from: Date, to: Date): number {
+    const row = this.#db
+      .query(
+        "SELECT SUM(chars) AS used FROM synth WHERE provider = ? AND cached = 0 AND ts >= ? AND ts < ?",
+      )
+      .get(provider, from.getTime(), to.getTime()) as { used: number | null };
+    return row.used ?? 0;
+  }
+
+  /** Estimated cost across all providers in [from, to). */
+  spentUsd(from: Date, to: Date): number {
+    const row = this.#db
+      .query("SELECT SUM(cost_usd) AS spent FROM synth WHERE ts >= ? AND ts < ?")
+      .get(from.getTime(), to.getTime()) as { spent: number | null };
+    return row.spent ?? 0;
+  }
+
+  report(opts: UsageReportOptions): UsageReport {
+    const warnAt = opts.warnAt ?? DEFAULT_CONFIG.usage.warnAt;
     const rows = this.#db
       .query(
         `SELECT provider, source, COUNT(*) AS requests,
@@ -74,37 +141,66 @@ export class UsageStore {
     const day = 86_400_000;
     const elapsedDays = Math.max(1, (opts.now.getTime() - cycle.start.getTime()) / day);
     const cycleDays = (cycle.end.getTime() - cycle.start.getTime()) / day;
-    const usedQuery = this.#db.query(
-      "SELECT SUM(chars) AS used FROM synth WHERE provider = ? AND cached = 0 AND ts >= ? AND ts < ?",
-    );
+    const project = (x: number) => (x / elapsedDays) * cycleDays;
     const quotas = Object.entries(opts.quotas).map(([provider, { chars: limitChars }]) => {
-      const row = usedQuery.get(provider, cycle.start.getTime(), cycle.end.getTime()) as {
-        used: number | null;
-      };
-      const used = row.used ?? 0;
-      return {
+      const used = this.usedChars(provider, cycle.start, cycle.end);
+      const status: QuotaStatus = {
         provider,
         limitChars,
         usedChars: used,
         remainingChars: Math.max(0, limitChars - used),
-        projectedChars: Math.round((used / elapsedDays) * cycleDays),
+        projectedChars: Math.round(project(used)),
         cycleStart: cycle.start.toISOString(),
         cycleEnd: cycle.end.toISOString(),
-        // Placeholder until Phase 3 Task 4 (levelFor with usage.warnAt).
-        level: (used >= limitChars
-          ? "exceeded"
-          : used >= limitChars * 0.8
-            ? "warn"
-            : "ok") as QuotaLevel,
+        level: levelFor(used, limitChars, warnAt),
       };
+      const reported = opts.providerUsage?.[provider];
+      if (reported) status.providerReported = reported;
+      return status;
     });
-    return { from: opts.from.toISOString(), to: opts.to.toISOString(), rows, quotas };
+    const report: UsageReport = {
+      from: opts.from.toISOString(),
+      to: opts.to.toISOString(),
+      rows,
+      quotas,
+    };
+    if (opts.monthlyBudgetUsd !== undefined) {
+      const spent = this.spentUsd(cycle.start, cycle.end);
+      report.budget = {
+        limitUsd: opts.monthlyBudgetUsd,
+        spentUsd: round6(spent),
+        projectedUsd: round6(project(spent)),
+        level: levelFor(spent, opts.monthlyBudgetUsd, warnAt),
+      };
+    }
+    report.summaries = this.#summaryStats(opts.from, opts.to);
+    return report;
+  }
+
+  #summaryStats(from: Date, to: Date): NonNullable<UsageReport["summaries"]> {
+    const rows = this.#db
+      .query("SELECT ms, ok FROM summaries WHERE ts >= ? AND ts < ? ORDER BY ms")
+      .all(from.getTime(), to.getTime()) as { ms: number; ok: number }[];
+    const mid = Math.floor(rows.length / 2);
+    const medianMs =
+      rows.length === 0
+        ? null
+        : rows.length % 2 === 1
+          ? (rows[mid]?.ms ?? null)
+          : Math.round(((rows[mid - 1]?.ms ?? 0) + (rows[mid]?.ms ?? 0)) / 2);
+    return {
+      calls: rows.length,
+      failures: rows.filter((r) => r.ok === 0).length,
+      medianMs,
+    };
   }
 
   close(): void {
     this.#db.close();
   }
 }
+
+const round6 = (x: number) => Math.round(x * 1e6) / 1e6;
 
 /** Records one usage row per synthesis; cache hits are free (FR-10). */
 export class MeteredProvider implements TtsProvider {
