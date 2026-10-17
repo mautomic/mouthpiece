@@ -5,7 +5,11 @@ export interface FallbackOptions {
   onFallback?: (from: string, error: unknown) => void;
 }
 
-/** Tries providers in order; a provider that errors or exceeds the first-byte timeout falls through (FR-8). */
+/**
+ * Tries providers in order; a provider that errors or exceeds the first-byte timeout falls through (FR-8).
+ * The last provider has nothing to fall back to, so it gets no first-byte timeout: `say` renders the
+ * whole chunk before returning audio and routinely needs longer than the timeout for long chunks.
+ */
 export class FallbackProvider implements TtsProvider {
   readonly name: string;
   readonly maxCharsPerRequest: number;
@@ -24,13 +28,15 @@ export class FallbackProvider implements TtsProvider {
 
   async synthesize(text: string, options: SynthesizeOptions = {}): Promise<AudioClip> {
     let lastError: unknown = new Error("no providers attempted");
-    for (const provider of this.providers) {
+    for (const [index, provider] of this.providers.entries()) {
       options.signal?.throwIfAborted();
+      const isLast = index === this.providers.length - 1;
       const attempt = new AbortController();
       const forwardAbort = () => attempt.abort(options.signal?.reason);
       options.signal?.addEventListener("abort", forwardAbort, { once: true });
       let timer: ReturnType<typeof setTimeout> | undefined;
       const timeout = new Promise<never>((_, reject) => {
+        if (isLast) return;
         timer = setTimeout(() => {
           const error = new Error(
             `${provider.name}: no audio within ${this.opts.firstByteTimeoutMs}ms`,

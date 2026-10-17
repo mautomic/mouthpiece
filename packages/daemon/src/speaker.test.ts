@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { NormalizedSpeakEvent } from "@mouthpiece/core";
+import type { NormalizedSpeakEvent, TtsProvider } from "@mouthpiece/core";
 import { FakeProvider } from "@mouthpiece/providers";
 import { FakePlayer } from "./fake-player.ts";
 import type { QueueItem } from "./queue.ts";
@@ -68,16 +68,44 @@ test("abort during prefetch plays nothing more and leaks no rejection", async ()
   expect(unhandled).toEqual([]);
 });
 
-test("continues after a chunk fails mid-stream", async () => {
-  const provider = new FakeProvider({ failMidStream: (t) => t.startsWith("Bad") });
+test("continues with later chunks after a chunk fails mid-stream", async () => {
+  const provider = new FakeProvider({
+    maxCharsPerRequest: 12,
+    failMidStream: (t) => t.startsWith("Bad"),
+  });
   const player = new FakePlayer();
   const logs: Record<string, unknown>[] = [];
   await createSpeaker({ provider, player, log: (r) => logs.push(r) })(
-    item("Good first.", { format: "plain", text: "Good first. Bad second chunk here." }),
+    item("Good first. Bad second. Good third.", { format: "plain" }),
     ctx(),
   );
-  expect(player.played).toEqual(["Good first."]);
-  expect(logs).toContainEqual(expect.objectContaining({ level: "error", msg: "chunk_failed" }));
+  expect(player.played).toEqual(["Good first.", "Good third."]);
+  expect(logs).toContainEqual(
+    expect.objectContaining({ level: "error", msg: "chunk_failed", chunk: 1 }),
+  );
+});
+
+test("continues with later chunks after a chunk fails to synthesize", async () => {
+  const provider = new FakeProvider({ maxCharsPerRequest: 12 });
+  const failing: TtsProvider = {
+    name: "fails-on-bad",
+    maxCharsPerRequest: 12,
+    pricePerMillionChars: 0,
+    synthesize: (text, options) =>
+      text.startsWith("Bad")
+        ? Promise.reject(new Error("boom"))
+        : provider.synthesize(text, options),
+  };
+  const player = new FakePlayer();
+  const logs: Record<string, unknown>[] = [];
+  await createSpeaker({ provider: failing, player, log: (r) => logs.push(r) })(
+    item("Good first. Bad second. Good third.", { format: "plain" }),
+    ctx(),
+  );
+  expect(player.played).toEqual(["Good first.", "Good third."]);
+  expect(logs).toContainEqual(
+    expect.objectContaining({ level: "error", msg: "chunk_failed", chunk: 1 }),
+  );
 });
 
 test("skipReason filters trivial responses but never alerts", () => {

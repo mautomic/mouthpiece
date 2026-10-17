@@ -69,3 +69,22 @@ test("maxCharsPerRequest is the minimum; empty chain is an error", () => {
   expect(chain.maxCharsPerRequest).toBe(2000);
   expect(() => new FallbackProvider([], { firstByteTimeoutMs: 1 })).toThrow();
 });
+
+test("the last provider has no first-byte timeout because nothing follows it", async () => {
+  const fallbacks: string[] = [];
+  const only = new FallbackProvider([new FakeProvider({ name: "slow", delayMs: 120 })], {
+    firstByteTimeoutMs: 30,
+    onFallback: (from) => fallbacks.push(from),
+  });
+  expect(await decode(only, "hi")).toBe("hi");
+
+  const chain = new FallbackProvider(
+    [
+      new FakeProvider({ name: "a", failWith: new Error("boom") }),
+      new FakeProvider({ name: "say", delayMs: 120 }),
+    ],
+    { firstByteTimeoutMs: 30, onFallback: (from) => fallbacks.push(from) },
+  );
+  expect(await decode(chain, "hi")).toBe("hi");
+  expect(fallbacks).toEqual(["a"]);
+});
