@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { collectChunks } from "@mouthpiece/core";
+import { collectChunks, type TtsProvider } from "@mouthpiece/core";
 import { FakeProvider } from "@mouthpiece/providers";
 import { CachingProvider } from "./cache.ts";
 
@@ -31,6 +31,19 @@ test("second identical request is served from cache", async () => {
   expect(await text(p, "hello", "other-voice")).toEqual({ cached: false, body: "hello" });
 });
 
+test("a provider configured with a different voice or model misses the cache", async () => {
+  const ashley = new CachingProvider(new FakeProvider({ cacheKey: "Ashley" }), {
+    dir,
+    maxBytes: 1_000_000,
+  });
+  expect(await text(ashley, "hello")).toEqual({ cached: false, body: "hello" });
+  expect(await text(ashley, "hello")).toEqual({ cached: true, body: "hello" });
+  const dennis = new FakeProvider({ cacheKey: "Dennis" });
+  const p = new CachingProvider(dennis, { dir, maxBytes: 1_000_000 });
+  expect(await text(p, "hello")).toEqual({ cached: false, body: "hello" });
+  expect(dennis.calls).toEqual(["hello"]);
+});
+
 test("failed stream is not cached", async () => {
   const p = new CachingProvider(new FakeProvider({ failMidStream: true }), {
     dir,
@@ -40,10 +53,22 @@ test("failed stream is not cached", async () => {
   expect(await readdir(dir).catch(() => [])).toEqual([]);
 });
 
-test("abandoned stream is not cached", async () => {
-  const p = new CachingProvider(new FakeProvider(), { dir, maxBytes: 1_000_000 });
-  const clip = await p.synthesize("partial");
+test("a stream abandoned partway through is not cached", async () => {
+  const multiChunk: TtsProvider = {
+    name: "multi",
+    maxCharsPerRequest: 1000,
+    pricePerMillionChars: 1,
+    synthesize: async (t) => ({
+      format: "mp3",
+      chunks: (async function* () {
+        for (const part of t.split(" ")) yield new TextEncoder().encode(part);
+      })(),
+    }),
+  };
+  const p = new CachingProvider(multiChunk, { dir, maxBytes: 1_000_000 });
+  const clip = await p.synthesize("one two three");
   const it = clip.chunks[Symbol.asyncIterator]();
+  expect((await it.next()).done).toBe(false);
   await it.return?.();
   expect(await readdir(dir).catch(() => [])).toEqual([]);
 });

@@ -125,6 +125,14 @@ test("aborting the signal stops reading the stream", async () => {
   await expect(collected).rejects.toBeDefined();
 });
 
+test("cacheKey changes with the configured voice and model", () => {
+  const key = (voice: string, model: string) =>
+    new InworldProvider({ apiKey: "QUJD", voice, model }).cacheKey;
+  expect(key("Ashley", "inworld-tts-2-flash")).not.toBe(key("Dennis", "inworld-tts-2-flash"));
+  expect(key("Ashley", "inworld-tts-2-flash")).not.toBe(key("Ashley", "inworld-tts-2"));
+  expect(key("Ashley", "inworld-tts-2")).toBe(key("Ashley", "inworld-tts-2"));
+});
+
 const live = process.env.MOUTHPIECE_LIVE_TESTS === "1" && Boolean(process.env.INWORLD_API_KEY);
 test.skipIf(!live)("live: synthesizes real audio", async () => {
   const p = new InworldProvider({

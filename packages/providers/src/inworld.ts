@@ -29,9 +29,11 @@ export class InworldProvider implements TtsProvider {
   /** API limit is 4,000 UTF-16 units for streaming; 2,000 keeps chunks short for latency. */
   readonly maxCharsPerRequest = 2000;
   readonly pricePerMillionChars: number;
+  readonly cacheKey: string;
 
   constructor(private readonly opts: InworldOptions) {
     this.pricePerMillionChars = opts.model.endsWith("-flash") ? 15 : 25;
+    this.cacheKey = `${opts.voice}\u0000${opts.model}`;
   }
 
   async synthesize(text: string, options: SynthesizeOptions = {}): Promise<AudioClip> {

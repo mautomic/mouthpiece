@@ -79,6 +79,8 @@ export interface TtsProvider {
   readonly name: string;
   readonly maxCharsPerRequest: number;
   readonly pricePerMillionChars: number;
+  /** Configured settings that change the audio (e.g. default voice and model). Audio caches key on it. */
+  readonly cacheKey?: string;
   /** Resolves once audio starts arriving; chunks stream afterwards. Rejects on failure to start. */
   synthesize(text: string, opts?: SynthesizeOptions): Promise<AudioClip>;
 }

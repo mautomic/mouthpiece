@@ -12,6 +12,7 @@ export interface FakeProviderOptions {
   delayMs?: number;
   failWith?: Error;
   failMidStream?: boolean | ((text: string) => boolean);
+  cacheKey?: string;
 }
 
 /** Deterministic provider for tests: the "audio" is the UTF-8 text itself. */
@@ -21,9 +22,11 @@ export class FakeProvider implements TtsProvider {
   readonly pricePerMillionChars = 0;
   readonly calls: string[] = [];
   readonly options: SynthesizeOptions[] = [];
+  readonly cacheKey: string | undefined;
 
   constructor(private readonly opts: FakeProviderOptions = {}) {
     this.name = opts.name ?? "fake";
+    this.cacheKey = opts.cacheKey;
     this.maxCharsPerRequest = opts.maxCharsPerRequest ?? 1000;
   }
 

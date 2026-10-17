@@ -36,7 +36,9 @@ export class CachingProvider implements TtsProvider {
   async synthesize(text: string, options: SynthesizeOptions = {}): Promise<AudioClip> {
     if (this.opts.maxBytes === 0) return this.inner.synthesize(text, options);
     const key = createHash("sha256")
-      .update(`${this.inner.name}\u0000${options.voice ?? ""}\u0000${text}`)
+      .update(
+        [this.inner.name, this.inner.cacheKey ?? "", options.voice ?? "", text].join("\u0000"),
+      )
       .digest("hex");
     for (const format of FORMATS) {
       const path = join(this.opts.dir, `${key}.${format}`);
