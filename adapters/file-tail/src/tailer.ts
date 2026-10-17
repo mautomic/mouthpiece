@@ -167,8 +167,6 @@ export class FileTailer {
   private initialized = false;
   private lastScanAt = 0;
   private scans = 0;
-  /** Directory mode: [year, month, day] of the day before start; older date directories are skipped. */
-  private cutoff: number[] = [];
   private chain: Promise<void> = Promise.resolve();
   private busy = false;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -229,8 +227,6 @@ export class FileTailer {
   private async pollDirectory(): Promise<void> {
     if (!this.initialized) {
       this.initialized = true;
-      const dayBefore = new Date(this.now() - DAY_MS);
-      this.cutoff = [dayBefore.getFullYear(), dayBefore.getMonth() + 1, dayBefore.getDate()];
       const files = await this.listMatching(true);
       for (const f of files) this.baselines.set(f.file, { ...f, resumeAt: f.size });
       const newest = files[0];
@@ -285,13 +281,15 @@ export class FileTailer {
 
   /**
    * Matching files up to MAX_DEPTH levels down, newest first. Unless `full`, date directories older
-   * than the day before start are skipped, so the walk stays small as history grows.
+   * than yesterday (as of this scan) are skipped, so the walk stays small as history grows.
    */
   private async listMatching(
     full: boolean,
   ): Promise<{ file: string; size: number; mtimeMs: number; ino?: number }[]> {
     const found: { file: string; size: number; mtimeMs: number; ino?: number }[] = [];
     this.lastScanAt = this.now();
+    const dayBefore = new Date(this.lastScanAt - DAY_MS);
+    const cutoff = [dayBefore.getFullYear(), dayBefore.getMonth() + 1, dayBefore.getDate()];
     const walk = async (dir: string, depth: number, date: number[]): Promise<void> => {
       let entries: { name: string; isDirectory: boolean }[];
       try {
@@ -303,7 +301,7 @@ export class FileTailer {
         const path = join(dir, entry.name);
         if (entry.isDirectory) {
           const next = datePrefix(date, entry.name);
-          if (depth < MAX_DEPTH && (full || !next || !isBefore(next, this.cutoff))) {
+          if (depth < MAX_DEPTH && (full || !next || !isBefore(next, cutoff))) {
             await walk(path, depth + 1, next ?? []);
           }
         } else if (!this.opts.pattern || this.opts.pattern.test(entry.name)) {

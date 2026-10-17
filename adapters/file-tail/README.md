@@ -36,9 +36,9 @@ The Codex and Gemini session formats are undocumented and may change. Prefer the
   stops being followed, and is picked up again from where it stopped if it grows later.
 - Followed files are read on every poll (500 ms), but the directory tree is walked for new or
   changed files only every 5 seconds (`rescanMs`). Those walks skip `YYYY/MM/DD` date directories
-  older than the day before start (Codex's layout), so they stay cheap as history grows; every
-  12th walk, and the first, is full, so a resumed older session is still found within about a
-  minute, without losing its messages. Directories that aren't dates (Gemini's
+  (Codex's layout) older than yesterday, as of each walk, so they stay cheap as history grows and
+  as the tail keeps running; every 12th walk, and the first, is full, so a resumed older session
+  is still found within about a minute, without losing its messages. Directories that aren't dates (Gemini's
   `tmp/<project>/chats`) are always walked.
 - Partial lines are buffered until their newline arrives, including split multi-byte characters.
 - Truncation or rotation (a smaller file, a new inode, or changed bytes before the read offset)

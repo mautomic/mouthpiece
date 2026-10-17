@@ -394,7 +394,7 @@ test("polls drain followed files every time but rescan the tree at most every re
   expect(texts().at(-1)).toBe("b1");
 });
 
-test("rescans skip date directories older than the day before start", async () => {
+test("rescans skip date directories older than yesterday", async () => {
   const sessions = join(dir, "sessions");
   const old = join(sessions, "2026", "09", "30");
   const yesterday = join(sessions, "2026", "10", "16");
@@ -476,4 +476,36 @@ test("a line written while a session is being retired is still read", async () =
     await t.poll();
   }
   expect(texts()).toEqual(["one", "task complete"]);
+});
+
+test("the date cutoff moves with the clock, so a long-running rescan stays small", async () => {
+  const sessions = join(dir, "sessions");
+  const start = new Date(2026, 9, 1, 12).getTime();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(2026, 9, 1 + i);
+    const day = join(sessions, String(d.getFullYear()), pad(d.getMonth() + 1), pad(d.getDate()));
+    await mkdir(day, { recursive: true });
+    await writeFile(join(day, `rollout-${i}.jsonl`), "");
+  }
+  const later = start + 29 * 24 * 60 * 60_000;
+
+  // A tailer started 29 days ago, rescanning now.
+  const longFs = countingFs();
+  const clock = { t: start };
+  const long = tailer(sessions, { pattern: ROLLOUT, fs: longFs, now: () => clock.t });
+  await long.t.poll();
+  clock.t = later;
+  longFs.listed.length = 0;
+  await long.t.poll(); // a rescan, not a full one
+
+  // A tailer started now, on its first rescan.
+  const freshFs = countingFs();
+  const fresh = tailer(sessions, { pattern: ROLLOUT, fs: freshFs, now: () => later });
+  await fresh.t.poll();
+  freshFs.listed.length = 0;
+  await fresh.t.poll();
+
+  expect(freshFs.listed).toHaveLength(5); // sessions, 2026, 10, 29, 30
+  expect(longFs.listed.sort()).toEqual(freshFs.listed.sort());
 });
