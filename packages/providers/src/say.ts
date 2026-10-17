@@ -2,6 +2,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type AudioClip,
+  type Logger,
   type SynthesizeOptions,
   singleChunk,
   type TtsProvider,
@@ -12,6 +13,8 @@ export interface SayProviderOptions {
   tmpDir: string;
   voice?: string;
   command?: string;
+  /** Receives a warning when a voice is not installed and `say` falls back to the system voice. */
+  log?: Logger;
 }
 
 export class SayProvider implements TtsProvider {
@@ -29,30 +32,49 @@ export class SayProvider implements TtsProvider {
     // Text goes through a file so it can never be parsed as a CLI flag.
     await Bun.write(inPath, text);
     try {
-      const args = [this.opts.command ?? "say", "-f", inPath, "-o", outPath];
       const voice = options.voice ?? this.opts.voice;
-      if (voice) args.push("-v", voice);
-      options.signal?.throwIfAborted();
-      const proc = Bun.spawn(args, { stdout: "ignore", stderr: "pipe" });
-      const onAbort = () => proc.kill();
-      options.signal?.addEventListener("abort", onAbort, { once: true });
-      // An abort that landed before the listener existed would otherwise never fire.
-      if (options.signal?.aborted) proc.kill();
-      try {
-        const code = await proc.exited;
-        options.signal?.throwIfAborted();
-        if (code !== 0)
-          throw new Error(
-            `say exited with ${code}: ${(await new Response(proc.stderr).text()).trim()}`,
-          );
-      } finally {
-        options.signal?.removeEventListener("abort", onAbort);
+      let result = await this.#render(inPath, outPath, voice, options.signal);
+      if (result.code !== 0 && voice) {
+        // The voice may belong to another provider in the chain (e.g. an ElevenLabs id) or not be
+        // installed. `say` is the last resort (FR-8), so speak in the system voice rather than fail.
+        this.opts.log?.({
+          level: "warn",
+          msg: "say_voice_failed",
+          voice,
+          error: `say exited with ${result.code}: ${result.stderr}`,
+        });
+        result = await this.#render(inPath, outPath, undefined, options.signal);
       }
+      if (result.code !== 0) throw new Error(`say exited with ${result.code}: ${result.stderr}`);
       const bytes = new Uint8Array(await Bun.file(outPath).arrayBuffer());
       return { format: "aiff", chunks: singleChunk(bytes) };
     } finally {
       await rm(inPath, { force: true });
       await rm(outPath, { force: true });
+    }
+  }
+
+  /** Runs `say` once; rejects only when aborted. */
+  async #render(
+    inPath: string,
+    outPath: string,
+    voice: string | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<{ code: number; stderr: string }> {
+    const args = [this.opts.command ?? "say", "-f", inPath, "-o", outPath];
+    if (voice) args.push("-v", voice);
+    signal?.throwIfAborted();
+    const proc = Bun.spawn(args, { stdout: "ignore", stderr: "pipe" });
+    const onAbort = () => proc.kill();
+    signal?.addEventListener("abort", onAbort, { once: true });
+    // An abort that landed before the listener existed would otherwise never fire.
+    if (signal?.aborted) proc.kill();
+    try {
+      const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+      signal?.throwIfAborted();
+      return { code, stderr: stderr.trim() };
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
     }
   }
 

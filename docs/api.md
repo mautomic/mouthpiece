@@ -34,6 +34,8 @@ Voice selection, for whichever provider synthesizes the event (first match wins)
 
 Voice ids are provider-specific (`mouthpiece voices` lists them). The event's `voice` is passed to whichever provider
 synthesizes it, so pin it only when the chain's providers share voice ids; the per-label map is looked up per provider.
+When `say` is given a voice it does not have (e.g. another provider's id after a fallback), it speaks in the system voice
+instead of failing.
 
 ## POST /v1/interrupt
 Body `{ "source": "claude-code", "conversationId": "abc" }` (omit `conversationId` for the whole source).

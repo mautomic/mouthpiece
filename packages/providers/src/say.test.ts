@@ -67,6 +67,70 @@ test("an abort while the command runs kills it and rejects promptly", async () =
   expect(await readdir(dir)).toEqual([]);
 });
 
+/** Stand-in for `say` that logs its arguments, fails when given `-v`, and otherwise writes "FORMfake". */
+async function voicelessCommand(): Promise<{ command: string; calls: () => Promise<string[]> }> {
+  const command = join(scriptDir, "voiceless-say");
+  const log = join(scriptDir, "calls.log");
+  await Bun.write(
+    command,
+    `#!/bin/sh
+echo "$*" >> "${log}"
+out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -v) echo "Voice $2 not found." >&2; exit 1 ;;
+    -o) out="$2"; shift ;;
+  esac
+  shift
+done
+printf FORMfake > "$out"
+`,
+  );
+  await chmod(command, 0o755);
+  const calls = async () => (await Bun.file(log).text()).trim().split("\n");
+  return { command, calls };
+}
+
+test("a voice say does not know is retried once in the system voice, with a warning", async () => {
+  const { command, calls } = await voicelessCommand();
+  const logs: Record<string, unknown>[] = [];
+  const provider = new SayProvider({ tmpDir: dir, command, log: (r) => logs.push(r) });
+  const clip = await provider.synthesize("x", { voice: "JBFqnCBsd6RMkjVDRZzb" });
+  expect(new TextDecoder().decode(await collectChunks(clip.chunks))).toBe("FORMfake");
+  const made = await calls();
+  expect(made).toHaveLength(2);
+  expect(made[0]).toEndWith("-v JBFqnCBsd6RMkjVDRZzb");
+  expect(made[1]).not.toContain("-v");
+  expect(logs).toEqual([
+    expect.objectContaining({
+      level: "warn",
+      msg: "say_voice_failed",
+      voice: "JBFqnCBsd6RMkjVDRZzb",
+    }),
+  ]);
+  expect(await readdir(dir)).toEqual([]);
+});
+
+test("the configured default voice is retried the same way", async () => {
+  const { command, calls } = await voicelessCommand();
+  const clip = await new SayProvider({ tmpDir: dir, command, voice: "Nobody" }).synthesize("x");
+  expect((await collectChunks(clip.chunks)).length).toBe(8);
+  expect(await calls()).toHaveLength(2);
+});
+
+test("without a voice there is no retry", async () => {
+  const { command, calls } = await voicelessCommand();
+  await new SayProvider({ tmpDir: dir, command }).synthesize("x");
+  expect(await calls()).toHaveLength(1);
+});
+
+test("a failure in the system voice still rejects after the retry", async () => {
+  const logs: Record<string, unknown>[] = [];
+  const provider = new SayProvider({ tmpDir: dir, command: "false", log: (r) => logs.push(r) });
+  await expect(provider.synthesize("x", { voice: "Ava" })).rejects.toThrow("say exited");
+  expect(logs).toHaveLength(1);
+});
+
 const VOICE_FIXTURE = [
   "Alex                en_US    # Most people recognize me by my voice.",
   "Ava (Premium)       en_US    # Hello, my name is Ava.",

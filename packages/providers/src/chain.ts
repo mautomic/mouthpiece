@@ -26,7 +26,8 @@ export interface ChainDeps {
  * skipped with a warning, and the list always ends in `say` (FR-8).
  */
 export function createProviders(config: Config, deps: ChainDeps): TtsProvider[] {
-  const say = () => new SayProvider({ tmpDir: deps.tmpDir, voice: config.provider.say.voice });
+  const say = () =>
+    new SayProvider({ tmpDir: deps.tmpDir, voice: config.provider.say.voice, log: deps.log });
   const providers: TtsProvider[] = [];
   for (const name of config.provider.chain) {
     if (name === "say") {
