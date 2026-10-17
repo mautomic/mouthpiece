@@ -19,6 +19,7 @@
       "dependencies": {
         "@mouthpiece/client": "workspace:*",
         "@mouthpiece/core": "workspace:*",
+        "@mouthpiece/hook-kit": "workspace:*",
       },
     },
     "packages/cli": {
