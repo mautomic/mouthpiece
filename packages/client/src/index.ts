@@ -56,7 +56,7 @@ async function request<T>(
     );
   }
   const text = await response.text();
-  let data: unknown = {};
+  let data: unknown;
   try {
     data = text ? JSON.parse(text) : {};
   } catch {

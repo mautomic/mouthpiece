@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import type * as Client from "@mouthpiece/client";
-import type { Kind, SpeakEvent } from "@mouthpiece/core";
+import { KINDS, type Kind, type SpeakEvent } from "@mouthpiece/core";
 
 export interface CliIO {
   out(s: string): void;
@@ -19,8 +19,6 @@ const USAGE = `usage: mouthpiece <command>
   say [text…] [--source s] [--label l] [--kind response|alert|info] [--plain]
                                           speak text (reads stdin when no text is given)
   stop | skip | status`;
-
-const KINDS: readonly Kind[] = ["response", "alert", "info"];
 
 export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<number> {
   const [command, ...rest] = argv;
@@ -67,9 +65,7 @@ async function say(args: string[], io: CliIO, deps: CliDeps): Promise<number> {
     io.err(`mouthpiece: --kind must be one of ${KINDS.join(", ")}\n`);
     return 2;
   }
-  const text = (
-    positionals.length > 0 ? positionals.join(" ") : io.stdinIsTTY ? "" : await io.readStdin()
-  ).trim();
+  const text = (await readText(positionals, io)).trim();
   if (!text) {
     io.err("mouthpiece: nothing to say (pass text or pipe it in)\n");
     return 2;
@@ -83,4 +79,11 @@ async function say(args: string[], io: CliIO, deps: CliDeps): Promise<number> {
   };
   io.out(`${JSON.stringify(await deps.client.speak(event))}\n`);
   return 0;
+}
+
+/** Positional text wins; otherwise read piped stdin (never block on an interactive terminal). */
+async function readText(positionals: string[], io: CliIO): Promise<string> {
+  if (positionals.length > 0) return positionals.join(" ");
+  if (io.stdinIsTTY) return "";
+  return io.readStdin();
 }

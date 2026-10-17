@@ -24,7 +24,9 @@ export interface HandlerDeps {
 
 type Route = { method: "GET" | "POST"; auth: boolean; run: (body: unknown) => Response };
 
-const json = (status: number, body: unknown) => Response.json(body, { status });
+function json(status: number, body: unknown, headers?: HeadersInit): Response {
+  return Response.json(body, { status, headers });
+}
 
 export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Response> {
   const routes: Record<string, Route> = {
@@ -69,10 +71,7 @@ export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Resp
     const route = routes[new URL(req.url).pathname];
     if (!route) return json(404, { error: "not found" });
     if (req.method !== route.method) {
-      return Response.json(
-        { error: "method not allowed" },
-        { status: 405, headers: { Allow: route.method } },
-      );
+      return json(405, { error: "method not allowed" }, { Allow: route.method });
     }
     if (route.auth && !authorized(req, deps.token)) return json(401, { error: "unauthorized" });
     let body: unknown;

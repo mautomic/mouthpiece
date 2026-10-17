@@ -35,6 +35,8 @@ export function createSpeaker(deps: SpeakerDeps): PlayFn {
         (clip) => ({ ok: true, clip }),
         (error) => ({ ok: false, error }),
       );
+    const logChunkFailure = (chunk: number, error: unknown) =>
+      deps.log({ level: "error", msg: "chunk_failed", id: item.id, chunk, error: String(error) });
     const [firstChunk] = chunks;
     let next = firstChunk === undefined ? undefined : synthesize(firstChunk);
     for (let i = 0; next && !signal.aborted; i++) {
@@ -43,13 +45,7 @@ export function createSpeaker(deps: SpeakerDeps): PlayFn {
       const following = chunks[i + 1];
       next = following === undefined ? undefined : synthesize(following);
       if (!result.ok) {
-        deps.log({
-          level: "error",
-          msg: "chunk_failed",
-          id: item.id,
-          chunk: i,
-          error: String(result.error),
-        });
+        logChunkFailure(i, result.error);
         continue;
       }
       if (i === 0)
@@ -57,14 +53,7 @@ export function createSpeaker(deps: SpeakerDeps): PlayFn {
       try {
         await deps.player.play(result.clip, signal);
       } catch (error) {
-        if (!signal.aborted)
-          deps.log({
-            level: "error",
-            msg: "chunk_failed",
-            id: item.id,
-            chunk: i,
-            error: String(error),
-          });
+        if (!signal.aborted) logChunkFailure(i, error);
       }
     }
   };

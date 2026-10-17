@@ -140,7 +140,7 @@ function nonNegativeInt(value: unknown, name: string): number {
 }
 
 function positiveInt(value: unknown, name: string): number {
-  if (nonNegativeInt(value, name) === 0)
-    throw new ConfigError(`${name} must be a positive integer`);
-  return value as number;
+  const n = nonNegativeInt(value, name);
+  if (n === 0) throw new ConfigError(`${name} must be a positive integer`);
+  return n;
 }
