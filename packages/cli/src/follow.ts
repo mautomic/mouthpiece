@@ -10,7 +10,8 @@ import {
   type TailFormat,
   type TailMessage,
 } from "@mouthpiece/adapter-file-tail";
-import type { Env, SpeakEvent } from "@mouthpiece/core";
+import { configPath, type Env, loadConfig, type SpeakEvent } from "@mouthpiece/core";
+import type { CliDeps, CliIO } from "./types.ts";
 
 export interface FollowSpec {
   format: string;
@@ -107,4 +108,43 @@ export function createFollower(spec: FollowSpec, deps: FollowDeps): Follower | {
     stop: stopAfter(reader),
     following: () => reader.following,
   };
+}
+
+/** Starts a follower per entry; an invalid entry is a warning, never a failed start. */
+export function startFollowers(entries: FollowSpec[], deps: FollowDeps): Follower[] {
+  const followers: Follower[] = [];
+  for (const entry of entries) {
+    const follower = createFollower(entry, deps);
+    if ("error" in follower) {
+      deps.warn(`mouthpiece: follow ${entry.format}: ${follower.error}\n`);
+      continue;
+    }
+    follower.start();
+    followers.push(follower);
+  }
+  return followers;
+}
+
+/**
+ * `mouthpiece start`: runs the config's `[[follow]]` entries beside the daemon at `url`, for the
+ * life of the process. A config that can't be read starts none.
+ */
+export async function startConfiguredFollowers(
+  url: string,
+  io: CliIO,
+  deps: CliDeps,
+): Promise<void> {
+  let entries: FollowSpec[];
+  try {
+    entries = (await loadConfig(configPath(deps.env))).follow;
+  } catch (error) {
+    io.err(`mouthpiece: follow: config not read (${(error as Error).message}); no followers\n`);
+    return;
+  }
+  startFollowers(entries, {
+    speak: (e) => deps.client.speak(e, { url, env: deps.env }),
+    env: deps.env,
+    warn: io.err,
+    onFollow: (file) => io.err(`following ${file}\n`),
+  });
 }

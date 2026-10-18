@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MouthpieceError } from "@mouthpiece/client";
@@ -145,9 +145,36 @@ test("status does not hide other errors behind the health fallback", async () =>
 });
 
 test("start launches the daemon", async () => {
-  const h = harness();
+  // A config that doesn't exist: start must never read the real one.
+  const h = harness({ env: { MOUTHPIECE_CONFIG: join(tmpdir(), "mp-no-such-config.toml") } });
   expect(await run(["start"], h.io, h.deps)).toBe(0);
   expect(h.err.join("")).toContain("listening on http://127.0.0.1:7317");
+});
+
+test("start warns about a [[follow]] entry it can't run, and still starts", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mp-run-follow-"));
+  try {
+    const config = join(dir, "config.toml");
+    await writeFile(config, '[[follow]]\nformat = "nope"\n');
+    const h = harness({ env: { MOUTHPIECE_CONFIG: config } });
+    expect(await run(["start"], h.io, h.deps)).toBe(0);
+    expect(h.err.join("")).toContain("follow nope: unknown format nope");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("start with an unreadable config starts no followers and still starts", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mp-run-follow-"));
+  try {
+    const config = join(dir, "config.toml");
+    await writeFile(config, "[[follow]\n");
+    const h = harness({ env: { MOUTHPIECE_CONFIG: config } });
+    expect(await run(["start"], h.io, h.deps)).toBe(0);
+    expect(h.err.join("")).toContain("follow: config not read");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("unknown command prints usage", async () => {

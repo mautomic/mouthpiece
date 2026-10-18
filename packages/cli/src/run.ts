@@ -16,6 +16,7 @@ import { uninstallAgentCommand } from "./commands/uninstall-agent.ts";
 import { uninstallHooksCommand } from "./commands/uninstall-hooks.ts";
 import { usageCommand } from "./commands/usage.ts";
 import { voicesCommand } from "./commands/voices.ts";
+import { startConfiguredFollowers } from "./follow.ts";
 import type { CliDeps, CliIO } from "./types.ts";
 
 export type { CliDeps, CliIO } from "./types.ts";
@@ -50,6 +51,7 @@ export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<num
       case "start": {
         const { url } = await deps.startDaemon();
         io.err(`mouthpiece daemon listening on ${url}\n`);
+        await startConfiguredFollowers(url, io, deps);
         return 0;
       }
       case "say":

@@ -5,6 +5,15 @@ import { ANNOUNCE_SETTINGS, type AnnounceSetting, MODES, type Mode } from "./con
 import { isRecord } from "./guards.ts";
 import type { Env } from "./home.ts";
 
+/** A `mouthpiece tail` follower that `mouthpiece start` runs beside the daemon (US-014). */
+export interface FollowEntry {
+  /** A tail format; the CLI checks it and warns about one it doesn't know. */
+  format: string;
+  path?: string;
+  source?: string;
+  label?: string;
+}
+
 export interface Config {
   provider: {
     chain: string[];
@@ -27,6 +36,8 @@ export interface Config {
   fallback: { firstByteTimeoutMs: number };
   modes: { default: Mode };
   profiles: Record<string, { mode?: Mode; announce?: AnnounceSetting }>;
+  /** `[[follow]]`: tail followers started with the daemon; read once, at start. */
+  follow: FollowEntry[];
   summarizer: {
     backend: "claude-cli" | "none";
     command: string;
@@ -85,6 +96,7 @@ export const DEFAULT_CONFIG: Config = {
   fallback: { firstByteTimeoutMs: 3000 },
   modes: { default: "summary" },
   profiles: {},
+  follow: [],
   summarizer: {
     backend: "claude-cli",
     command: "claude",
@@ -227,6 +239,7 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
       default: optional(modes.default, "modes.default", oneOf(MODES)) ?? base.modes.default,
     },
     profiles: resolveProfiles(root.profiles, base.profiles),
+    follow: resolveFollow(root.follow, base.follow),
     summarizer: {
       backend:
         optional(
@@ -427,6 +440,20 @@ function dayOfMonth(value: unknown, name: string): number {
   const day = positiveInt(value, name);
   if (day > 28) throw new ConfigError(`${name} must be between 1 and 28`);
   return day;
+}
+
+function resolveFollow(raw: unknown, base: Config["follow"]): Config["follow"] {
+  if (raw === undefined) return base;
+  if (!Array.isArray(raw)) throw new ConfigError("follow must be a list of tables ([[follow]])");
+  return raw.map((value, i) => {
+    const entry = table(value, `follow[${i}]`);
+    return {
+      format: nonEmptyString(entry.format, `follow[${i}].format`),
+      ...optionalField("path", optional(entry.path, `follow[${i}].path`, nonEmptyString)),
+      ...optionalField("source", optional(entry.source, `follow[${i}].source`, nonEmptyString)),
+      ...optionalField("label", optional(entry.label, `follow[${i}].label`, nonEmptyString)),
+    };
+  });
 }
 
 function resolveProfiles(raw: unknown, base: Config["profiles"]): Config["profiles"] {

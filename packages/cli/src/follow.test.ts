@@ -3,7 +3,7 @@ import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SpeakEvent } from "@mouthpiece/core";
-import { createFollower } from "./follow.ts";
+import { createFollower, startFollowers } from "./follow.ts";
 
 let dir: string;
 beforeEach(async () => {
@@ -86,4 +86,21 @@ test("a margin path is the one doc to follow", async () => {
   await f.poll();
   await f.stop();
   expect(h.spoken.map((e) => [e.text, e.label])).toEqual([["Hi.", "notes doc"]]);
+});
+
+test("startFollowers starts the valid entries and warns about the rest", async () => {
+  const log = join(dir, "build.log");
+  await writeFile(log, "");
+  const h = deps();
+  const followers = startFollowers(
+    [{ format: "nope" }, { format: "lines" }, { format: "lines", path: log }],
+    { ...h.deps, pollMs: 5 },
+  );
+  expect(followers).toHaveLength(1);
+  expect(h.warnings.join("")).toContain("follow nope: unknown format nope");
+  expect(h.warnings.join("")).toContain("follow lines: --format lines needs a path");
+  await appendFile(log, "Build finished.\n");
+  for (let i = 0; i < 400 && h.spoken.length === 0; i++) await Bun.sleep(5);
+  await Promise.all(followers.map((f) => f.stop()));
+  expect(h.spoken.map((e) => e.text)).toEqual(["Build finished."]);
 });
