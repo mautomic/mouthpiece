@@ -165,7 +165,7 @@ test("with replies on the helper gets the inbox, its pop-up mode and its hotkey"
   const c = cfg({ reply: true });
   const args = helperArgs(c, target);
   expect(args).toEqual(
-    expect.arrayContaining(["--bind", "inbox=ctrl+alt+i", "--inbox", "--inbox-popup", "away"]),
+    expect.arrayContaining(["--bind", "inbox=ctrl+alt+o", "--inbox", "--inbox-popup", "away"]),
   );
   c.reply = { ...c.reply, popup: "always" };
   expect(helperArgs(c, target).slice(-2)).toEqual(["--inbox-popup", "always"]);

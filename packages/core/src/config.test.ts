@@ -73,7 +73,7 @@ test("phase 2 defaults", () => {
     skip: "ctrl+alt+n",
     replay: "ctrl+alt+r",
     toggleMode: "ctrl+alt+m",
-    inbox: "ctrl+alt+i",
+    inbox: "ctrl+alt+o",
   });
   expect(DEFAULT_CONFIG.usage).toEqual({ resetDay: 1, quotas: {}, warnAt: 0.8 });
 });
