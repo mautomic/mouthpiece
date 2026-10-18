@@ -62,6 +62,7 @@ Skips the item currently playing. 200 `{ "skipped": true }`
 | `mode` | effective global mode (`ModeState.default`) |
 | `provider` | first provider in the chain |
 | `current` | `{ source, label? }` of the item playing, or held mid-item by a pause; `null` when idle |
+| `configError` | present only while the config file can't be loaded (e.g. invalid TOML): the error message. The daemon keeps the last good config (the defaults, if it started with a bad file) and speaks a notice; the next good edit removes the field |
 
 ## POST /v1/pause
 Body `{ "reason": "mic" }`. `reason` matches `^[a-z][a-z0-9-]{0,31}$` and defaults to `"user"` when absent.

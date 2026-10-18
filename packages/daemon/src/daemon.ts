@@ -15,6 +15,7 @@ import {
   type ProviderUsage,
   parseSpeakEvent,
   readOrCreateToken,
+  resolveConfig,
   resolveSecret,
   type SpeakResponse,
   type StatusResponse,
@@ -122,7 +123,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
   const log = opts.log ?? jsonLogger;
   const exec = opts.exec ?? defaultExec;
   const cfgPath = configPath(env);
-  let config = opts.config ?? (await loadConfig(cfgPath));
+  // A bad file must not keep the daemon from starting: run on the defaults and report it.
+  let configError: string | undefined;
+  let config: Config;
+  try {
+    config = opts.config ?? (await loadConfig(cfgPath));
+  } catch (error) {
+    configError = errorMessage(error);
+    log({ level: "warn", msg: "config_load_failed", error: configError });
+    config = resolveConfig({});
+  }
   const token = await readOrCreateToken(home);
   const tmpDir = join(home, "tmp");
   const usage = new UsageStore(join(home, "usage.sqlite"));
@@ -222,7 +232,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     const parsed = parseSpeakEvent({
       text,
       source: NOTICE_SOURCE,
-      conversationId: `quota-${noticeSeq++}`,
+      conversationId: `notice-${noticeSeq++}`,
       kind: "alert",
       format: "plain",
     });
@@ -294,6 +304,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       mode: modes.state().default,
       queueDepth: queue.depth,
       provider: providers[0]?.name ?? provider.name,
+      ...(configError !== undefined && { configError }),
       current: item
         ? {
             source: item.event.source,
@@ -437,11 +448,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
             queue.configure({ ...next.queue, maxPauseMs: next.micPause.maxPauseMs });
             startHelper(next);
             warmUp(nextProviders);
+            configError = undefined;
             log({ msg: "config_reloaded", provider: provider.name });
           },
-          onError: (error) =>
-            log({ level: "warn", msg: "config_reload_failed", error: String(error) }),
+          onError: (error) => {
+            configError = errorMessage(error);
+            log({ level: "warn", msg: "config_reload_failed", error: String(error) });
+            notify(configNotice("keeping the previous settings"));
+          },
         });
+  if (configError !== undefined) notify(configNotice("using the default settings"));
 
   log({ msg: "listening", url, provider: provider.name, version: VERSION });
   return {
@@ -460,6 +476,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       usage.close();
     },
   };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function configNotice(outcome: string): string {
+  return `Mouthpiece couldn't read its config file, so it's ${outcome}. Run mouthpiece status to see why.`;
 }
 
 /** Rejects after `ms` (the underlying call is abandoned, not aborted). */

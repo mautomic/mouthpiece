@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getMode, replay, setMode, speak, usage } from "@mouthpiece/client";
+import { getMode, replay, setMode, speak, status, usage } from "@mouthpiece/client";
 import { resolveConfig, type Summarizer } from "@mouthpiece/core";
 import { FakeProvider } from "@mouthpiece/providers";
 import { type DaemonOptions, type RunningDaemon, startDaemon } from "./daemon.ts";
@@ -136,3 +136,59 @@ test("hot reload applies valid config and keeps the old one on a bad edit", asyn
   );
   expect((await getMode(o())).default).toBe("full");
 }, 20_000);
+
+test("a bad config edit is spoken and shown in status until a good edit clears it", async () => {
+  home = await mkdtemp(join(tmpdir(), "mp-e2e2-"));
+  const configPath = join(home, "config.toml");
+  await writeFile(configPath, '[modes]\ndefault = "summary"\n');
+  const fake = new FakeProvider();
+  player = new FakePlayer();
+  daemon = await startDaemon({
+    env: { MOUTHPIECE_HOME: home, MOUTHPIECE_CONFIG: configPath },
+    port: 0,
+    provider: fake,
+    player,
+    log: () => {},
+    summarizer,
+    hotkeys: false,
+  });
+  expect((await status(o())).configError).toBeUndefined();
+
+  await writeUntil(
+    configPath,
+    '[provider] chain = ["kokoro", "say"]\n',
+    async () => (await status(o())).configError !== undefined,
+  );
+  expect((await status(o())).configError).toContain("invalid TOML");
+  await daemon.queue.idle();
+  expect(fake.calls.join(" ")).toContain("keeping the previous settings");
+
+  await writeUntil(
+    configPath,
+    '[modes]\ndefault = "full"\n',
+    async () => (await status(o())).configError === undefined,
+  );
+  expect((await getMode(o())).default).toBe("full");
+}, 20_000);
+
+test("a bad config at startup falls back to the defaults and reports the error", async () => {
+  home = await mkdtemp(join(tmpdir(), "mp-e2e2-"));
+  const configPath = join(home, "config.toml");
+  await writeFile(configPath, "modes = [");
+  const fake = new FakeProvider();
+  player = new FakePlayer();
+  daemon = await startDaemon({
+    env: { MOUTHPIECE_HOME: home, MOUTHPIECE_CONFIG: configPath },
+    port: 0,
+    provider: fake,
+    player,
+    log: () => {},
+    summarizer,
+    hotkeys: false,
+    watch: false,
+  });
+  expect((await status(o())).configError).toContain("invalid TOML");
+  expect((await getMode(o())).default).toBe("summary");
+  await daemon.queue.idle();
+  expect(fake.calls.join(" ")).toContain("using the default settings");
+});

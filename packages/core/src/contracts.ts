@@ -78,6 +78,8 @@ export interface StatusResponse {
   provider: string;
   /** The item playing (or paused mid-item); null when idle. */
   current: { source: string; label?: string } | null;
+  /** Why the config file could not be loaded; absent once it loads. The daemon keeps the last good config. */
+  configError?: string;
 }
 
 /** POST /v1/pause and POST /v1/resume (US-022). */
