@@ -5,7 +5,7 @@ export type HotkeyAction = (typeof HOTKEY_ACTIONS)[number];
 const MODIFIERS = ["ctrl", "alt", "shift", "cmd"] as const;
 type Modifier = (typeof MODIFIERS)[number];
 
-/** macOS virtual key codes (ANSI layout); must match the table in MouthpieceHotkeys.swift. */
+/** macOS virtual key codes (ANSI layout); must match the table in MouthpieceHelper.swift. */
 export const KEY_CODES: Record<string, number> = {
   a: 0,
   s: 1,
@@ -72,11 +72,16 @@ export function parseBinding(action: HotkeyAction, spec: string): Binding {
   return { action, key, modifiers: [...new Set(modifiers)] };
 }
 
-export function helperArgs(
-  hotkeys: Config["hotkeys"],
-  target: { url: string; tokenPath: string },
-): string[] {
-  const args = ["--url", target.url, "--token-file", target.tokenPath];
+/** The config sections the helper app reads. */
+export type HelperConfig = Pick<Config, "hotkeys" | "menubar" | "micPause">;
+
+/** True when any helper feature (hotkeys, menubar, mic pause) is enabled. */
+export function helperWanted(config: HelperConfig): boolean {
+  return config.hotkeys.enabled || config.menubar.enabled || config.micPause.enabled;
+}
+
+function bindArgs(hotkeys: Config["hotkeys"]): string[] {
+  const args: string[] = [];
   const seen = new Map<string, HotkeyAction>();
   for (const action of HOTKEY_ACTIONS) {
     const b = parseBinding(action, hotkeys[action]);
@@ -85,6 +90,34 @@ export function helperArgs(
     if (clash) throw new Error(`hotkeys.${action} and hotkeys.${clash} are both ${combo}`);
     seen.set(combo, action);
     args.push("--bind", `${action}=${b.modifiers.join("+")}+${b.key}`);
+  }
+  return args;
+}
+
+/**
+ * Full argument list for the helper app. Throws on duplicate bindings or when no feature is enabled.
+ * Passing a bare `hotkeys` table is the Phase 2 form: hotkeys only.
+ */
+export function helperArgs(
+  config: HelperConfig | Config["hotkeys"],
+  target: { url: string; tokenPath: string },
+): string[] {
+  const c: HelperConfig =
+    "stop" in config
+      ? {
+          hotkeys: { ...config, enabled: true },
+          menubar: { enabled: false },
+          micPause: { enabled: false, ignoreBundleIds: [], resumeDelayMs: 0, maxPauseMs: 0 },
+        }
+      : config;
+  if (!helperWanted(c))
+    throw new Error("no helper feature is enabled (hotkeys, menubar, micPause)");
+  const args = ["--url", target.url, "--token-file", target.tokenPath];
+  if (c.hotkeys.enabled) args.push(...bindArgs(c.hotkeys));
+  if (c.menubar.enabled) args.push("--menubar");
+  if (c.micPause.enabled) {
+    args.push("--mic-pause", "--mic-resume-delay", String(c.micPause.resumeDelayMs));
+    for (const id of c.micPause.ignoreBundleIds) args.push("--mic-ignore", id);
   }
   return args;
 }

@@ -1,15 +1,16 @@
 import { mouthpieceHome } from "@mouthpiece/core";
-import { buildHotkeys, hotkeysBinary } from "@mouthpiece/hotkeys";
+import { buildHelper } from "@mouthpiece/hotkeys";
 import type { CommandFn } from "../types.ts";
 
+/** `build-hotkeys` / `build-helper`: builds MouthpieceHelper.app (hotkeys, menubar, mic pause). */
 export const buildHotkeysCommand: CommandFn = async (_args, io, deps) => {
-  const out = hotkeysBinary(mouthpieceHome(deps.env));
+  let app: string;
   try {
-    await buildHotkeys({ out, exec: deps.exec });
+    app = await buildHelper({ home: mouthpieceHome(deps.env), exec: deps.exec });
   } catch (error) {
     io.err(`mouthpiece: ${(error as Error).message}\n`);
     return 1;
   }
-  io.out(`Built ${out}. Restart the daemon to enable hotkeys.\n`);
+  io.out(`Built ${app}. Restart the daemon to enable hotkeys, the menubar and mic pause.\n`);
   return 0;
 };

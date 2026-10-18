@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Exec } from "@mouthpiece/core";
-import { HOTKEYS_SOURCE } from "@mouthpiece/hotkeys";
+import { HELPER_SOURCE, helperAppPath, helperBinary } from "@mouthpiece/hotkeys";
 import type { CliDeps, CliIO } from "../types.ts";
 import { buildHotkeysCommand } from "./build-hotkeys.ts";
 
@@ -52,16 +52,20 @@ function harness(exec: Exec) {
   return { io, deps, out, err };
 }
 
-test("builds the helper into <home>/bin and hints at a daemon restart", async () => {
+test("builds the helper app into <home> and hints at a daemon restart", async () => {
   const calls: string[][] = [];
   const h = harness(async (cmd) => {
     calls.push(cmd);
     return { code: 0, stdout: "", stderr: "" };
   });
-  const out = join(home, "bin", "mouthpiece-hotkeys");
+  const app = helperAppPath(home);
   expect(await buildHotkeysCommand([], h.io, h.deps)).toBe(0);
-  expect(calls).toEqual([["swiftc", "-O", "-swift-version", "5", "-o", out, HOTKEYS_SOURCE]]);
-  expect(h.out.join("")).toContain(out);
+  expect(calls).toEqual([
+    ["swiftc", "-O", "-swift-version", "5", "-o", helperBinary(home), HELPER_SOURCE],
+    ["codesign", "-f", "-s", "-", "--identifier", "dev.mouthpiece.helper", app],
+  ]);
+  expect(await readFile(join(app, "Contents", "Info.plist"), "utf8")).toContain("LSUIElement");
+  expect(h.out.join("")).toContain(app);
   expect(h.out.join("")).toContain("Restart the daemon");
   expect(h.err).toEqual([]);
 });
