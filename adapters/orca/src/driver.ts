@@ -48,9 +48,8 @@ export class OrcaReplyDriver implements ReplyDriver {
     if (!screen || screen.source !== "screen" || !Array.isArray(screen.tail)) {
       return { ok: false, reason: "unverified" };
     }
-    if (typeof screen.draft === "string" && screen.draft.trim() !== "") {
-      return { ok: false, reason: "draft" };
-    }
+    // Orca's `draft` is its own composer box ("UI-only composer text excluded from tail"), not the
+    // terminal's prompt; `terminal send` types into the terminal. The rendered prompt is what counts.
     const tail = screen.tail.filter((l): l is string => typeof l === "string");
     return promptVerdict(screenState(route.agent, tail), typed);
   }

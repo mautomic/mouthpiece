@@ -111,13 +111,17 @@ test("check: another program in the terminal is not-agent", async () => {
   });
 });
 
-test("check: no rendered screen is unverified; Orca composer text is a draft", async () => {
+test("check: no rendered screen is unverified", async () => {
   expect(
     await fake({ show: show({}), read: read({ source: "stream" }) }).driver.check(route),
   ).toEqual({ ok: false, reason: "unverified" });
-  expect(await fake({ show: show({}), read: read({ draft: "half" }) }).driver.check(route)).toEqual(
-    { ok: false, reason: "draft" },
-  );
+});
+
+test("check: Orca's composer draft is not the terminal's prompt, so it does not block", async () => {
+  // Seen 2026-10-18: an empty ❯ prompt with a leftover draft of an earlier message. Orca: "draft is
+  // UI-only composer text excluded from tail"; terminal send types into the terminal, not into it.
+  const { driver } = fake({ show: show({}), read: read({ draft: "yes commit both" }) });
+  expect(await driver.check(route)).toEqual({ ok: true });
 });
 
 test("check with typed text accepts a prompt that starts with it", async () => {
