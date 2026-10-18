@@ -121,7 +121,9 @@ test.skipIf(!fullBuild)(
     expect(await player.exited).toBe(0);
     expect(await new Response(player.stderr).text()).toContain("Identifier=dev.mouthpiece.player");
     // The player is signed before the bundle, so the bundle's seal covers it.
-    const strict = Bun.spawn(["codesign", "--verify", "--deep", "--strict", app], { stderr: "pipe" });
+    const strict = Bun.spawn(["codesign", "--verify", "--deep", "--strict", app], {
+      stderr: "pipe",
+    });
     expect(await strict.exited).toBe(0);
   },
   300_000,
