@@ -116,7 +116,8 @@ final class FlippedView: NSView {
 
 /// One session: header, response text, reply field, result line and Submit button.
 final class InboxRow: NSView, NSTextFieldDelegate {
-  static let width: CGFloat = 396
+  /// 420 pt panel - 24 pt margins - room for an always-visible scroll bar.
+  static let width: CGFloat = 380
   private(set) var entry: InboxEntry
   let header = NSTextField(labelWithString: "")
   let body = NSTextField(wrappingLabelWithString: "")
@@ -126,6 +127,9 @@ final class InboxRow: NSView, NSTextFieldDelegate {
   let submit = NSButton(title: "Submit", target: nil, action: nil)
   private var sending = false
   private var expanded = false
+  /// The text last delivered from this row (typed or submitted), so it is never carried over again.
+  private(set) var lastSent: String?
+  var onResize: (() -> Void)?
   private let onSend: (InboxRow, String) -> Void
   private let onSubmit: (InboxRow) -> Void
   private let onClose: () -> Void
@@ -189,15 +193,23 @@ final class InboxRow: NSView, NSTextFieldDelegate {
     update(entry, now: Date().timeIntervalSince1970 * 1000)
   }
 
-  func show(_ outcome: ReplyOutcome) {
+  func show(_ outcome: ReplyOutcome, sent text: String? = nil) {
     result.stringValue = RowText.result(outcome)
     result.isHidden = false
+    if outcome == .submitted || outcome == .typed, let text { lastSent = text }
     if outcome == .submitted { field.stringValue = "" }
+  }
+
+  /// A carried-over draft: say why, so it isn't sent without reading the newer response.
+  func showNewer() {
+    result.stringValue = RowText.result(.refused(reason: "newer", error: ""))
+    result.isHidden = false
   }
 
   @objc private func toggleMore(_ sender: NSButton) {
     expanded.toggle()
     update(entry, now: Date().timeIntervalSince1970 * 1000)
+    onResize?()
   }
 
   @objc private func submitPressed(_ sender: NSButton) { onSubmit(self) }
@@ -299,57 +311,85 @@ final class InboxPanel: NSObject, NSWindowDelegate {
     if fresh.contains(where: { shouldPop($0, mode: mode, frontmost: front) }) { popUp() }
   }
 
-  /// Syncs the rows with the model, keeping each row's view (and its unsent text) while its id
-  /// stays; a newer response's row takes over the unsent text of its conversation's old row.
+  /// Syncs the rows with the model. Rows that stay are never moved or re-added, so the one being
+  /// typed in keeps its text, caret and focus; new rows are inserted around them. A newer response's
+  /// row takes over its conversation's unsent text (never text already delivered) with a notice.
   private func rebuild() {
     let now = Date().timeIntervalSince1970 * 1000
     let ordered = model.ordered
     let ids = Set(ordered.map(\.id))
+    let editing = (panel.firstResponder as? NSTextView).flatMap { editor in
+      rows.values.first { $0.field.currentEditor() === editor }
+    }
     var drafts: [String: String] = [:]
+    var refocus: String?
     for (id, row) in rows where !ids.contains(id) {
-      if !row.field.stringValue.isEmpty { drafts["\(row.entry.source)\u{0}\(row.entry.conversationId)"] = row.field.stringValue }
+      let key = "\(row.entry.source)\u{0}\(row.entry.conversationId)"
+      if let draft = carriedDraft(text: row.field.stringValue, lastSent: row.lastSent) { drafts[key] = draft }
+      if row === editing { refocus = key }
+      rowsStack.removeArrangedSubview(row)
       row.removeFromSuperview()
       rows[id] = nil
     }
-    var desired: [NSView] = []
+    var desired: [InboxRow] = []
+    var focusTarget: InboxRow?
     for entry in ordered {
-      let row = rows[entry.id] ?? makeRow(entry)
-      if rows[entry.id] == nil, let draft = drafts["\(entry.source)\u{0}\(entry.conversationId)"] {
-        row.field.stringValue = draft
+      let key = "\(entry.source)\u{0}\(entry.conversationId)"
+      let row: InboxRow
+      if let existing = rows[entry.id] {
+        row = existing
+      } else {
+        row = makeRow(entry)
+        if let draft = drafts[key] {
+          row.field.stringValue = draft
+          row.showNewer()
+        }
+        if refocus == key { focusTarget = row }
+        rows[entry.id] = row
       }
-      rows[entry.id] = row
       row.update(entry, now: now)
       desired.append(row)
     }
-    if ordered.isEmpty { desired = [emptyLabel] }
-    if rowsStack.arrangedSubviews != desired {
-      let focused = (panel.firstResponder as? NSTextView).flatMap { editor in
-        rows.values.first { $0.field.currentEditor() === editor }
+    emptyLabel.isHidden = !ordered.isEmpty
+    if emptyLabel.superview == nil { rowsStack.addArrangedSubview(emptyLabel) }
+    let current = rowsStack.arrangedSubviews.compactMap { $0 as? InboxRow }.map(\.entry.id)
+    if keptInOrder(current: current, desired: desired.map(\.entry.id)) {
+      for (index, row) in desired.enumerated() where row.superview == nil {
+        rowsStack.insertArrangedSubview(row, at: index)
       }
-      for view in rowsStack.arrangedSubviews { rowsStack.removeArrangedSubview(view); view.removeFromSuperview() }
-      for view in desired { rowsStack.addArrangedSubview(view) }
-      if let focused, focused.superview != nil {
-        panel.makeFirstResponder(focused.field)
-        focused.field.currentEditor()?.selectedRange = NSRange(location: focused.field.stringValue.utf16.count, length: 0)
+    } else {
+      // Rare (equal ages are ordered by id): re-add every row, then put the caret back where it was.
+      let selection = editing?.field.currentEditor()?.selectedRange
+      for row in desired {
+        rowsStack.removeArrangedSubview(row)
+        row.removeFromSuperview()
+      }
+      for (index, row) in desired.enumerated() { rowsStack.insertArrangedSubview(row, at: index) }
+      if let editing, editing.superview != nil {
+        panel.makeFirstResponder(editing.field)
+        if let selection { editing.field.currentEditor()?.selectedRange = selection }
       }
     }
+    if let focusTarget, !focusTarget.field.isHidden { panel.makeFirstResponder(focusTarget.field) }
     resize()
     onCountChange?(model.waitingCount)
   }
 
   private func makeRow(_ entry: InboxEntry) -> InboxRow {
-    InboxRow(
+    let row = InboxRow(
       entry: entry,
       onSend: { [weak self] row, text in self?.send(row, text) },
       onSubmit: { [weak self] row in self?.submit(row) },
       onClose: { [weak self] in self?.hide() })
+    row.onResize = { [weak self] in self?.resize() }
+    return row
   }
 
   private func send(_ row: InboxRow, _ text: String) {
     row.setSending(true)
     postReply(path: "/v1/reply", body: ["id": row.entry.id, "text": text], token: token()) { [weak row] outcome in
       row?.setSending(false)
-      row?.show(outcome)
+      row?.show(outcome, sent: text)
     }
   }
 
@@ -412,6 +452,8 @@ final class InboxPanel: NSObject, NSWindowDelegate {
   private func hide() {
     cancelHide()
     panel.orderOut(nil)
+    // The hotkey path activated the helper; hand the keyboard back to the app that had it.
+    if NSApp.isActive { NSApp.hide(nil) }
   }
 
   private func cancelHide() {

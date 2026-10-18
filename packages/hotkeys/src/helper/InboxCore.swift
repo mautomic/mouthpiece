@@ -111,10 +111,29 @@ final class InboxModel {
   }
 
   /// Newest first.
-  var ordered: [InboxEntry] { entries.values.sorted { $0.at > $1.at } }
+  var ordered: [InboxEntry] { entries.values.sorted { $0.at != $1.at ? $0.at > $1.at : $0.id < $1.id } }
 
   /// Entries waiting for a reply that can be sent from here.
   var waitingCount: Int { entries.values.filter { $0.state == "waiting" && $0.route != nil }.count }
+}
+
+// MARK: - Row rules
+
+/**
+ * The unsent text a newer response's row takes over from its conversation's old row: none when it's
+ * blank, or when it is exactly the text already delivered (typed or submitted), so it can't be sent twice.
+ */
+func carriedDraft(text: String, lastSent: String?) -> String? {
+  let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+  if trimmed.isEmpty || trimmed == lastSent { return nil }
+  return text
+}
+
+/** True when the rows that stay keep their order, so new rows can be inserted without moving any. */
+func keptInOrder(current: [String], desired: [String]) -> Bool {
+  let wanted = Set(desired)
+  let present = Set(current)
+  return current.filter { wanted.contains($0) } == desired.filter { present.contains($0) }
 }
 
 // MARK: - Pop-up policy ([reply] popup)
@@ -326,6 +345,18 @@ func runInboxSelfTest() -> Int32 {
   ]
   for (outcome, text) in results { check(RowText.result(outcome) == text, "text: result \(outcome)") }
   check(RowText.age(5) == "5s" && RowText.age(125) == "2m" && RowText.age(3 * 3600 + 5) == "3h", "text: age")
+
+  // Review fixes: carried drafts, stable order, rows kept in place
+  check(carriedDraft(text: "yes", lastSent: nil) == "yes", "draft: unsent text carries to a newer response")
+  check(carriedDraft(text: "yes", lastSent: "yes") == nil, "draft: text already delivered does not carry")
+  check(carriedDraft(text: "  ", lastSent: nil) == nil, "draft: blank text does not carry")
+  check(carriedDraft(text: "yes, and also", lastSent: "yes") == "yes, and also", "draft: text edited after sending carries")
+  let tie = InboxModel()
+  _ = tie.apply(event: "snapshot", data: snapshotJSON([entryJSON("b", conv: "c1", at: 3), entryJSON("a", conv: "c2", at: 3), entryJSON("c", conv: "c3", at: 3)]))
+  check(tie.ordered.map(\.id) == ["a", "b", "c"], "model: equal times are ordered by id")
+  check(keptInOrder(current: ["a", "b"], desired: ["n", "a", "b"]), "rows: a new row on top keeps the others in place")
+  check(keptInOrder(current: ["a", "b", "c"], desired: ["a", "c"]), "rows: a removal keeps the others in place")
+  check(!keptInOrder(current: ["a", "b"], desired: ["b", "a"]), "rows: a swap needs a rebuild")
 
   if failures.isEmpty {
     print("ok")
