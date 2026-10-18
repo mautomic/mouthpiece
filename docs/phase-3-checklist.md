@@ -39,7 +39,7 @@ Run these against the installed daemon (launchd owns port 7317). If it was insta
 
 - [ ] `mouthpiece say --file README.md --mode full` reads the whole README.
 - [ ] `mouthpiece say --priority high --kind alert "Jumps the queue."` plays before queued responses.
-- [ ] With the daemon stopped (`mouthpiece uninstall-agent`), `mouthpiece say "hi"` prints that the daemon is not reachable, and `mouthpiece say --fallback-say "hi"` speaks locally. Restore with `mouthpiece install-agent`.
+- [ ] With the daemon stopped (`mouthpiece daemon stop`), `mouthpiece say "hi"` prints that the daemon is not reachable, and `mouthpiece say --fallback-say "hi"` speaks locally. Restore with `mouthpiece daemon start`.
 - [ ] `mouthpiece` with no command prints usage that includes `install-hooks [--target …]`, `voices [--provider x]`, `tail --format …` and every `say` flag.
 
 ## Paid providers (optional, needs a key)

@@ -174,11 +174,17 @@ test("voices routes to its command module", async () => {
   expect(h.err.join("")).not.toContain("not implemented");
 });
 
-test("usage text lists say, voices and tail", async () => {
+test("usage text lists say, voices, tail and daemon", async () => {
   const h = harness();
   await run([], h.io, h.deps);
   const usage = h.err.join("");
-  for (const cmd of ["say", "voices", "tail"]) expect(usage).toContain(`  ${cmd} `);
+  for (const cmd of ["say", "voices", "tail", "daemon"]) expect(usage).toContain(`  ${cmd} `);
+});
+
+test("daemon is routed to its command", async () => {
+  const h = harness();
+  expect(await run(["daemon"], h.io, h.deps)).toBe(2);
+  expect(h.err.join("")).toContain("usage: mouthpiece daemon start | stop | restart");
 });
 
 test("usage text shows every flag of say, voices, tail and the hook targets", async () => {

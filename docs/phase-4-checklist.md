@@ -27,7 +27,8 @@ Run these against the installed daemon (launchd owns port 7317). Re-run `./insta
   - Pause speech / Resume speech. `mouthpiece status` shows `"pauseReasons": ["user"]` while paused.
   - The bottom line shows `Mouthpiece 0.4.0 · <provider>`.
 - [ ] `mouthpiece pause` and `mouthpiece resume` do the same as the menu items.
-- [ ] Daemon down: stop it with `mouthpiece uninstall-agent`. Within a few seconds the icon shows the "daemon unreachable" symbol (a waveform with a slash), and the helper doesn't use CPU in Activity Monitor. Restore with `mouthpiece install-agent`.
+- [ ] Daemon down: `mouthpiece daemon stop`. The menubar icon either disappears (launchd stops the helper with the daemon) or, within a few seconds, shows the "daemon unreachable" symbol (a waveform with a slash) without using CPU in Activity Monitor. Note which.
+- [ ] `mouthpiece daemon start`: exactly one Mouthpiece icon is in the menubar (`pgrep -fl mouthpiece-helper` lists one process). `mouthpiece daemon restart` keeps it at one.
 
 ## Pause while dictating (US-022)
 

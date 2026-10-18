@@ -1,6 +1,7 @@
 import { MouthpieceError } from "@mouthpiece/client";
 import { authCommand } from "./commands/auth.ts";
 import { buildHotkeysCommand } from "./commands/build-hotkeys.ts";
+import { daemonCommand } from "./commands/daemon.ts";
 import { installAgentCommand } from "./commands/install-agent.ts";
 import { installHooksCommand } from "./commands/install-hooks.ts";
 import { kokoroCommand } from "./commands/kokoro.ts";
@@ -36,6 +37,7 @@ const USAGE = `usage: mouthpiece <command>
   install-hooks [--target claude-code|codex|gemini] [--idle-alerts]
   uninstall-hooks [--target claude-code|codex|gemini]
   install-agent | uninstall-agent
+  daemon start | stop | restart           control the installed daemon (stop lasts until next login)
   auth <provider> [--delete]              read the API key from stdin
   kokoro install | status | uninstall     manage the free local Kokoro voice
   send --tmux <target> <text…>            type text into a tmux pane (conversation spike)
@@ -87,6 +89,8 @@ export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<num
         return await uninstallHooksCommand(rest, io, deps);
       case "install-agent":
         return await installAgentCommand(rest, io, deps);
+      case "daemon":
+        return await daemonCommand(rest, io, deps);
       case "uninstall-agent":
         return await uninstallAgentCommand(rest, io, deps);
       case "auth":
