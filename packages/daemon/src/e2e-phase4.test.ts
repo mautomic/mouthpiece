@@ -14,6 +14,7 @@ import { helperBinary, type SpawnFn } from "@mouthpiece/hotkeys";
 import { FakeProvider, type KokoroEngine } from "@mouthpiece/providers";
 import { type DaemonOptions, type RunningDaemon, startDaemon, VERSION } from "./daemon.ts";
 import { FakePlayer } from "./fake-player.ts";
+import { writeUntil } from "./write-until.ts";
 
 /**
  * Records each clip's text when it starts and holds it "playing" until release() or an abort, so a
@@ -398,3 +399,44 @@ test("stopping the daemon terminates Kokoro's worker (US-019)", async () => {
   daemon = undefined;
   expect(terminated).toBe(1);
 });
+
+test("a reload that doesn't change the helper's config keeps the helper and its mic pause", async () => {
+  const helper = fakeHelper();
+  const configPath = () => join(home, "config.toml");
+  const d = await boot(
+    resolveConfig({ provider: { chain: ["say"] } }),
+    {
+      providers: [new FakeProvider()],
+      player: new FakePlayer(),
+      hotkeys: true,
+      helperSpawn: helper.spawn,
+      watch: true,
+    },
+    async () => {
+      await installHelperBinary();
+      await writeFile(configPath(), '[provider]\nchain = ["say"]\n');
+    },
+  );
+  await pause("mic", o());
+  const reloads = () => logs.filter((l) => l.msg === "config_reloaded").length;
+
+  // An unrelated edit (the default mode) reloads without touching the helper.
+  await writeUntil(
+    configPath(),
+    '[provider]\nchain = ["say"]\n[modes]\ndefault = "full"\n',
+    () => d.modes.state().default === "full" && reloads() > 0,
+  );
+  expect(helper.started).toHaveLength(1);
+  expect(helper.killed()).toBe(0);
+  expect((await status(o())).pauseReasons).toEqual(["mic"]);
+
+  // A change to the helper's own args restarts it (and its mic pause goes with it).
+  await writeUntil(
+    configPath(),
+    '[provider]\nchain = ["say"]\n[modes]\ndefault = "full"\n[micPause]\nresumeDelayMs = 1500\n',
+    () => helper.started.length === 2,
+  );
+  expect(helper.killed()).toBe(1);
+  expect(helper.started[1]?.join(" ")).toContain("--mic-resume-delay 1500");
+  expect((await status(o())).pauseReasons).toEqual([]);
+}, 20_000);

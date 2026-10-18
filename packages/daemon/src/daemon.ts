@@ -363,24 +363,46 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     helper = undefined;
     queue.resume("mic");
   };
+  /** What the running helper was started from; a reload restarts it only when this changes. */
+  let helperKey: string | undefined;
   const startHelper = (c: Config) => {
-    stopHelper();
-    if (opts.hotkeys === false || !helperWanted(c)) return;
+    const wanted = opts.hotkeys !== false && helperWanted(c);
     const binary = helperBinary(home);
-    if (!existsSync(binary)) {
+    const built = wanted && existsSync(binary);
+    let args: string[] | undefined;
+    let argsError: string | undefined;
+    if (built) {
+      try {
+        args = helperArgs(c, { url, tokenPath: tokenPath(home) });
+      } catch (error) {
+        argsError = String(error);
+      }
+    }
+    // An unrelated config edit must not restart the helper: stopping it clears the mic pause.
+    const key = JSON.stringify({ wanted, binary, built, args, argsError });
+    if (key === helperKey) return;
+    helperKey = key;
+    stopHelper();
+    if (!wanted) return;
+    if (!built) {
       log({ msg: "helper_unavailable", hint: "run `mouthpiece build-helper`" });
+      return;
+    }
+    if (!args) {
+      log({ level: "error", msg: "helper_config_invalid", error: argsError });
       return;
     }
     try {
       helper = superviseHotkeys({
         binary,
-        args: helperArgs(c, { url, tokenPath: tokenPath(home) }),
+        args,
         log,
         spawn: opts.helperSpawn,
         onExit: () => queue.resume("mic"),
       });
     } catch (error) {
-      log({ level: "error", msg: "helper_config_invalid", error: String(error) });
+      helperKey = undefined; // retry on the next reload
+      log({ level: "error", msg: "helper_start_failed", error: String(error) });
     }
   };
   startHelper(config);
