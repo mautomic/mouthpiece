@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultExec, type Exec } from "@mouthpiece/core";
@@ -117,6 +117,67 @@ test("install reports a failed warm-up", async () => {
   expect(await kokoroCommand(["install"], h.io, h.deps)).toBe(1);
   expect(h.err.join("")).toContain("model download failed");
 });
+
+test("a warm-up that printed its timing succeeds even when Bun then crashes on exit", async () => {
+  const h = harness(async (cmd) =>
+    cmd[1]?.endsWith("kokoro-warm.ts")
+      ? {
+          code: 134,
+          stdout: '{"loadMs":301,"generateMs":455}\n',
+          stderr: "panic: A C++ exception occurred\noh no: Bun has crashed.\n",
+        }
+      : { code: 0, stdout: "", stderr: "" },
+  );
+  expect(await kokoroCommand(["install"], h.io, h.deps)).toBe(0);
+  const out = h.out.join("");
+  expect(out).toContain("Kokoro is ready (load 301 ms, first phrase 455 ms)");
+  expect(out).toContain('Add "kokoro" to [provider].chain in config.toml');
+  // The crash is still reported, as a note.
+  expect(h.err.join("")).toContain("exit code 134");
+  expect(h.err.join("")).toContain("A C++ exception occurred");
+});
+
+test("a warm-up that crashed before printing its timing fails", async () => {
+  const h = harness(async (cmd) =>
+    cmd[1]?.endsWith("kokoro-warm.ts")
+      ? { code: 134, stdout: "loading…\n", stderr: "panic: A C++ exception occurred\n" }
+      : { code: 0, stdout: "", stderr: "" },
+  );
+  expect(await kokoroCommand(["install"], h.io, h.deps)).toBe(1);
+  expect(h.err.join("")).toContain("A C++ exception occurred");
+  expect(h.out.join("")).not.toContain("Kokoro is ready");
+});
+
+test("a warm-up that exits 0 without a timing line still fails", async () => {
+  const h = harness(async (cmd) =>
+    cmd[1]?.endsWith("kokoro-warm.ts")
+      ? { code: 0, stdout: "", stderr: "" }
+      : { code: 0, stdout: "", stderr: "" },
+  );
+  expect(await kokoroCommand(["install"], h.io, h.deps)).toBe(1);
+  expect(h.err.join("")).toContain("Kokoro warm-up failed");
+});
+
+// Live: the real warm script against an existing install (MOUTHPIECE_KOKORO_LIVE_DIR, linked as
+// <tmp home>/kokoro), offline so nothing is downloaded. It must exit 0 on its own.
+const liveDir = process.env.MOUTHPIECE_KOKORO_LIVE_DIR;
+test.skipIf(process.env.MOUTHPIECE_LIVE_TESTS !== "1" || !liveDir)(
+  "live: the warm script exits 0 with a timing line",
+  async () => {
+    await symlink(liveDir ?? "", join(home, "kokoro"));
+    const script = join(import.meta.dir, "../../../../scripts/kokoro-warm.ts");
+    const r = await defaultExec([process.execPath, script], {
+      env: { ...process.env, MOUTHPIECE_HOME: home, MOUTHPIECE_KOKORO_OFFLINE: "1" },
+    });
+    expect(r.stderr).toBe("");
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      loadMs: expect.any(Number),
+      generateMs: expect.any(Number),
+    });
+  },
+  60_000,
+);
 
 test("status reports not installed", async () => {
   const h = harness();

@@ -55,16 +55,20 @@ async function install(io: CliIO, deps: CliDeps, home: string, dir: string): Pro
       env: { ...deps.env, MOUTHPIECE_HOME: home },
     },
   );
-  if (warm.code !== 0) {
-    io.err(`mouthpiece: Kokoro warm-up failed: ${warm.stderr.trim()}\n`);
+  // The timing line is the success signal: Bun can crash on exit after onnxruntime has loaded
+  // (exit 134, "A C++ exception occurred") although the warm-up itself finished.
+  const timing = parseTiming(warm.stdout);
+  if (!timing) {
+    const why = warm.stderr.trim() || `exit code ${warm.code}, no timing line`;
+    io.err(`mouthpiece: Kokoro warm-up failed: ${why}\n`);
     return 1;
   }
-  const timing = parseTiming(warm.stdout);
-  io.out(
-    timing
-      ? `Kokoro is ready (load ${timing.loadMs} ms, first phrase ${timing.generateMs} ms).\n`
-      : "Kokoro is ready.\n",
-  );
+  if (warm.code !== 0) {
+    io.err(
+      `mouthpiece: note: the Kokoro warm-up finished but exited with exit code ${warm.code}: ${warm.stderr.trim()}\n`,
+    );
+  }
+  io.out(`Kokoro is ready (load ${timing.loadMs} ms, first phrase ${timing.generateMs} ms).\n`);
   io.out('Add "kokoro" to [provider].chain in config.toml, e.g. chain = ["kokoro", "say"].\n');
   return 0;
 }
