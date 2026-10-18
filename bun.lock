@@ -48,11 +48,19 @@
         "@mouthpiece/hook-kit": "workspace:*",
       },
     },
+    "adapters/tmux": {
+      "name": "@mouthpiece/adapter-tmux",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/core": "workspace:*",
+      },
+    },
     "packages/cli": {
       "name": "@mouthpiece/cli",
       "version": "0.1.0",
       "dependencies": {
         "@mouthpiece/adapter-file-tail": "workspace:*",
+        "@mouthpiece/adapter-tmux": "workspace:*",
         "@mouthpiece/client": "workspace:*",
         "@mouthpiece/core": "workspace:*",
         "@mouthpiece/daemon": "workspace:*",
@@ -93,6 +101,13 @@
     },
     "packages/hotkeys": {
       "name": "@mouthpiece/hotkeys",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/core": "workspace:*",
+      },
+    },
+    "packages/listen": {
+      "name": "@mouthpiece/listen",
       "version": "0.1.0",
       "dependencies": {
         "@mouthpiece/core": "workspace:*",
@@ -140,6 +155,8 @@
 
     "@mouthpiece/adapter-gemini": ["@mouthpiece/adapter-gemini@workspace:adapters/gemini"],
 
+    "@mouthpiece/adapter-tmux": ["@mouthpiece/adapter-tmux@workspace:adapters/tmux"],
+
     "@mouthpiece/cli": ["@mouthpiece/cli@workspace:packages/cli"],
 
     "@mouthpiece/client": ["@mouthpiece/client@workspace:packages/client"],
@@ -151,6 +168,8 @@
     "@mouthpiece/hook-kit": ["@mouthpiece/hook-kit@workspace:packages/hook-kit"],
 
     "@mouthpiece/hotkeys": ["@mouthpiece/hotkeys@workspace:packages/hotkeys"],
+
+    "@mouthpiece/listen": ["@mouthpiece/listen@workspace:packages/listen"],
 
     "@mouthpiece/providers": ["@mouthpiece/providers@workspace:packages/providers"],
 
