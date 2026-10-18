@@ -131,19 +131,25 @@ export function chainProviders(
 }
 
 /**
- * Logs provider_fallback once per provider per FALLBACK_LOG_INTERVAL_MS; the next log carries
- * how many were suppressed in between. The fallback itself still happens for every chunk.
+ * Logs provider_fallback once per provider and kind of error per FALLBACK_LOG_INTERVAL_MS; the next
+ * log of that kind carries how many were suppressed in between. A different error from the same
+ * provider is logged at once. The fallback itself still happens for every chunk.
  */
 function fallbackLogger(log: Logger, now: () => number): (from: string, error: unknown) => void {
   const last = new Map<string, { at: number; suppressed: number }>();
   return (from, error) => {
     const t = now();
-    const seen = last.get(from);
+    const key = `${from}\0${errorKind(error)}`;
+    const seen = last.get(key);
     if (seen && t - seen.at < FALLBACK_LOG_INTERVAL_MS) {
       seen.suppressed++;
       return;
     }
-    last.set(from, { at: t, suppressed: 0 });
+    if (last.size >= 256) {
+      // Bounded: forget kinds that are past their window.
+      for (const [k, v] of last) if (t - v.at >= FALLBACK_LOG_INTERVAL_MS) last.delete(k);
+    }
+    last.set(key, { at: t, suppressed: 0 });
     log({
       level: "warn",
       msg: "provider_fallback",
@@ -152,6 +158,19 @@ function fallbackLogger(log: Logger, now: () => number): (from: string, error: u
       ...(seen?.suppressed ? { suppressed: seen.suppressed } : {}),
     });
   };
+}
+
+/**
+ * An error's kind for rate limiting: its message with ids and numbers masked (timeouts, exit codes
+ * and request ids vary between otherwise identical failures), cut to 80 characters.
+ */
+function errorKind(error: unknown): string {
+  return String(error)
+    .replace(/\b(?=[0-9a-f-]*\d)[0-9a-f-]{8,}\b/gi, "#")
+    .replace(/\d+/g, "#")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
 }
 
 export function createProviderChain(config: Config, deps: ChainDeps): FallbackProvider {

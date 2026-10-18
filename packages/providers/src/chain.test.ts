@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONFIG, resolveConfig } from "@mouthpiece/core";
+import { DEFAULT_CONFIG, resolveConfig, type TtsProvider } from "@mouthpiece/core";
 import { chainProviders, createProviderChain, createProviders, PAID_PROVIDERS } from "./chain.ts";
 import { DeepgramProvider } from "./deepgram.ts";
 import { ElevenLabsProvider } from "./elevenlabs.ts";
@@ -321,4 +321,47 @@ test("provider_fallback is logged once per provider per minute, with the suppres
       suppressed: 2,
     },
   ]);
+});
+
+test("provider_fallback is rate-limited per provider and kind of error, not per provider", async () => {
+  const errors = [
+    new Error("kokoro: no audio within 3150ms"),
+    new Error("kokoro host exited (code 134)"), // a different failure: logged at once
+    new Error("kokoro: no audio within 4200ms"), // the first one again, with other numbers
+    new Error("request 7f3a9c2e1b4d failed"),
+    new Error("request 0c1d2e3f4a5b failed"), // same message, different id
+  ];
+  let next = 0;
+  const flaky: TtsProvider = {
+    name: "kokoro",
+    maxCharsPerRequest: 400,
+    pricePerMillionChars: 0,
+    async synthesize() {
+      throw errors[next++];
+    },
+  };
+  const say = new FakeProvider({ name: "say" });
+  const clock = { t: 0 };
+  const { deps: d, logs } = deps();
+  const chain = chainProviders([flaky, say], resolveConfig({}), { ...d, now: () => clock.t });
+  for (const _ of errors) {
+    clock.t += 1_000;
+    await chain.synthesize("x");
+  }
+  expect(logs.map((l) => l.error)).toEqual([
+    "Error: kokoro: no audio within 3150ms",
+    "Error: kokoro host exited (code 134)",
+    "Error: request 7f3a9c2e1b4d failed",
+  ]);
+
+  clock.t += 60_000;
+  next = 0;
+  await chain.synthesize("x");
+  expect(logs.at(-1)).toEqual({
+    level: "warn",
+    msg: "provider_fallback",
+    provider: "kokoro",
+    error: "Error: kokoro: no audio within 3150ms",
+    suppressed: 1,
+  });
 });
