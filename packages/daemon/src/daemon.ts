@@ -17,6 +17,7 @@ import {
   readOrCreateToken,
   resolveConfig,
   resolveSecret,
+  type SettingsUpdate,
   type SpeakResponse,
   type StatusResponse,
   type Summarizer,
@@ -51,6 +52,7 @@ import { AfplayPlayer } from "./player.ts";
 import { createPreparer } from "./prepare.ts";
 import { NOTICE_SOURCE, SpeechQueue } from "./queue.ts";
 import { QuotaGatedProvider, QuotaGuard } from "./quota.ts";
+import { type SaveResult, saveSettings, settingsOf } from "./settings.ts";
 import { createSpeaker, skipReason } from "./speaker.ts";
 import { billingCycle, MeteredProvider, monthRange, UsageStore } from "./usage.ts";
 import { watchConfig } from "./watch.ts";
@@ -364,6 +366,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       status,
       pause: (reason) => queue.pause(reason),
       resume: (reason) => queue.resume(reason),
+      settings: () => settingsOf(config),
+      updateSettings: (update) => updateSettings(update),
     }),
   });
   const url = `http://127.0.0.1:${server.port}`;
@@ -433,27 +437,50 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
   };
   warmUp(providers);
 
+  /**
+   * Makes `next` the running config (FR-11). A config equal to the running one changes nothing (a
+   * settings change is applied at once, then the watcher sees the same file); a throw keeps the old
+   * config.
+   */
+  const applyConfig = async (next: Config) => {
+    if (JSON.stringify(next) === JSON.stringify(config)) {
+      configError = undefined;
+      return;
+    }
+    // Build the new chain before touching any state so a failure keeps the old config.
+    const nextProviders = await buildProviders(next);
+    const nextProvider = buildProvider(next, nextProviders);
+    config = next;
+    providers = nextProviders;
+    provider.current = nextProvider;
+    summarizer = buildSummarizer(next);
+    modes.configure(next.modes.default, next.profiles);
+    history.configure(next.history);
+    deduper.windowMs = next.alerts.dedupeWindowMs;
+    queue.configure({ ...next.queue, maxPauseMs: next.micPause.maxPauseMs });
+    startHelper(next);
+    warmUp(nextProviders);
+    configError = undefined;
+    log({ msg: "config_reloaded", provider: provider.name });
+  };
+
+  // One settings change at a time: each reads the file the previous one wrote.
+  let settingsQueue: Promise<unknown> = Promise.resolve();
+  const updateSettings = (update: SettingsUpdate): Promise<SaveResult> => {
+    const run = settingsQueue.then(async (): Promise<SaveResult> => {
+      const saved = await saveSettings(cfgPath, update);
+      if (saved.ok) await applyConfig(saved.config);
+      return saved;
+    });
+    settingsQueue = run.catch(() => {});
+    return run;
+  };
+
   const unwatch =
     opts.watch === false
       ? () => {}
       : watchConfig(cfgPath, {
-          onChange: async (next) => {
-            // Build the new chain before touching any state so a failure keeps the old config.
-            const nextProviders = await buildProviders(next);
-            const nextProvider = buildProvider(next, nextProviders);
-            config = next;
-            providers = nextProviders;
-            provider.current = nextProvider;
-            summarizer = buildSummarizer(next);
-            modes.configure(next.modes.default, next.profiles);
-            history.configure(next.history);
-            deduper.windowMs = next.alerts.dedupeWindowMs;
-            queue.configure({ ...next.queue, maxPauseMs: next.micPause.maxPauseMs });
-            startHelper(next);
-            warmUp(nextProviders);
-            configError = undefined;
-            log({ msg: "config_reloaded", provider: provider.name });
-          },
+          onChange: applyConfig,
           onError: (error) => {
             configError = errorMessage(error);
             log({ level: "warn", msg: "config_reload_failed", error: String(error) });

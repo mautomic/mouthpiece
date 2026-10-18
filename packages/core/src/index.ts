@@ -2,6 +2,7 @@ export * from "./audio.ts";
 export * from "./chunk.ts";
 export * from "./clean.ts";
 export * from "./config.ts";
+export * from "./config-edit.ts";
 export * from "./contracts.ts";
 export * from "./envelope.ts";
 export * from "./exec.ts";

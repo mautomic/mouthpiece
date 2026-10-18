@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   getMode,
+  getSettings,
   health,
   interrupt,
   MouthpieceError,
@@ -13,6 +14,7 @@ import {
   setMode,
   speak,
   status,
+  updateSettings,
   usage,
   voices,
 } from "./index.ts";
@@ -155,4 +157,12 @@ test("pause and resume POST the reason, defaulting to user", async () => {
   expect(JSON.parse(seen.at(-1)?.body ?? "")).toEqual({ reason: "user" });
   await resume("mic", { url, token: "t" });
   expect(JSON.parse(seen.at(-1)?.body ?? "")).toEqual({ reason: "mic" });
+});
+
+test("settings are GET and POST /v1/settings", async () => {
+  await getSettings({ url, token: "t" });
+  expect(seen.at(-1)).toMatchObject({ method: "GET", path: "/v1/settings", body: "" });
+  await updateSettings({ kokoro: { speed: 1.3 } }, { url, token: "t" });
+  expect(seen.at(-1)).toMatchObject({ method: "POST", path: "/v1/settings", auth: "Bearer t" });
+  expect(JSON.parse(seen.at(-1)?.body ?? "")).toEqual({ kokoro: { speed: 1.3 } });
 });

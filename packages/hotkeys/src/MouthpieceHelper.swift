@@ -1,6 +1,7 @@
 // MouthpieceHelper.swift: the Mouthpiece helper app (MouthpieceHelper.app, LSUIElement).
 //   --bind        global hotkeys via Carbon RegisterEventHotKey (no Accessibility permission)
-//   --menubar     NSStatusItem that polls GET /v1/status (US-018)
+//   --menubar     NSStatusItem that polls GET /v1/status (US-018); its Settings submenu reads and
+//                 writes GET/POST /v1/settings (the Kokoro voice and speed)
 //   --mic-pause   CoreAudio mic-in-use watcher that posts /v1/pause and /v1/resume, reason "mic" (US-022)
 // Usage: mouthpiece-helper --url http://127.0.0.1:7317 --token-file ~/.mouthpiece/token
 //          [--bind stop=ctrl+alt+s ...] [--menubar]
@@ -194,9 +195,40 @@ struct DaemonStatus: Decodable {
   let current: Current?
 }
 
+struct DaemonSettings: Decodable {
+  struct Voice: Decodable {
+    let id: String
+    let name: String
+  }
+  struct Kokoro: Decodable {
+    let voice: String
+    let speed: Double
+    let voices: [Voice]
+  }
+  let chain: [String]
+  let kokoro: Kokoro
+}
+
+/// JSON for a request body; the values here are always serializable.
+func jsonBody(_ object: [String: Any]) -> String {
+  let data = (try? JSONSerialization.data(withJSONObject: object)) ?? Data("{}".utf8)
+  return String(decoding: data, as: UTF8.self)
+}
+
+/// `1.3×`, `1×`, `1.75×`.
+func speedLabel(_ speed: Double) -> String { String(format: "%g×", speed) }
+
 /// Polls GET /v1/status every second (one request in flight at most, 1 s timeout).
 /// After 3 consecutive failures it shows "daemon down" and polls every 5 s until the daemon answers.
-final class Menubar: NSObject {
+/// The Settings submenu is fetched from GET /v1/settings each time the menu opens.
+final class Menubar: NSObject, NSMenuDelegate {
+  /// Kokoro voice groups, by the id's first two letters.
+  static let voiceGroups = [
+    ("af", "American English · female"), ("am", "American English · male"),
+    ("bf", "British English · female"), ("bm", "British English · male"),
+  ]
+  static let speeds: [Double] = [0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.75, 2]
+
   static let fastInterval: TimeInterval = 1
   static let slowInterval: TimeInterval = 5
   static let failuresBeforeBackoff = 3
@@ -207,6 +239,8 @@ final class Menubar: NSObject {
   let pauseItem = NSMenuItem(title: "Pause speech", action: nil, keyEquivalent: "")
   var actionItems: [NSMenuItem] = []
   var modeItems: [String: NSMenuItem] = [:]
+  let settingsMenu = NSMenu()
+  var settings: DaemonSettings?
   var status: DaemonStatus?
   var failures = 0
   var inFlight = false
@@ -237,6 +271,14 @@ final class Menubar: NSObject {
     pauseItem.action = #selector(togglePause(_:))
     menu.addItem(pauseItem)
     actionItems.append(pauseItem)
+
+    settingsMenu.autoenablesItems = false
+    let settingsItem = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
+    settingsItem.submenu = settingsMenu
+    menu.addItem(settingsItem)
+    actionItems.append(settingsItem)
+    renderSettings()
+    menu.delegate = self
 
     menu.addItem(NSMenuItem.separator())
     infoItem.isEnabled = false
@@ -269,6 +311,107 @@ final class Menubar: NSObject {
 
   @objc func togglePause(_ sender: NSMenuItem) {
     post(userPaused ? "/v1/resume" : "/v1/pause", "{\"reason\":\"user\"}") { [weak self] _ in self?.pollSoon() }
+  }
+
+  func menuWillOpen(_ menu: NSMenu) {
+    refreshSettings()
+  }
+
+  func refreshSettings() {
+    callDaemon("GET", "/v1/settings") { [weak self] data in
+      guard let self else { return }
+      self.settings = data.flatMap { try? JSONDecoder().decode(DaemonSettings.self, from: $0) }
+      self.renderSettings()
+    }
+  }
+
+  /// Saves a Kokoro setting, then says a short phrase in the new voice so it can be heard.
+  func changeKokoro(_ change: [String: Any], preview: @escaping (DaemonSettings.Kokoro) -> String) {
+    post("/v1/settings", jsonBody(["kokoro": change])) { [weak self] data in
+      guard let self else { return }
+      guard let data, let next = try? JSONDecoder().decode(DaemonSettings.self, from: data) else {
+        self.refreshSettings()
+        return
+      }
+      self.settings = next
+      self.renderSettings()
+      let event: [String: Any] = [
+        "text": preview(next.kokoro), "source": "menubar", "kind": "info",
+        "format": "plain", "mode": "full", "priority": "high",
+      ]
+      post("/v1/speak", jsonBody(event))
+    }
+  }
+
+  @objc func chooseVoice(_ sender: NSMenuItem) {
+    guard let id = sender.representedObject as? String else { return }
+    changeKokoro(["voice": id]) { kokoro in
+      let name = kokoro.voices.first { $0.id == kokoro.voice }?.name ?? kokoro.voice
+      return "Hi, I'm \(name)."
+    }
+  }
+
+  @objc func chooseSpeed(_ sender: NSMenuItem) {
+    guard let speed = sender.representedObject as? Double else { return }
+    changeKokoro(["speed": speed]) { _ in "This is how fast I talk now." }
+  }
+
+  /// Rebuilds the Settings submenu from the last GET /v1/settings.
+  func renderSettings() {
+    settingsMenu.removeAllItems()
+    guard let s = settings else {
+      let note = NSMenuItem(title: "Settings unavailable", action: nil, keyEquivalent: "")
+      note.isEnabled = false
+      settingsMenu.addItem(note)
+      return
+    }
+    let kokoro = s.kokoro
+    if !s.chain.contains("kokoro") {
+      let note = NSMenuItem(
+        title: "Kokoro isn't in provider.chain; these apply once it is", action: nil, keyEquivalent: "")
+      note.isEnabled = false
+      settingsMenu.addItem(note)
+    }
+
+    let voiceMenu = NSMenu()
+    voiceMenu.autoenablesItems = false
+    for (prefix, title) in Menubar.voiceGroups {
+      let voices = kokoro.voices.filter { $0.id.hasPrefix(prefix + "_") }
+      if voices.isEmpty { continue }
+      if voiceMenu.numberOfItems > 0 { voiceMenu.addItem(NSMenuItem.separator()) }
+      let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+      header.isEnabled = false
+      voiceMenu.addItem(header)
+      for voice in voices {
+        let entry = NSMenuItem(title: voice.name, action: #selector(chooseVoice(_:)), keyEquivalent: "")
+        entry.target = self
+        entry.representedObject = voice.id
+        entry.state = voice.id == kokoro.voice ? .on : .off
+        entry.indentationLevel = 1
+        voiceMenu.addItem(entry)
+      }
+    }
+    let current = kokoro.voices.first { $0.id == kokoro.voice }?.name ?? kokoro.voice
+    let voiceItem = NSMenuItem(title: "Voice: \(current)", action: nil, keyEquivalent: "")
+    voiceItem.submenu = voiceMenu
+    settingsMenu.addItem(voiceItem)
+
+    let speedMenu = NSMenu()
+    speedMenu.autoenablesItems = false
+    var speeds = Menubar.speeds
+    if !speeds.contains(where: { abs($0 - kokoro.speed) < 0.001 }) {
+      speeds = (speeds + [kokoro.speed]).sorted()
+    }
+    for speed in speeds {
+      let entry = NSMenuItem(title: speedLabel(speed), action: #selector(chooseSpeed(_:)), keyEquivalent: "")
+      entry.target = self
+      entry.representedObject = speed
+      entry.state = abs(speed - kokoro.speed) < 0.001 ? .on : .off
+      speedMenu.addItem(entry)
+    }
+    let speedItem = NSMenuItem(title: "Speed: \(speedLabel(kokoro.speed))", action: nil, keyEquivalent: "")
+    speedItem.submenu = speedMenu
+    settingsMenu.addItem(speedItem)
   }
 
   var reachable: Bool { status != nil }

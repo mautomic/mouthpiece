@@ -64,6 +64,27 @@ Skips the item currently playing. 200 `{ "skipped": true }`
 | `current` | `{ source, label? }` of the item playing, or held mid-item by a pause; `null` when idle |
 | `configError` | present only while the config file can't be loaded (e.g. invalid TOML): the error message. The daemon keeps the last good config (the defaults, if it started with a bad file) and speaks a notice; the next good edit removes the field |
 
+## GET /v1/settings
+200 `SettingsResponse`, the settings the menubar's Settings menu can change (US-018):
+
+```json
+{ "chain": ["kokoro", "say"],
+  "kokoro": { "voice": "af_heart", "speed": 1,
+              "voices": [{ "id": "af_heart", "name": "Heart", "language": "en-US" }, …] } }
+```
+
+`kokoro.voices` lists every Kokoro voice. The Kokoro settings are used while `kokoro` is in `chain`.
+
+## POST /v1/settings
+Body `{ "kokoro": { "voice": "af_jessica", "speed": 1.3 } }`; at least one of `voice` and `speed`.
+`voice` must be one of `kokoro.voices`; `speed` is 0.5 to 2.
+
+The change is written to the config file under `[provider.kokoro]` (the key is replaced in place, or added;
+comments and the rest of the file are kept) and applied at once. 200 `SettingsResponse` with the new values.
+- 400: an unknown voice or a speed out of range.
+- 409: the config file has an error, or a layout the change can't be written into (e.g. `kokoro = { … }`
+  as an inline table). The file is left unchanged; the error says what to fix.
+
 ## POST /v1/pause
 Body `{ "reason": "mic" }`. `reason` matches `^[a-z][a-z0-9-]{0,31}$` and defaults to `"user"` when absent.
 200 `PauseResponse`: `{ "paused": true, "pauseReasons": ["mic"] }`. Pausing again with an active reason keeps one entry and restarts its expiry clock.

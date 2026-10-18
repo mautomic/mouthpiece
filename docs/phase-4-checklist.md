@@ -27,6 +27,9 @@ Run these against the installed daemon (launchd owns port 7317). Re-run `./insta
   - Pause speech / Resume speech. `mouthpiece status` shows `"pauseReasons": ["user"]` while paused.
   - The bottom line shows `Mouthpiece 0.4.0 · <provider>`.
 - [ ] `mouthpiece pause` and `mouthpiece resume` do the same as the menu items.
+- [ ] Settings → Voice lists the Kokoro voices in four groups (American/British, female/male) with a checkmark on the current one. Choosing one says "Hi, I'm <name>." in that voice, and `[provider.kokoro] voice` in `~/.config/mouthpiece/config.toml` changes to it, with your comments and other settings untouched.
+- [ ] Settings → Speed has a checkmark on the current speed. Choosing one says "This is how fast I talk now." at that speed and updates `speed` in the config file.
+- [ ] With a broken config file (e.g. `[provider] chain = ["kokoro"]` on one line), choosing a voice changes nothing; `daemon.log` shows `POST /v1/settings failed: HTTP 409` from the helper.
 - [ ] Daemon down: `mouthpiece daemon stop`. The menubar icon either disappears (launchd stops the helper with the daemon) or, within a few seconds, shows the "daemon unreachable" symbol (a waveform with a slash) without using CPU in Activity Monitor. Note which.
 - [ ] `mouthpiece daemon start`: exactly one Mouthpiece icon is in the menubar (`pgrep -fl mouthpiece-helper` lists one process). `mouthpiece daemon restart` keeps it at one.
 

@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import type { NormalizedSpeakEvent, StatusResponse } from "@mouthpiece/core";
+import {
+  type NormalizedSpeakEvent,
+  resolveConfig,
+  type SettingsResponse,
+  type SettingsUpdate,
+  type StatusResponse,
+} from "@mouthpiece/core";
 import { createHandler, type HandlerDeps } from "./handler.ts";
 
 const TOKEN = "t".repeat(64);
@@ -45,6 +51,8 @@ function setup(overrides: Partial<HandlerDeps> = {}) {
       pauseCalls.push(`resume:${reason}`);
       return { paused: false, pauseReasons: [] };
     },
+    settings: () => SETTINGS,
+    updateSettings: async () => ({ ok: true, config: resolveConfig({}) }),
     ...overrides,
   };
   return { handle: createHandler(deps), enqueued, voiceCalls, pauseCalls };
@@ -268,4 +276,52 @@ test("status and pause reject the wrong method", async () => {
   expect(res.status).toBe(405);
   expect(res.headers.get("allow")).toBe("GET");
   expect((await handle(req("GET", "/v1/pause"))).status).toBe(405);
+});
+
+const SETTINGS: SettingsResponse = {
+  chain: ["kokoro", "say"],
+  kokoro: { voice: "af_heart", speed: 1, voices: [{ id: "af_heart", name: "Heart" }] },
+};
+
+test("GET /v1/settings returns the settings; both routes need the token", async () => {
+  const { handle } = setup();
+  const get = await handle(
+    new Request("http://x/v1/settings", { headers: { Authorization: `Bearer ${TOKEN}` } }),
+  );
+  expect(get.status).toBe(200);
+  expect(await get.json()).toEqual(SETTINGS);
+  expect((await handle(new Request("http://x/v1/settings"))).status).toBe(401);
+  const post = new Request("http://x/v1/settings", { method: "POST", body: "{}" });
+  expect((await handle(post)).status).toBe(401);
+});
+
+test("POST /v1/settings validates the body, saves, and maps a refused save to its status", async () => {
+  const saved: SettingsUpdate[] = [];
+  const post = (body: unknown) =>
+    new Request("http://x/v1/settings", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify(body),
+    });
+  const ok = setup({
+    updateSettings: async (u) => {
+      saved.push(u);
+      return { ok: true, config: resolveConfig({}) };
+    },
+  });
+  const res = await ok.handle(post({ kokoro: { speed: 1.3 } }));
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual(SETTINGS);
+  expect(saved).toEqual([{ kokoro: { speed: 1.3 } }]);
+
+  const bad = await ok.handle(post({ kokoro: { speed: 9 } }));
+  expect(bad.status).toBe(400);
+  expect(saved).toHaveLength(1);
+
+  const refused = setup({
+    updateSettings: async () => ({ ok: false, status: 409, error: "edit it by hand" }),
+  });
+  const conflict = await refused.handle(post({ kokoro: { voice: "af_sky" } }));
+  expect(conflict.status).toBe(409);
+  expect(await conflict.json()).toEqual({ error: "edit it by hand" });
 });

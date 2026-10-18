@@ -117,6 +117,11 @@ export async function loadConfig(path: string): Promise<Config> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return structuredClone(DEFAULT_CONFIG);
     throw error;
   }
+  return parseConfig(text, path);
+}
+
+/** Parses and validates config TOML; `path` only names the file in errors. */
+export function parseConfig(text: string, path: string): Config {
   let raw: unknown;
   try {
     raw = Bun.TOML.parse(text);
@@ -352,12 +357,26 @@ function positiveNumber(value: unknown, name: string): number {
   return value;
 }
 
+export const KOKORO_SPEED_MIN = 0.5;
+export const KOKORO_SPEED_MAX = 2;
+
 /** Kokoro's speaking rate: 0.5 (half speed) to 2 (double). */
 function kokoroSpeed(value: unknown, name: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0.5 || value > 2) {
-    throw new ConfigError(`${name} must be a number from 0.5 to 2`);
+  if (!isKokoroSpeed(value)) {
+    throw new ConfigError(
+      `${name} must be a number from ${KOKORO_SPEED_MIN} to ${KOKORO_SPEED_MAX}`,
+    );
   }
   return value;
+}
+
+export function isKokoroSpeed(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= KOKORO_SPEED_MIN &&
+    value <= KOKORO_SPEED_MAX
+  );
 }
 
 /** A number strictly between 0 and 1. */

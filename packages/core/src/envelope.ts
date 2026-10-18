@@ -1,3 +1,4 @@
+import { isKokoroSpeed, KOKORO_SPEED_MAX, KOKORO_SPEED_MIN } from "./config.ts";
 import {
   FORMATS,
   type InterruptRequest,
@@ -8,6 +9,7 @@ import {
   type PauseRequest,
   PRIORITIES,
   type ReplayRequest,
+  type SettingsUpdate,
 } from "./contracts.ts";
 import { isRecord } from "./guards.ts";
 
@@ -132,6 +134,24 @@ export function parseReplayRequest(input: unknown): ParseResult<ReplayRequest> {
   return parse(() => {
     if (!isRecord(input)) fail("body must be a JSON object");
     return { full: optionalBoolean(input, "full") ?? false };
+  });
+}
+
+/** POST /v1/settings. Whether a voice exists is up to the daemon, which knows the providers. */
+export function parseSettingsUpdate(input: unknown): ParseResult<SettingsUpdate> {
+  return parse(() => {
+    if (!isRecord(input)) fail("body must be a JSON object");
+    const kokoro = input.kokoro;
+    if (!isRecord(kokoro)) fail("kokoro must be an object");
+    const voice = optionalString(kokoro, "voice", MAX_VOICE_CHARS);
+    const speed = kokoro.speed;
+    if (speed !== undefined && !isKokoroSpeed(speed)) {
+      fail(`kokoro.speed must be a number from ${KOKORO_SPEED_MIN} to ${KOKORO_SPEED_MAX}`);
+    }
+    if (voice === undefined && speed === undefined) fail("kokoro needs voice or speed");
+    return {
+      kokoro: { ...(voice !== undefined && { voice }), ...(speed !== undefined && { speed }) },
+    };
   });
 }
 

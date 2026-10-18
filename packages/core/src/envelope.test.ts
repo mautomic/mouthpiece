@@ -6,6 +6,7 @@ import {
   parseModeRequest,
   parsePauseRequest,
   parseReplayRequest,
+  parseSettingsUpdate,
   parseSpeakEvent,
 } from "./envelope.ts";
 
@@ -206,5 +207,37 @@ describe("parsePauseRequest", () => {
   test("rejects a non-object body", () => {
     expect(parsePauseRequest("mic").ok).toBe(false);
     expect(parsePauseRequest(null).ok).toBe(false);
+  });
+});
+
+describe("parseSettingsUpdate", () => {
+  test("accepts a Kokoro voice, a speed, or both", () => {
+    expect(parseSettingsUpdate({ kokoro: { voice: "af_sky" } })).toEqual({
+      ok: true,
+      value: { kokoro: { voice: "af_sky" } },
+    });
+    expect(parseSettingsUpdate({ kokoro: { speed: 1.3, extra: true } })).toEqual({
+      ok: true,
+      value: { kokoro: { speed: 1.3 } },
+    });
+    expect(parseSettingsUpdate({ kokoro: { voice: "bm_george", speed: 0.5 } })).toEqual({
+      ok: true,
+      value: { kokoro: { voice: "bm_george", speed: 0.5 } },
+    });
+  });
+
+  test.each([
+    [null, "body must be a JSON object"],
+    [{}, "kokoro must be an object"],
+    [{ kokoro: {} }, "kokoro needs voice or speed"],
+    [{ kokoro: { voice: "" } }, "kokoro needs voice or speed"],
+    [{ kokoro: { voice: 1 } }, "voice must be a string"],
+    [{ kokoro: { speed: 0.4 } }, "kokoro.speed must be a number from 0.5 to 2"],
+    [{ kokoro: { speed: 2.5 } }, "kokoro.speed"],
+    [{ kokoro: { speed: "fast" } }, "kokoro.speed"],
+  ])("rejects %p", (input, error) => {
+    const result = parseSettingsUpdate(input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain(error);
   });
 });

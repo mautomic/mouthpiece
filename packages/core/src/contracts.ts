@@ -93,6 +93,19 @@ export interface PauseResponse {
   pauseReasons: string[];
 }
 
+/** GET /v1/settings, and the reply to POST /v1/settings: what the menubar's Settings menu shows. */
+export interface SettingsResponse {
+  /** `provider.chain`, in order. */
+  chain: string[];
+  /** The local Kokoro voice (`[provider.kokoro]`); it is used while `kokoro` is in the chain. */
+  kokoro: { voice: string; speed: number; voices: VoiceInfo[] };
+}
+
+/** POST /v1/settings: the settings to change; at least one is required. */
+export interface SettingsUpdate {
+  kokoro: { voice?: string; speed?: number };
+}
+
 export type AudioFormat = "aiff" | "mp3" | "wav";
 
 export interface AudioClip {

@@ -54,7 +54,7 @@ Start a new Claude Code session. Responses are spoken as short summaries. When C
 | ⌃⌥R | Replay the last response |
 | ⌃⌥M | Switch between summary and full |
 
-The menubar icon shows whether Mouthpiece is idle, speaking, or paused, and how many items are queued. Its menu has the same controls, plus mode and pause.
+The menubar icon shows whether Mouthpiece is idle, speaking, or paused, and how many items are queued. Its menu has the same controls, plus mode and pause, and a **Settings** submenu for the Kokoro voice and speed. A change there is saved to your config file and you hear the new voice right away.
 
 **Pause while dictating:** speech pauses whenever another app is using the microphone (for example Wispr Flow or macOS Dictation), and resumes about 0.8 s after it stops, from the sentence it was on.
 

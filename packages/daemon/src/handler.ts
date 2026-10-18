@@ -11,14 +11,18 @@ import {
   parseModeRequest,
   parsePauseRequest,
   parseReplayRequest,
+  parseSettingsUpdate,
   parseSpeakEvent,
   type ReplayRequest,
   type ReplayResponse,
+  type SettingsResponse,
+  type SettingsUpdate,
   type SpeakResponse,
   type StatusResponse,
   type UsageReport,
   type VoicesResponse,
 } from "@mouthpiece/core";
+import type { SaveResult } from "./settings.ts";
 
 export const MAX_BODY_BYTES = 1_000_000;
 
@@ -47,6 +51,10 @@ export interface HandlerDeps {
   pause(reason: string): PauseResponse;
   /** Removes a pause reason (US-022). */
   resume(reason: string): PauseResponse;
+  /** What the menubar's Settings menu shows (US-018). */
+  settings(): SettingsResponse;
+  /** Saves a settings change to the config file and applies it. */
+  updateSettings(update: SettingsUpdate): Promise<SaveResult>;
 }
 
 type Method = "GET" | "POST";
@@ -152,6 +160,18 @@ export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Resp
     "/v1/status": { GET: { auth: true, run: () => json(200, deps.status()) } },
     "/v1/pause": { POST: { auth: true, run: pauseRoute((reason) => deps.pause(reason)) } },
     "/v1/resume": { POST: { auth: true, run: pauseRoute((reason) => deps.resume(reason)) } },
+    "/v1/settings": {
+      GET: { auth: true, run: () => json(200, deps.settings()) },
+      POST: {
+        auth: true,
+        run: async (body) => {
+          const parsed = parseSettingsUpdate(body);
+          if (!parsed.ok) return json(400, { error: parsed.error });
+          const saved = await deps.updateSettings(parsed.value);
+          return saved.ok ? json(200, deps.settings()) : json(saved.status, { error: saved.error });
+        },
+      },
+    },
   };
 
   return async (req) => {

@@ -12,6 +12,8 @@ import {
   type ReplayRequest,
   type ReplayResponse,
   readToken,
+  type SettingsResponse,
+  type SettingsUpdate,
   type SpeakEvent,
   type SpeakResponse,
   type StatusResponse,
@@ -117,3 +119,7 @@ export const pause = (reason = "user", opts: ClientOptions = {}) =>
   request<PauseResponse>("POST", "/v1/pause", { reason } satisfies PauseRequest, opts);
 export const resume = (reason = "user", opts: ClientOptions = {}) =>
   request<PauseResponse>("POST", "/v1/resume", { reason } satisfies PauseRequest, opts);
+export const getSettings = (opts: ClientOptions = {}) =>
+  request<SettingsResponse>("GET", "/v1/settings", undefined, opts);
+export const updateSettings = (update: SettingsUpdate, opts: ClientOptions = {}) =>
+  request<SettingsResponse>("POST", "/v1/settings", update, opts);
