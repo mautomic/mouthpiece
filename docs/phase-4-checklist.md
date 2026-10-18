@@ -10,7 +10,7 @@ Run these against the installed daemon (launchd owns port 7317). Re-run `./insta
 - [ ] `mouthpiece kokoro status` reports it as installed, with `kokoro-js 1.2.1` and a model cache of roughly 90 MB.
 - [ ] Set `chain = ["kokoro", "say"]` under `[provider]` in `~/.config/mouthpiece/config.toml`. The reload is picked up without a restart (`config_reloaded` in `~/.mouthpiece/daemon.log`), and `mouthpiece status` shows `"provider": "kokoro"`.
 - [ ] Listen to a few responses:
-  - In `daemon.log`, the first one's `first_audio` latency is about 1.5 s; after that, speech is smooth.
+  - A summary is spoken in one go, with no breaks between sentences. It starts about 3–5 s after the `summarized` line in `daemon.log` (Kokoro renders the whole summary first, ~15 ms a character).
   - There is no `kokoro_load_failed` or `provider_skipped` line.
 - [ ] `mouthpiece voices --provider kokoro` lists 28 voices. Setting `[provider.kokoro] voice = "bm_george"` changes the voice.
 - [ ] Setting `[provider.kokoro] speed = 1.5` makes Kokoro talk faster (0.5 to 2; 1 is normal). A value outside that range is rejected with a spoken config notice and `configError` in `mouthpiece status`.

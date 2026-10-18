@@ -223,7 +223,7 @@ test("the first provider's chunking hint survives every wrapper in the chain (US
   const fast = new FakeProvider({
     name: "kokoro",
     pricePerMillionChars: 1,
-    chunking: { firstChars: 30, targetChars: 30 },
+    chunking: { firstChars: 60, targetChars: 60 },
   });
   await boot(sayChain(), { providers: [fast, new FakeProvider({ name: "say" })] });
   await speak(
@@ -236,5 +236,6 @@ test("the first provider's chunking hint survives every wrapper in the chain (US
     o(),
   );
   await daemon.queue.idle();
-  expect(fast.calls).toEqual(["I fixed the reload bug,", "and added a test. Tests pass."]);
+  // Without the hint the first sentence would be a chunk of its own.
+  expect(fast.calls).toEqual(["I fixed the reload bug, and added a test. Tests pass."]);
 });

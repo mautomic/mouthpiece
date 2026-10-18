@@ -290,7 +290,7 @@ test("the configured speed reaches every render, warm-up included, and is part o
   expect(harness({ speed: 1 }).provider.cacheKey).toBe(harness().provider.cacheKey);
 });
 
-test("Kokoro asks for a short first chunk and small packing, since it renders before playing", () => {
+test("Kokoro packs the first chunk too, so a summary is one clip with no breaks", () => {
   const { chunking } = harness().provider;
-  expect(chunking).toEqual({ firstChars: 80, targetChars: 150 });
+  expect(chunking).toEqual({ firstChars: 400, targetChars: 400 });
 });

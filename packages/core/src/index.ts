@@ -11,3 +11,4 @@ export * from "./guards.ts";
 export * from "./home.ts";
 export * from "./secrets.ts";
 export * from "./timing.ts";
+export * from "./wav.ts";

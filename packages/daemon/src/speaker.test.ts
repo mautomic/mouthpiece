@@ -66,20 +66,14 @@ test("cleans markdown, prefixes the label when asked, and plays chunk by chunk",
   );
 });
 
-test("a provider's chunking hint shortens the first chunk and the packing", async () => {
+test("a provider's chunking hint packs the first chunk instead of leaving its sentence alone", async () => {
   const provider = new FakeProvider({ chunking: { firstChars: 40, targetChars: 30 } });
   const player = new FakePlayer();
   await createSpeaker({ provider, player, log: () => {}, prepare })(
-    item("I fixed the reload bug, and added a test for it. Tests pass. Check is green.", {
-      format: "plain",
-    }),
+    item("I fixed it. Tests pass. Check is green. Docs updated too.", { format: "plain" }),
     ctx(),
   );
-  expect(provider.calls).toEqual([
-    "I fixed the reload bug,",
-    "and added a test for it.",
-    "Tests pass. Check is green.",
-  ]);
+  expect(provider.calls).toEqual(["I fixed it. Tests pass. Check is green.", "Docs updated too."]);
 });
 
 test("plain format skips cleaning", async () => {

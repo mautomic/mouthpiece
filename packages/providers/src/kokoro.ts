@@ -6,6 +6,7 @@ import {
   type SynthesizeOptions,
   singleChunk,
   type TtsProvider,
+  trimWavSilence,
   type VoiceInfo,
 } from "@mouthpiece/core";
 
@@ -25,6 +26,8 @@ export interface KokoroEngine {
 export type KokoroLoader = () => Promise<KokoroEngine>;
 
 export const KOKORO_DEFAULT_VOICE = "af_heart";
+/** What a clip keeps of Kokoro's padding: almost none before, a sentence pause after. */
+const CLIP_SILENCE = { leadMs: 20, trailMs: 250 };
 export const KOKORO_MODEL = "onnx-community/Kokoro-82M-v1.0-ONNX";
 export const KOKORO_DTYPE = "q8";
 
@@ -129,11 +132,11 @@ export class KokoroProvider implements TtsProvider {
   readonly maxCharsPerRequest = 400;
   readonly pricePerMillionChars = 0;
   /**
-   * Kokoro renders a whole chunk before it plays, at about 20 ms a character on an M4 Pro: an
-   * 80-character first chunk starts speaking in ~1.6 s, and 150-character chunks render faster
-   * than the one before them plays.
+   * Every chunk is its own clip, and each break between clips costs about a second (afplay start-up
+   * plus the clip's silence), so chunks are as long as Kokoro takes: a summary is one clip, spoken
+   * without breaks, at the cost of a later start (~15 ms of rendering a character on an M4 Pro).
    */
-  readonly chunking = { firstChars: 80, targetChars: 150 };
+  readonly chunking = { firstChars: 400, targetChars: 400 };
   readonly cacheKey: string;
   #engine: Promise<KokoroEngine> | undefined;
   #loadFailureLogged = false;
@@ -172,7 +175,9 @@ export class KokoroProvider implements TtsProvider {
       signal,
     );
     signal?.throwIfAborted();
-    return { format: "wav", chunks: singleChunk(new Uint8Array(audio.toWav())) };
+    // Kokoro pads each clip with ~0.25 s of silence before and ~0.4 s after the speech.
+    const wav = trimWavSilence(new Uint8Array(audio.toWav()), CLIP_SILENCE);
+    return { format: "wav", chunks: singleChunk(wav) };
   }
 
   /** Loads the engine and renders a short phrase so the first real item is fast. Never throws. */

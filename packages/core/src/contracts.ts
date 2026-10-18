@@ -139,13 +139,13 @@ export interface ProviderUsage {
 }
 
 /**
- * How to chunk text for a provider that renders a whole request before any audio plays (a local
- * model), so speech starts soon and each chunk renders while the previous one plays.
+ * How to chunk text for a provider whose chunks don't flow into each other (a local model renders
+ * each one as a clip with its own start-up and silence), so it gets fewer, longer chunks.
  */
 export interface ChunkHint {
-  /** A first sentence longer than this is split at a clause break (`,` `;` `:` or a spaced dash). */
+  /** The first chunk is packed up to this many characters instead of being the first sentence alone. */
   firstChars: number;
-  /** Later sentences are packed into chunks of about this many characters. */
+  /** Later chunks are packed up to this many characters. */
   targetChars: number;
 }
 
@@ -153,7 +153,7 @@ export interface TtsProvider {
   readonly name: string;
   readonly maxCharsPerRequest: number;
   readonly pricePerMillionChars: number;
-  /** Absent for providers that stream audio as they render (cloud voices, `say`). */
+  /** Absent for providers that stream audio (cloud voices) or render fast (`say`). */
   readonly chunking?: ChunkHint;
   /** Configured settings that change the audio (e.g. default voice and model). Audio caches key on it. */
   readonly cacheKey?: string;
