@@ -97,6 +97,24 @@ func postReply(path: String, body: [String: String], token: String, done: @escap
   }.resume()
 }
 
+/** POSTs a JSON body to the daemon; `done` gets the HTTP status (0: no answer) on the main queue. */
+func postDaemon(path: String, body: [String: Any], token: String, done: @escaping (Int) -> Void) {
+  guard let url = URL(string: baseURL + path), let data = try? JSONSerialization.data(withJSONObject: body) else {
+    done(0)
+    return
+  }
+  var request = URLRequest(url: url)
+  request.httpMethod = "POST"
+  request.timeoutInterval = 5
+  request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+  request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+  request.httpBody = data
+  replySession.dataTask(with: request) { _, response, error in
+    let status = error == nil ? ((response as? HTTPURLResponse)?.statusCode ?? 0) : 0
+    DispatchQueue.main.async { done(status) }
+  }.resume()
+}
+
 // MARK: - Views
 
 /// The panel's content view: tells the panel when the mouse enters, to cancel the pop-up's auto-hide.
@@ -133,6 +151,9 @@ final class InboxRow: NSView, NSTextFieldDelegate {
   private let onSend: (InboxRow, String) -> Void
   private let onSubmit: (InboxRow) -> Void
   private let onClose: () -> Void
+  /// The row's × (POST /v1/inbox/dismiss); the row goes when the daemon's remove event arrives.
+  var onDismiss: ((InboxRow) -> Void)?
+  let dismissButton = NSButton(title: "×", target: nil, action: nil)
 
   init(
     entry: InboxEntry, onSend: @escaping (InboxRow, String) -> Void, onSubmit: @escaping (InboxRow) -> Void,
@@ -155,7 +176,15 @@ final class InboxRow: NSView, NSTextFieldDelegate {
     submit.action = #selector(submitPressed(_:))
     field.delegate = self
     field.lineBreakMode = .byTruncatingHead
-    let stack = NSStackView(views: [header, body, more, field, result, submit])
+    dismissButton.isBordered = false
+    dismissButton.toolTip = "Remove from the inbox"
+    dismissButton.target = self
+    dismissButton.action = #selector(dismissPressed(_:))
+    header.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    header.lineBreakMode = .byTruncatingTail
+    let top = NSStackView(views: [header, dismissButton])
+    top.orientation = .horizontal
+    let stack = NSStackView(views: [top, body, more, field, result, submit])
     stack.orientation = .vertical
     stack.alignment = .leading
     stack.spacing = 4
@@ -167,6 +196,7 @@ final class InboxRow: NSView, NSTextFieldDelegate {
       stack.topAnchor.constraint(equalTo: topAnchor, constant: 6),
       stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
       field.widthAnchor.constraint(equalToConstant: InboxRow.width),
+      top.widthAnchor.constraint(equalToConstant: InboxRow.width),
       widthAnchor.constraint(equalToConstant: InboxRow.width),
     ])
     result.isHidden = true
@@ -213,6 +243,8 @@ final class InboxRow: NSView, NSTextFieldDelegate {
   }
 
   @objc private func submitPressed(_ sender: NSButton) { onSubmit(self) }
+
+  @objc private func dismissPressed(_ sender: NSButton) { onDismiss?(self) }
 
   private func send() {
     let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -269,6 +301,10 @@ final class InboxPanel: NSObject, NSWindowDelegate {
     panel.delegate = self
 
     let content = HoverView()
+    let clearAll = NSButton(title: "Clear all", target: self, action: #selector(clearAllPressed(_:)))
+    clearAll.bezelStyle = .inline
+    clearAll.translatesAutoresizingMaskIntoConstraints = false
+    content.addSubview(clearAll)
     content.onEnter = { [weak self] in self?.cancelHide() }
     let scroll = NSScrollView()
     scroll.hasVerticalScroller = true
@@ -287,7 +323,9 @@ final class InboxPanel: NSObject, NSWindowDelegate {
     NSLayoutConstraint.activate([
       scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
       scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-      scroll.topAnchor.constraint(equalTo: content.topAnchor),
+      clearAll.topAnchor.constraint(equalTo: content.topAnchor, constant: 6),
+      clearAll.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
+      scroll.topAnchor.constraint(equalTo: clearAll.bottomAnchor, constant: 4),
       scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor),
       document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
       rowsStack.leadingAnchor.constraint(equalTo: document.leadingAnchor, constant: 12),
@@ -382,6 +420,7 @@ final class InboxPanel: NSObject, NSWindowDelegate {
       onSubmit: { [weak self] row in self?.submit(row) },
       onClose: { [weak self] in self?.hide() })
     row.onResize = { [weak self] in self?.resize() }
+    row.onDismiss = { [weak self] row in self?.dismiss(row) }
     return row
   }
 
@@ -390,6 +429,20 @@ final class InboxPanel: NSObject, NSWindowDelegate {
     postReply(path: "/v1/reply", body: ["id": row.entry.id, "text": text], token: token()) { [weak row] outcome in
       row?.setSending(false)
       row?.show(outcome, sent: text)
+    }
+  }
+
+  /// Removes an entry; the daemon's remove event takes the row away. A reply in flight keeps it (409).
+  private func dismiss(_ row: InboxRow) {
+    postDaemon(path: "/v1/inbox/dismiss", body: ["id": row.entry.id], token: token()) { [weak row] status in
+      if status == 409 { row?.show(.refused(reason: "in-flight", error: "")) }
+      if status == 0 { row?.show(.refused(reason: "unreachable", error: "")) }
+    }
+  }
+
+  @objc private func clearAllPressed(_ sender: NSButton) {
+    postDaemon(path: "/v1/inbox/dismiss", body: ["all": true], token: token()) { status in
+      if status != 200 { log("inbox clear failed (HTTP \(status))") }
     }
   }
 
@@ -405,7 +458,7 @@ final class InboxPanel: NSObject, NSWindowDelegate {
   private func resize() {
     guard let screen = panel.screen ?? NSScreen.main else { return }
     rowsStack.layoutSubtreeIfNeeded()
-    let wanted = rowsStack.fittingSize.height + 20
+    let wanted = rowsStack.fittingSize.height + 20 + 30  // rows, margins, the Clear all bar
     let height = min(max(wanted, 60), screen.visibleFrame.height * 0.6)
     let top = panel.frame.maxY
     panel.setContentSize(NSSize(width: InboxPanel.width, height: height))
