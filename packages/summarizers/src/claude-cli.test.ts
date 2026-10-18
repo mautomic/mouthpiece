@@ -40,7 +40,8 @@ test("runs claude -p with the measured flags, child env, and wrapped stdin; trim
 echo "I need your call on interrupts. I fixed the race. Everything passes now."`,
   );
   const summary = await make(cmd).summarize("Full text here.", { source: "claude-code" });
-  expect(summary).toBe("I need your call on interrupts. I fixed the race.");
+  // Trimmed to 60 characters from the middle: the last sentence (where a to-do goes) is kept.
+  expect(summary).toBe("I need your call on interrupts. Everything passes now.");
   expect((await readFile(join(dir, "args"), "utf8")).split("\n")).toEqual([
     "-p",
     "--model",
@@ -90,4 +91,13 @@ test("abort rejects", async () => {
   const p = make(await fakeClaude("sleep 5")).summarize("x", { source: "s", signal: c.signal });
   c.abort();
   await expect(p).rejects.toBeDefined();
+});
+
+test("markdown emphasis and code marks in the summary are not spoken", async () => {
+  const cmd = await fakeClaude(
+    'echo "Run \\`mouthpiece daemon start\\` **now**, then pick *af_bella*."',
+  );
+  expect(await make(cmd).summarize("x", { source: "s" })).toBe(
+    "Run mouthpiece daemon start now, then pick af_bella.",
+  );
 });
