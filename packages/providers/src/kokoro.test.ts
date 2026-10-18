@@ -16,10 +16,10 @@ import { LIVE } from "./testing.ts";
 const WAV = new Uint8Array([82, 73, 70, 70, 1, 2, 3, 4]); // "RIFF…"
 
 function fakeEngine(opts: { failWith?: Error } = {}) {
-  const calls: { text: string; voice: string }[] = [];
+  const calls: { text: string; voice: string; speed?: number }[] = [];
   const engine: KokoroEngine = {
-    async generate(text, { voice }) {
-      calls.push({ text, voice });
+    async generate(text, { voice, speed }) {
+      calls.push({ text, voice, ...(speed !== undefined && { speed }) });
       if (opts.failWith) throw opts.failWith;
       return { toWav: () => WAV.slice().buffer };
     },
@@ -27,12 +27,15 @@ function fakeEngine(opts: { failWith?: Error } = {}) {
   return { engine, calls };
 }
 
-function harness(opts: { load?: KokoroLoader; voice?: string; failWith?: Error } = {}) {
+function harness(
+  opts: { load?: KokoroLoader; voice?: string; speed?: number; failWith?: Error } = {},
+) {
   const { engine, calls } = fakeEngine({ failWith: opts.failWith });
   let loads = 0;
   const logs: Record<string, unknown>[] = [];
   const provider = new KokoroProvider({
     voice: opts.voice ?? "af_heart",
+    ...(opts.speed !== undefined && { speed: opts.speed }),
     load:
       opts.load ??
       (async () => {
@@ -215,7 +218,7 @@ test("warmUp loads the engine and generates once", async () => {
   const h = harness();
   await h.provider.warmUp();
   expect(h.loads()).toBe(1);
-  expect(h.calls).toEqual([{ text: "Ready.", voice: "af_heart" }]);
+  expect(h.calls).toEqual([{ text: "Ready.", voice: "af_heart", speed: 1 }]);
 });
 
 test("warmUp swallows load and generate errors", async () => {
@@ -277,3 +280,12 @@ test.skipIf(!LIVE || !isKokoroInstalled(liveHome))(
   },
   30_000,
 );
+
+test("the configured speed reaches every render, warm-up included, and is part of the cache key", async () => {
+  const h = harness({ speed: 1.5 });
+  await h.provider.warmUp();
+  await h.provider.synthesize("Faster, please.");
+  expect(h.calls.map((c) => c.speed)).toEqual([1.5, 1.5]);
+  expect(h.provider.cacheKey).not.toBe(harness().provider.cacheKey);
+  expect(harness({ speed: 1 }).provider.cacheKey).toBe(harness().provider.cacheKey);
+});

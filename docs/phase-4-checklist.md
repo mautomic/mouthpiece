@@ -13,6 +13,7 @@ Run these against the installed daemon (launchd owns port 7317). Re-run `./insta
   - In `daemon.log`, the first one's `first_audio` latency is about 1.5 s; after that, speech is smooth.
   - There is no `kokoro_load_failed` or `provider_skipped` line.
 - [ ] `mouthpiece voices --provider kokoro` lists 28 voices. Setting `[provider.kokoro] voice = "bm_george"` changes the voice.
+- [ ] Setting `[provider.kokoro] speed = 1.5` makes Kokoro talk faster (0.5 to 2; 1 is normal). A value outside that range is rejected with a spoken config notice and `configError` in `mouthpiece status`.
 - [ ] Missing Kokoro: `mouthpiece kokoro uninstall`. With `kokoro` still in the chain, speech continues in `say`, and the reload logs `provider_skipped` with the hint to run `mouthpiece kokoro install`. Reinstall it, or remove `kokoro` from the chain.
 
 ## Menubar (US-018)

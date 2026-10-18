@@ -408,3 +408,9 @@ test.skipIf(!LIVE || !liveHomeOk)(
     }),
   60_000,
 );
+
+test("the speed is sent to the host with each render", async () => {
+  const engine = await fakeLoader()();
+  const wav = (await engine.generate("Quick.", { voice: "af_heart", speed: 1.5 })).toWav();
+  expect(new TextDecoder().decode(wav).split("|")[4]).toBe("1.5");
+});

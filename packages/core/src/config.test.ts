@@ -159,7 +159,7 @@ test.each([
 });
 
 test("phase 4 defaults", () => {
-  expect(DEFAULT_CONFIG.provider.kokoro).toEqual({ voice: "af_heart" });
+  expect(DEFAULT_CONFIG.provider.kokoro).toEqual({ voice: "af_heart", speed: 1 });
   expect(DEFAULT_CONFIG.menubar).toEqual({ enabled: true });
   expect(DEFAULT_CONFIG.micPause).toEqual({
     enabled: true,
@@ -172,7 +172,7 @@ test("phase 4 defaults", () => {
 
 test("phase 4 settings resolve", () => {
   const c = resolveConfig({
-    provider: { kokoro: { voice: "bm_lewis" } },
+    provider: { kokoro: { voice: "bm_lewis", speed: 1.5 } },
     menubar: { enabled: false },
     micPause: {
       enabled: false,
@@ -181,7 +181,7 @@ test("phase 4 settings resolve", () => {
       maxPauseMs: 60_000,
     },
   });
-  expect(c.provider.kokoro).toEqual({ voice: "bm_lewis" });
+  expect(c.provider.kokoro).toEqual({ voice: "bm_lewis", speed: 1.5 });
   expect(c.menubar).toEqual({ enabled: false });
   expect(c.micPause).toEqual({
     enabled: false,
@@ -199,7 +199,7 @@ test("phase 4 TOML resolves and partial tables keep defaults", async () => {
   );
   const c = await loadConfig(path);
   expect(c.provider.chain).toEqual(["kokoro", "say"]);
-  expect(c.provider.kokoro).toEqual({ voice: "af_heart" });
+  expect(c.provider.kokoro).toEqual({ voice: "af_heart", speed: 1 });
   expect(c.menubar).toEqual({ enabled: true });
   expect(c.micPause).toEqual({ ...DEFAULT_CONFIG.micPause, ignoreBundleIds: ["us.zoom.xos"] });
 });
@@ -213,6 +213,10 @@ test.each([
   [{ provider: { kokoro: "af_heart" } }, "provider.kokoro must be a table"],
   [{ provider: { kokoro: { voice: "" } } }, "provider.kokoro.voice"],
   [{ provider: { kokoro: { voice: 1 } } }, "provider.kokoro.voice"],
+  [{ provider: { kokoro: { speed: 0 } } }, "provider.kokoro.speed must be a number from 0.5 to 2"],
+  [{ provider: { kokoro: { speed: 0.4 } } }, "provider.kokoro.speed"],
+  [{ provider: { kokoro: { speed: 2.5 } } }, "provider.kokoro.speed"],
+  [{ provider: { kokoro: { speed: "fast" } } }, "provider.kokoro.speed"],
   [{ menubar: true }, "menubar must be a table"],
   [{ menubar: { enabled: "yes" } }, "menubar.enabled"],
   [{ micPause: { enabled: 1 } }, "micPause.enabled"],

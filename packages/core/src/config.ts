@@ -14,8 +14,11 @@ export interface Config {
     /** Deepgram's voice is its model (e.g. `aura-2-thalia-en`). */
     deepgram: { model: string };
     openai: { model: string; voice: string; instructions?: string };
-    /** Local Kokoro voice (e.g. `af_heart`); installed by `mouthpiece kokoro install`. */
-    kokoro: { voice: string };
+    /**
+     * Local Kokoro voice (e.g. `af_heart`); installed by `mouthpiece kokoro install`. `speed` is
+     * Kokoro's speaking rate, from 0.5 to 2 (1 is normal).
+     */
+    kokoro: { voice: string; speed: number };
   };
   /** `[voices.<provider>] "<label>" = "<voice>"`: per-label (e.g. per-project) voice for each provider. */
   voices: Record<string, Record<string, string>>;
@@ -69,7 +72,7 @@ export const DEFAULT_CONFIG: Config = {
     elevenlabs: { model: "eleven_flash_v2_5", voice: "JBFqnCBsd6RMkjVDRZzb" },
     deepgram: { model: "aura-2-thalia-en" },
     openai: { model: "tts-1", voice: "alloy" },
-    kokoro: { voice: "af_heart" },
+    kokoro: { voice: "af_heart", speed: 1 },
   },
   voices: {},
   filter: { minChars: 20, trivial: ["done", "ok", "okay", "got it", "sounds good"] },
@@ -181,6 +184,9 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
         voice:
           optional(kokoro.voice, "provider.kokoro.voice", nonEmptyString) ??
           base.provider.kokoro.voice,
+        speed:
+          optional(kokoro.speed, "provider.kokoro.speed", kokoroSpeed) ??
+          base.provider.kokoro.speed,
       },
     },
     voices: resolveVoices(root.voices, base.voices),
@@ -342,6 +348,14 @@ function atMost(value: number, max: number, name: string): number {
 function positiveNumber(value: unknown, name: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     throw new ConfigError(`${name} must be a positive number`);
+  }
+  return value;
+}
+
+/** Kokoro's speaking rate: 0.5 (half speed) to 2 (double). */
+function kokoroSpeed(value: unknown, name: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0.5 || value > 2) {
+    throw new ConfigError(`${name} must be a number from 0.5 to 2`);
   }
   return value;
 }

@@ -21,11 +21,11 @@ engine.then(
 // The daemon sends one request at a time; the chain keeps them in order regardless.
 let queue: Promise<void> = Promise.resolve();
 process.on("message", (message) => {
-  const { id, text, voice } = message as KokoroHostRequest;
+  const { id, text, voice, speed } = message as KokoroHostRequest;
   queue = queue.then(async () => {
     try {
       // generate(), never stream(): stream() hangs after the second sentence (US-019).
-      const wav = (await (await engine).generate(text, { voice })).toWav();
+      const wav = (await (await engine).generate(text, { voice, speed })).toWav();
       reply({ id, wav: new Uint8Array(wav) });
     } catch (error) {
       reply({ id, error: describe(error) });

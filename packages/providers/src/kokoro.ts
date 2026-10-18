@@ -17,7 +17,7 @@ export interface KokoroEngine {
    */
   generate(
     text: string,
-    opts: { voice: string; signal?: AbortSignal },
+    opts: { voice: string; speed?: number; signal?: AbortSignal },
   ): Promise<{ toWav(): ArrayBuffer }>;
   list_voices?(): unknown;
 }
@@ -116,6 +116,8 @@ export function defaultKokoroLoader(
 export interface KokoroProviderOptions {
   /** Default voice (`provider.kokoro.voice`). */
   voice: string;
+  /** Speaking rate (`provider.kokoro.speed`); 1 when absent. */
+  speed?: number;
   load: KokoroLoader;
   log?: Logger;
 }
@@ -143,7 +145,9 @@ export class KokoroProvider implements TtsProvider {
         using: this.#voice,
       });
     }
-    this.cacheKey = `${this.#voice}\0${KOKORO_DTYPE}`;
+    // Speed changes the audio, so it is part of the key; the default keeps the old key.
+    const speed = opts.speed ?? 1;
+    this.cacheKey = `${this.#voice}\0${KOKORO_DTYPE}${speed === 1 ? "" : `\0${speed}`}`;
   }
 
   /**
@@ -157,7 +161,10 @@ export class KokoroProvider implements TtsProvider {
     const engine = await untilAborted(this.#load(), signal);
     // A voice from another provider in the chain (or a typo) is not a Kokoro voice: use ours.
     const voice = options.voice && VOICE_IDS.has(options.voice) ? options.voice : this.#voice;
-    const audio = await untilAborted(engine.generate(text, { voice, signal }), signal);
+    const audio = await untilAborted(
+      engine.generate(text, { voice, speed: this.opts.speed ?? 1, signal }),
+      signal,
+    );
     signal?.throwIfAborted();
     return { format: "wav", chunks: singleChunk(new Uint8Array(audio.toWav())) };
   }
@@ -171,7 +178,7 @@ export class KokoroProvider implements TtsProvider {
       return; // already logged as kokoro_load_failed
     }
     try {
-      await engine.generate("Ready.", { voice: this.#voice });
+      await engine.generate("Ready.", { voice: this.#voice, speed: this.opts.speed ?? 1 });
     } catch (error) {
       this.opts.log?.({ level: "warn", msg: "kokoro_warmup_failed", error: String(error) });
     }

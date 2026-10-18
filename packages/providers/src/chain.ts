@@ -86,6 +86,7 @@ function createKokoro(config: Config, deps: ChainDeps): KokoroProvider | undefin
   }
   return new KokoroProvider({
     voice: config.provider.kokoro.voice,
+    speed: config.provider.kokoro.speed,
     load: deps.kokoroLoader ?? processKokoroLoader(deps.home, { log: deps.log }),
     log: deps.log,
   });

@@ -1,5 +1,5 @@
 // Test host: speaks the kokoro-host protocol with a fake engine, so tests don't need kokoro-js.
-// The reply's "WAV" is `<pid>|<voice>|<text>|<n>`, where n counts the requests this host received,
+// The reply's "WAV" is `<pid>|<voice>|<text>|<n>|<speed>`, where n counts the requests this host received,
 // so a test can tell hosts apart. Special texts: "error" replies with an error, "crash" throws (the
 // host dies), "exit" writes a line to stderr and exits 3, "hang…" never replies, "noisy" writes to stdout and stderr first, "slow…" replies after
 // 50 ms, and "block…" busy-waits 300 ms (a synchronous render). Homes: "fail-load" fails the engine
@@ -15,9 +15,9 @@ else if (data.home !== "hang-load") reply({ ready: true });
 
 let received = 0;
 process.on("message", (message) => {
-  const { id, text, voice } = message as KokoroHostRequest;
+  const { id, text, voice, speed } = message as KokoroHostRequest;
   const n = ++received;
-  const wav = () => new TextEncoder().encode(`${process.pid}|${voice}|${text}|${n}`);
+  const wav = () => new TextEncoder().encode(`${process.pid}|${voice}|${text}|${n}|${speed ?? ""}`);
   if (text.startsWith("hang")) return;
   if (text === "crash") throw new Error("engine crashed");
   if (text === "exit") {

@@ -14,6 +14,8 @@ export interface KokoroHostRequest {
   id: number;
   text: string;
   voice: string;
+  /** Speaking rate; 1 when absent. */
+  speed?: number;
 }
 
 /** Host → daemon. `ready` / `loadError` once, after the engine load; then one `wav` or `error` per request. */
@@ -75,6 +77,7 @@ interface Job {
   id: number;
   text: string;
   voice: string;
+  speed: number | undefined;
   resolve(wav: Uint8Array): void;
   reject(error: unknown): void;
 }
@@ -181,7 +184,8 @@ export function processKokoroLoader(
     }, ms);
     timer.unref?.();
     h.current = { job, startedAt: performance.now(), timer, abandoned: false };
-    const request: KokoroHostRequest = { id: job.id, text: job.text, voice: job.voice };
+    const { id, text, voice, speed } = job;
+    const request: KokoroHostRequest = { id, text, voice, ...(speed !== undefined && { speed }) };
     try {
       h.proc.send(request);
     } catch (error) {
@@ -285,7 +289,7 @@ export function processKokoroLoader(
   };
 
   const engine: KokoroEngine = {
-    generate(text, { voice, signal }) {
+    generate(text, { voice, speed, signal }) {
       return new Promise((resolve, reject) => {
         if (signal?.aborted) return reject(signal.reason);
         const onAbort = () => abandon(job, signal?.reason);
@@ -293,6 +297,7 @@ export function processKokoroLoader(
           id: ++seq,
           text,
           voice,
+          speed,
           resolve: (wav) => {
             signal?.removeEventListener("abort", onAbort);
             resolve({ toWav: () => toArrayBuffer(wav) });
