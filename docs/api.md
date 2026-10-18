@@ -64,6 +64,11 @@ Skips the item currently playing. 200 `{ "skipped": true }`
 | `current` | `{ source, label? }` of the item playing, or held mid-item by a pause; `null` when idle |
 | `configError` | present only while the config file can't be loaded (e.g. invalid TOML): the error message. The daemon keeps the last good config (the defaults, if it started with a bad file) and speaks a notice; the next good edit removes the field |
 
+## POST /v1/shutdown
+Stops the daemon, as the menubar's **Quit Mouthpiece** does. 200 `{ "stopping": true }`, sent before it stops.
+Under launchd (`dev.mouthpiece.daemon`) it exits cleanly, so it stays stopped until the next login or
+`mouthpiece daemon start`. Hooks stay silent meanwhile.
+
 ## GET /v1/settings
 200 `SettingsResponse`, the settings the menubar's Settings menu can change (US-018):
 

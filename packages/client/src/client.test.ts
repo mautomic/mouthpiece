@@ -12,6 +12,7 @@ import {
   replay,
   resume,
   setMode,
+  shutdown,
   speak,
   status,
   updateSettings,
@@ -165,4 +166,9 @@ test("settings are GET and POST /v1/settings", async () => {
   await updateSettings({ kokoro: { speed: 1.3 } }, { url, token: "t" });
   expect(seen.at(-1)).toMatchObject({ method: "POST", path: "/v1/settings", auth: "Bearer t" });
   expect(JSON.parse(seen.at(-1)?.body ?? "")).toEqual({ kokoro: { speed: 1.3 } });
+});
+
+test("shutdown is POST /v1/shutdown", async () => {
+  await shutdown({ url, token: "t" });
+  expect(seen.at(-1)).toMatchObject({ method: "POST", path: "/v1/shutdown", auth: "Bearer t" });
 });

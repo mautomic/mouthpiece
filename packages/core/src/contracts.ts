@@ -93,6 +93,11 @@ export interface PauseResponse {
   pauseReasons: string[];
 }
 
+/** POST /v1/shutdown: the daemon stops once this reply is sent (the menubar's Quit). */
+export interface ShutdownResponse {
+  stopping: true;
+}
+
 /** GET /v1/settings, and the reply to POST /v1/settings: what the menubar's Settings menu shows. */
 export interface SettingsResponse {
   /** `provider.chain`, in order. */

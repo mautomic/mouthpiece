@@ -15,7 +15,8 @@ const code = await run(
   },
   {
     client,
-    startDaemon,
+    // A shutdown request (the menubar's Quit) exits cleanly, so launchd doesn't restart it.
+    startDaemon: () => startDaemon({ onShutdown: () => process.exit(0) }),
     env: process.env,
     exec: defaultExec,
     paths: { repoRoot: resolve(import.meta.dir, "../../.."), bun: process.execPath },

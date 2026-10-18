@@ -67,6 +67,11 @@ export const VOICES_TIMEOUT_MS = 5_000;
 export const PROVIDER_USAGE_TIMEOUT_MS = 3_000;
 
 export interface DaemonOptions {
+  /**
+   * Runs after POST /v1/shutdown has stopped the daemon; the CLI exits the process cleanly, so
+   * launchd (which only restarts it after a crash) leaves it stopped.
+   */
+  onShutdown?: () => void;
   env?: Env;
   port?: number;
   config?: Config;
@@ -378,6 +383,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       pause: (reason) => queue.pause(reason),
       resume: (reason) => queue.resume(reason),
       settings: () => settingsOf(config),
+      shutdown: () => {
+        log({ msg: "shutdown_requested" });
+        // After this reply has gone out.
+        setTimeout(() => void running.stop().finally(() => opts.onShutdown?.()), 50);
+        return { stopping: true };
+      },
       updateSettings: (update) => updateSettings(update),
     }),
   });
@@ -501,23 +512,27 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
   if (configError !== undefined) notify(configNotice("using the default settings"));
 
   log({ msg: "listening", url, provider: provider.name, player: players.name, version: VERSION });
-  return {
+  // Stopping twice (a Quit, then the process exiting) is safe: the second call waits on the first.
+  let stopping: Promise<void> | undefined;
+  const running: RunningDaemon = {
     url,
     queue,
     modes,
     history,
     usage,
-    stop: async () => {
-      unwatch();
-      stopHelper();
-      queue.stopAll();
-      await players.stop();
-      server.stop(true);
-      // Kills the Kokoro host (safe mid-render) and waits briefly for it to exit.
-      await kokoroLoader.terminate?.();
-      usage.close();
-    },
+    stop: () =>
+      (stopping ??= (async () => {
+        unwatch();
+        stopHelper();
+        queue.stopAll();
+        await players.stop();
+        server.stop(true);
+        // Kills the Kokoro host (safe mid-render) and waits briefly for it to exit.
+        await kokoroLoader.terminate?.();
+        usage.close();
+      })()),
   };
+  return running;
 }
 
 function errorMessage(error: unknown): string {

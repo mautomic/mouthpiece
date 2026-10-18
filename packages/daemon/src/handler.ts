@@ -17,6 +17,7 @@ import {
   type ReplayResponse,
   type SettingsResponse,
   type SettingsUpdate,
+  type ShutdownResponse,
   type SpeakResponse,
   type StatusResponse,
   type UsageReport,
@@ -55,6 +56,8 @@ export interface HandlerDeps {
   settings(): SettingsResponse;
   /** Saves a settings change to the config file and applies it. */
   updateSettings(update: SettingsUpdate): Promise<SaveResult>;
+  /** Stops the daemon after the reply is sent (the menubar's Quit). */
+  shutdown(): ShutdownResponse;
 }
 
 type Method = "GET" | "POST";
@@ -160,6 +163,7 @@ export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Resp
     "/v1/status": { GET: { auth: true, run: () => json(200, deps.status()) } },
     "/v1/pause": { POST: { auth: true, run: pauseRoute((reason) => deps.pause(reason)) } },
     "/v1/resume": { POST: { auth: true, run: pauseRoute((reason) => deps.resume(reason)) } },
+    "/v1/shutdown": { POST: { auth: true, run: () => json(200, deps.shutdown()) } },
     "/v1/settings": {
       GET: { auth: true, run: () => json(200, deps.settings()) },
       POST: {
