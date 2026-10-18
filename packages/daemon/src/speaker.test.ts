@@ -543,3 +543,29 @@ test("without a gap-free player the speaker keeps its one-chunk prefetch and no 
   );
   expect(player.played).toHaveLength(1); // withBreaks packs the whole item into one clip
 });
+
+test("rendering ahead, a chunk whose stream fails is skipped and nothing rejects unhandled", async () => {
+  const provider = new FakeProvider({
+    chunking: { withBreaks: { firstChars: 400, targetChars: 400 }, gapless: { targetChars: 1 } },
+    failMidStream: (t) => t.startsWith("Bad"),
+  });
+  const player = new FakePlayer({ gapless: true });
+  const logs: Record<string, unknown>[] = [];
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown) => unhandled.push(e);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    await createSpeaker({ provider, player, log: (r) => logs.push(r), prepare })(
+      item("Good first. Bad second. Good third. Good four.", { format: "plain" }),
+      ctx(),
+    );
+    await Bun.sleep(20);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+  expect(player.played).toEqual(["Good first.", "Good third.", "Good four."]);
+  expect(logs).toContainEqual(
+    expect.objectContaining({ level: "error", msg: "chunk_failed", chunk: 1 }),
+  );
+  expect(unhandled).toEqual([]);
+});

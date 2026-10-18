@@ -43,14 +43,24 @@ function renderInOrder(
   const out: Promise<Rendered>[] = [];
   let previous: Promise<unknown> = Promise.resolve();
   for (const text of texts) {
+    // Never rejects: a failure (including a stream that breaks or is aborted midway) is a failed
+    // chunk, logged and skipped, like the prefetch path does.
     const rendered = previous.then(async (): Promise<Rendered> => {
       const started = now();
-      const result = await synthesize(text);
-      if (!result.ok) return { result, timing: { renderMs: now() - started, audioMs: 0 } };
-      const bytes = await collectChunks(result.clip.chunks);
-      const clip = { format: result.clip.format, chunks: singleChunk(bytes) };
-      const audioMs = clip.format === "wav" ? wavAudioMs(bytes) : undefined;
-      return { result: { ok: true, clip }, timing: { renderMs: now() - started, audioMs } };
+      const failed = (error: unknown): Rendered => ({
+        result: { ok: false, error },
+        timing: { renderMs: now() - started, audioMs: 0 },
+      });
+      try {
+        const result = await synthesize(text);
+        if (!result.ok) return failed(result.error);
+        const bytes = await collectChunks(result.clip.chunks);
+        const clip = { format: result.clip.format, chunks: singleChunk(bytes) };
+        const audioMs = clip.format === "wav" ? wavAudioMs(bytes) : undefined;
+        return { result: { ok: true, clip }, timing: { renderMs: now() - started, audioMs } };
+      } catch (error) {
+        return failed(error);
+      }
     });
     out.push(rendered);
     previous = rendered;
