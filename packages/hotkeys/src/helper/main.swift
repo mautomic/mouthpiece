@@ -43,6 +43,9 @@ func fail(_ message: String) -> Never {
   exit(2)
 }
 
+// Offline check of the inbox logic (InboxCore.swift); needs no daemon and opens no window.
+if CommandLine.arguments.dropFirst().first == "--self-test-inbox" { exit(runInboxSelfTest()) }
+
 var baseURL = ""
 var tokenFile = ""
 var bindings: [Binding] = []

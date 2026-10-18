@@ -6,7 +6,10 @@ import { defaultExec, type Exec } from "@mouthpiece/core";
 /** The helper's entry file (top-level code, the key-code table). */
 export const HELPER_SOURCE = join(import.meta.dir, "helper", "main.swift");
 /** Every helper source, compiled together; only main.swift has top-level code. */
-export const HELPER_SOURCES: readonly string[] = [HELPER_SOURCE];
+export const HELPER_SOURCES: readonly string[] = [
+  HELPER_SOURCE,
+  join(import.meta.dir, "helper", "InboxCore.swift"),
+];
 /** @deprecated Phase 2 name; use HELPER_SOURCE. */
 export const HOTKEYS_SOURCE = HELPER_SOURCE;
 

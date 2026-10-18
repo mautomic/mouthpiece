@@ -106,6 +106,28 @@ test.skipIf(!hasSwift)(
   120_000,
 );
 
+test.skipIf(!hasSwift)(
+  "the inbox logic passes its offline self-test (no window, no daemon)",
+  async () => {
+    const out = await mkdtemp(join(tmpdir(), "mp-helper-selftest-"));
+    try {
+      const binary = join(out, "mouthpiece-helper");
+      const compile = Bun.spawn(
+        ["swiftc", "-O", "-swift-version", "5", "-o", binary, ...HELPER_SOURCES],
+        { stderr: "pipe" },
+      );
+      if ((await compile.exited) !== 0) throw new Error(await new Response(compile.stderr).text());
+      const run = Bun.spawn([binary, "--self-test-inbox"], { stdout: "pipe", stderr: "pipe" });
+      const [code, stdout] = await Promise.all([run.exited, new Response(run.stdout).text()]);
+      expect(stdout.trim()).toBe("ok");
+      expect(code).toBe(0);
+    } finally {
+      await rm(out, { recursive: true, force: true });
+    }
+  },
+  180_000,
+);
+
 // Full build into a temp dir to check the bundle layout. Never launches the result.
 const fullBuild =
   hasSwift && Bun.which("codesign") !== null && !!process.env.MOUTHPIECE_HELPER_BUILD;
