@@ -4,7 +4,7 @@ import { ElevenLabsProvider } from "./elevenlabs.ts";
 import { FallbackProvider } from "./fallback.ts";
 import { InworldProvider } from "./inworld.ts";
 import { isKokoroInstalled, type KokoroLoader, KokoroProvider, kokoroTimeoutMs } from "./kokoro.ts";
-import { workerKokoroLoader } from "./kokoro-worker-loader.ts";
+import { processKokoroLoader } from "./kokoro-process.ts";
 import { OpenAIProvider } from "./openai.ts";
 import { SayProvider } from "./say.ts";
 import { VoiceMapProvider } from "./voice-map.ts";
@@ -24,8 +24,8 @@ export interface ChainDeps {
   /** Mouthpiece home; Kokoro is installed under `<home>/kokoro`. Without it, Kokoro is skipped. */
   home?: string;
   /**
-   * Replaces `workerKokoroLoader(home)` (a test seam, or a loader the caller shares across chains so
-   * a config reload doesn't start a second worker).
+   * Replaces `processKokoroLoader(home)` (a test seam, or a loader the caller shares across chains
+   * so a config reload doesn't start a second host process).
    */
   kokoroLoader?: KokoroLoader;
   /** Clock for rate-limiting the provider_fallback log. Default Date.now. */
@@ -85,7 +85,7 @@ function createKokoro(config: Config, deps: ChainDeps): KokoroProvider | undefin
   }
   return new KokoroProvider({
     voice: config.provider.kokoro.voice,
-    load: deps.kokoroLoader ?? workerKokoroLoader(deps.home),
+    load: deps.kokoroLoader ?? processKokoroLoader(deps.home, { log: deps.log }),
     log: deps.log,
   });
 }

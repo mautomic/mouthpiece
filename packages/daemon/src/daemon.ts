@@ -37,7 +37,7 @@ import {
   type KokoroLoader,
   KokoroProvider,
   PAID_PROVIDERS,
-  workerKokoroLoader,
+  processKokoroLoader,
 } from "@mouthpiece/providers";
 import { createSummarizer, FirstSentencesSummarizer } from "@mouthpiece/summarizers";
 import { CachingProvider } from "./cache.ts";
@@ -84,7 +84,7 @@ export interface DaemonOptions {
   /** Test seam: how the helper supervisor starts the helper process. */
   helperSpawn?: SpawnFn;
   /**
-   * Test seam: replaces `workerKokoroLoader(home)` when Kokoro is installed under the home. Its
+   * Test seam: replaces `processKokoroLoader(home)` when Kokoro is installed under the home. Its
    * `terminate()`, when present, runs on stop and when a reload drops Kokoro from the chain.
    */
   kokoroLoader?: KokoroLoader & { terminate?(): void | Promise<void> };
@@ -130,9 +130,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
   // Assigned once the queue exists; quota notices are only raised while speaking, after startup.
   let notify: (text: string) => void = () => {};
   let noticeSeq = 0;
-  // One Kokoro worker for the daemon's lifetime, shared by every chain a reload builds. It starts
-  // on first use, so a chain without Kokoro never spawns it.
-  const kokoroLoader = opts.kokoroLoader ?? workerKokoroLoader(home);
+  // One Kokoro host process at a time, shared by every chain a reload builds. It starts on first
+  // use, so a chain without Kokoro never spawns it.
+  const kokoroLoader = opts.kokoroLoader ?? processKokoroLoader(home, { log });
   const guard = new QuotaGuard({
     store: usage,
     config: () => config,
@@ -409,7 +409,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
 
   /**
    * US-019: load Kokoro in the background so the first item doesn't pay for it. A chain without
-   * Kokoro stops its worker (and frees the model); the next use starts a new one.
+   * Kokoro kills its host process (and frees the model), even mid-render; the next use starts a
+   * new one.
    */
   const warmUp = (list: TtsProvider[]) => {
     const kokoro = list.filter((p) => p instanceof KokoroProvider);
@@ -454,7 +455,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       stopHelper();
       queue.stopAll();
       server.stop(true);
-      // Awaited: exiting while the worker (with onnxruntime loaded) is still closing crashes Bun.
+      // Kills the Kokoro host (safe mid-render) and waits briefly for it to exit.
       await kokoroLoader.terminate?.();
       usage.close();
     },

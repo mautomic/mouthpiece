@@ -378,7 +378,7 @@ test("a chain listing Kokoro without it installed skips it with one warning", as
   expect(loads).toBe(0);
 });
 
-test("stopping the daemon terminates Kokoro's worker (US-019)", async () => {
+test("stopping the daemon terminates Kokoro's host process (US-019)", async () => {
   let terminated = 0;
   const engine: KokoroEngine = {
     async generate(text) {
