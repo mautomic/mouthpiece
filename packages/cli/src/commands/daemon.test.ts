@@ -17,8 +17,11 @@ const uid = process.getuid?.() ?? 501;
 const service = `gui/${uid}/dev.mouthpiece.daemon`;
 const plist = () => join(dir, "dev.mouthpiece.daemon.plist");
 
-/** `codes` maps a launchctl subcommand (print, bootout, bootstrap, kickstart) to its exit code. */
-function harness(codes: Record<string, number> = {}) {
+/**
+ * `codes` maps a launchctl subcommand (print, bootout, bootstrap, kickstart) to its exit code;
+ * `state` is what `launchctl print` reports for a loaded service.
+ */
+function harness(codes: Record<string, number> = {}, state = "running") {
   const out: string[] = [];
   const err: string[] = [];
   const calls: string[][] = [];
@@ -51,7 +54,11 @@ function harness(codes: Record<string, number> = {}) {
     exec: async (cmd) => {
       calls.push(cmd);
       const code = codes[cmd[1] ?? ""] ?? 0;
-      return { code, stdout: "", stderr: code === 0 ? "" : "launchctl said no" };
+      const stdout =
+        cmd[1] === "print" && code === 0
+          ? `gui/501/dev.mouthpiece.daemon = {\n\tstate = ${state}\n}\n`
+          : "";
+      return { code, stdout, stderr: code === 0 ? "" : "launchctl said no" };
     },
     paths: { repoRoot: "/repo", bun: "/u/.bun/bin/bun" },
   };
@@ -144,4 +151,31 @@ test("a missing or unknown subcommand prints usage and exits 2", async () => {
     expect(h.err.join("")).toContain("mouthpiece daemon start | stop | restart");
     expect(h.calls).toEqual([]);
   }
+});
+
+test("start after a Quit (loaded but not running) kickstarts it", async () => {
+  await writeFile(plist(), "<plist/>");
+  const h = harness({}, "not running");
+  expect(await h.run("start")).toBe(0);
+  expect(h.calls).toEqual([
+    ["launchctl", "print", service],
+    ["launchctl", "kickstart", service],
+  ]);
+  expect(h.out.join("")).toContain("Daemon started");
+});
+
+test("stop when loaded but not running still unloads it", async () => {
+  const h = harness({}, "not running");
+  expect(await h.run("stop")).toBe(0);
+  expect(h.calls).toEqual([
+    ["launchctl", "print", service],
+    ["launchctl", "bootout", service],
+  ]);
+});
+
+test("start falls back to kickstart when print doesn't say running (harmless if it is)", async () => {
+  await writeFile(plist(), "<plist/>");
+  const h = harness({}, "some new wording");
+  expect(await h.run("start")).toBe(0);
+  expect(h.calls.at(-1)).toEqual(["launchctl", "kickstart", service]);
 });
