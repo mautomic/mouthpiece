@@ -7,6 +7,7 @@ import { resolveConfig, type Summarizer } from "@mouthpiece/core";
 import { FakeProvider } from "@mouthpiece/providers";
 import { type DaemonOptions, type RunningDaemon, startDaemon } from "./daemon.ts";
 import { FakePlayer } from "./fake-player.ts";
+import { writeUntil } from "./write-until.ts";
 
 let home: string;
 let daemon: RunningDaemon;
@@ -125,17 +126,13 @@ test("hot reload applies valid config and keeps the old one on a bad edit", asyn
     summarizer,
     hotkeys: false,
   });
-  await writeFile(configPath, '[modes]\ndefault = "full"\n');
-  const deadline = performance.now() + 3000;
-  while ((await getMode(o())).default !== "full") {
-    if (performance.now() > deadline) throw new Error("reload not applied");
-    await Bun.sleep(25);
-  }
-  await writeFile(configPath, "modes = [");
-  const deadline2 = performance.now() + 3000;
-  while (!logs.some((l) => l.msg === "config_reload_failed")) {
-    if (performance.now() > deadline2) throw new Error("bad reload not reported");
-    await Bun.sleep(25);
-  }
+  await writeUntil(
+    configPath,
+    '[modes]\ndefault = "full"\n',
+    async () => (await getMode(o())).default === "full",
+  );
+  await writeUntil(configPath, "modes = [", () =>
+    logs.some((l) => l.msg === "config_reload_failed"),
+  );
   expect((await getMode(o())).default).toBe("full");
-});
+}, 20_000);

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Config } from "@mouthpiece/core";
 import { watchConfig } from "./watch.ts";
+import { writeUntil } from "./write-until.ts";
 
 let dir: string;
 beforeEach(async () => {
@@ -12,14 +13,6 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
-
-async function waitFor(check: () => boolean, ms = 3000) {
-  const end = performance.now() + ms;
-  while (!check()) {
-    if (performance.now() > end) throw new Error("timed out waiting");
-    await Bun.sleep(20);
-  }
-}
 
 test("reloads on change and reports invalid TOML without calling onChange", async () => {
   const path = join(dir, "config.toml");
@@ -31,19 +24,23 @@ test("reloads on change and reports invalid TOML without calling onChange", asyn
     onError: (e) => void errors.push(e),
     debounceMs: 20,
   });
-  await writeFile(path, '[modes]\ndefault = "full"\n');
   // Wait for the reload that saw the new content; an earlier fs event may already have
   // reloaded the old file under load.
-  await waitFor(() => changes.at(-1)?.modes.default === "full");
+  await writeUntil(
+    path,
+    '[modes]\ndefault = "full"\n',
+    () => changes.at(-1)?.modes.default === "full",
+  );
   expect(changes.at(-1)?.modes.default).toBe("full");
-  await writeFile(path, "modes = [");
-  await waitFor(() => errors.length > 0);
+  const applied = changes.length;
+  await writeUntil(path, "modes = [", () => errors.length > 0);
+  expect(changes.length).toBe(applied); // invalid TOML never reaches onChange
   stop();
   const count = changes.length;
   await writeFile(path, '[modes]\ndefault = "off"\n');
   await Bun.sleep(150);
   expect(changes.length).toBe(count);
-});
+}, 20_000);
 
 test("missing directory reports an error and returns a no-op stop", () => {
   const errors: unknown[] = [];

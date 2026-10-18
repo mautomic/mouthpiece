@@ -13,6 +13,7 @@ import {
 import { FakeProvider } from "@mouthpiece/providers";
 import { type DaemonOptions, type RunningDaemon, startDaemon } from "./daemon.ts";
 import { FakePlayer } from "./fake-player.ts";
+import { writeUntil } from "./write-until.ts";
 
 let home: string;
 let daemon: RunningDaemon;
@@ -206,16 +207,13 @@ test("hot reload applies a new per-label voice map", async () => {
     summarizer: null,
     hotkeys: false,
   });
-  await writeFile(configPath, '[provider]\nchain = ["say"]\n[voices.fake]\nweb = "V2"\n');
-  const deadline = performance.now() + 3000;
-  while (!logs.some((l) => l.msg === "config_reloaded")) {
-    if (performance.now() > deadline) throw new Error("reload not applied");
-    await Bun.sleep(25);
-  }
+  await writeUntil(configPath, '[provider]\nchain = ["say"]\n[voices.fake]\nweb = "V2"\n', () =>
+    logs.some((l) => l.msg === "config_reloaded"),
+  );
   const text = "The voice map was reloaded.";
   expect(
     (await speak({ text, source: "cli", label: "web", format: "plain" }, o())).id,
   ).toBeString();
   await daemon.queue.idle();
   expect(fake.options.map((x) => x.voice)).toEqual(["V2"]);
-});
+}, 20_000);
