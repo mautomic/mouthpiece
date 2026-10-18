@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { trimWavSilence } from "./wav.ts";
+import { readWavPcm, trimWavSilence } from "./wav.ts";
 
 const RATE = 1000; // 1 sample per ms keeps the arithmetic readable
 
@@ -77,4 +77,24 @@ test("leaves all-silent audio, unknown formats and non-WAV bytes unchanged", () 
   const alaw = wav(tone(10), 3);
   new DataView(alaw.buffer).setUint16(20, 6, true);
   expect(trimWavSilence(alaw, { leadMs: 0, trailMs: 0 })).toBe(alaw);
+});
+
+test("readWavPcm returns the format and the interleaved samples", () => {
+  const float = readWavPcm(wav(tone(10)));
+  expect(float).toMatchObject({ sampleRate: RATE, channels: 1, encoding: "f32le" });
+  expect(float?.data.length).toBe(40);
+  const view = new DataView(float!.data.buffer, float!.data.byteOffset, float!.data.byteLength);
+  expect(view.getFloat32(0, true)).toBeCloseTo(0.5);
+  const pcm = readWavPcm(wav(tone(10), 1));
+  expect(pcm).toMatchObject({ sampleRate: RATE, channels: 1, encoding: "s16le" });
+  expect(pcm?.data.length).toBe(20);
+});
+
+test("readWavPcm drops a trailing partial frame and rejects anything that isn't PCM WAV", () => {
+  const bytes = wav(tone(10));
+  const odd = new Uint8Array(bytes.length + 2);
+  odd.set(bytes);
+  new DataView(odd.buffer).setUint32(40, 42, true); // the data chunk claims 10 frames + 2 bytes
+  expect(readWavPcm(odd)?.data.length).toBe(40);
+  expect(readWavPcm(new Uint8Array([0xff, 0xfb, 0x90, 0x00]))).toBeUndefined();
 });
