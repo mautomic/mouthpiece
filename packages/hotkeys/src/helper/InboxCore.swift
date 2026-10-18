@@ -235,6 +235,63 @@ enum RowText {
   }
 }
 
+// MARK: - Tabs (the Conversation layout)
+
+/// A tab is a conversation, so a newer response keeps its tab (and selection).
+func conversationKey(_ entry: InboxEntry) -> String { "\(entry.source)\u{0}\(entry.conversationId)" }
+
+enum TabSelection {
+  /// The newest conversation waiting for a reply that can be sent from here.
+  static func newestWaiting(_ ordered: [InboxEntry]) -> String? {
+    ordered.first { $0.state == "waiting" && $0.route != nil }.map(conversationKey)
+  }
+
+  /// Keep `selected` while it has an entry; else the newest waiting, else the newest, else nil.
+  static func resolve(selected: String?, ordered: [InboxEntry]) -> String? {
+    if let selected, ordered.contains(where: { conversationKey($0) == selected }) { return selected }
+    return newestWaiting(ordered) ?? ordered.first.map(conversationKey)
+  }
+}
+
+/// ⌘1…⌘9: the tab index for a digit, or nil when there's no such tab.
+func tabIndex(digit: Int, count: Int) -> Int? {
+  guard (1...9).contains(digit), digit <= count else { return nil }
+  return digit - 1
+}
+
+/// ⌃⇥ / ⌃⇧⇥: the next or previous tab, wrapping round.
+func cycledIndex(current: Int, count: Int, forward: Bool) -> Int {
+  guard count > 0 else { return 0 }
+  return (current + (forward ? 1 : count - 1)) % count
+}
+
+enum TabDot: Equatable {
+  case waiting, working, typed, none
+
+  static func of(_ entry: InboxEntry) -> TabDot {
+    guard entry.route != nil else { return .none }
+    switch entry.state {
+    case "waiting": return .waiting
+    case "busy", "sending": return .working
+    case "typed": return .typed
+    default: return .none
+    }
+  }
+}
+
+/// "<label> · <agent> · <age> ago". The agent is `route.agent` as sent; without a route, the source,
+/// shown once when there's no label either.
+func metaLine(_ entry: InboxEntry, now: Double) -> String {
+  var parts = [entry.name]
+  if let agent = entry.route?.agent {
+    parts.append(agent)
+  } else if entry.label != nil {
+    parts.append(entry.source)
+  }
+  parts.append("\(RowText.age((now - entry.at) / 1000)) ago")
+  return parts.joined(separator: " · ")
+}
+
 // MARK: - Self-test (--self-test-inbox)
 
 /// Checks the inbox logic offline. Prints "ok" and returns 0, or one "FAIL <case>" line per failure and 1.
@@ -377,6 +434,95 @@ func runInboxSelfTest() -> Int32 {
     modifiers: UInt32(modifierMasks["cmd"]! | modifierMasks["shift"]! | modifierMasks["ctrl"]! | modifierMasks["alt"]!))
   check(menuShortcut(everyModifier)?.modifiers == ["ctrl", "alt", "shift", "cmd"], "menu: every modifier, in menu order")
   check(menuShortcut(Binding(action: "stop", keyCode: 999, modifiers: 0)) == nil, "menu: an unknown key shows nothing")
+
+  // Redesign: tabs (selection by conversation), digits, cycling, dots, meta line
+  func entry(_ id: String, conv: String, state: String = "waiting", route: Bool = true, label: String? = "web", at: Double = 1)
+    -> InboxEntry
+  {
+    InboxEntry(
+      id: id, source: "agent", conversationId: conv, label: label, text: "t", summary: nil, at: at,
+      route: route ? InboxRoute(via: "orca", target: "term_a", agent: "claude") : nil, state: state)
+  }
+  let busyA = entry("a1", conv: "a", state: "busy", at: 9)
+  let waitB = entry("b1", conv: "b", at: 5)
+  let noRouteC = entry("c1", conv: "c", route: false, at: 7)
+  let tabs = [busyA, noRouteC, waitB]  // newest first
+  check(conversationKey(waitB) == "agent\u{0}b", "tabs: a conversation key is source + conversation")
+  check(TabSelection.newestWaiting(tabs) == conversationKey(waitB), "tabs: newest waiting with a route")
+  check(TabSelection.resolve(selected: conversationKey(busyA), ordered: tabs) == conversationKey(busyA), "tabs: keep the selection")
+  let replacedA = entry("a2", conv: "a", state: "waiting", at: 12)
+  check(
+    TabSelection.resolve(selected: conversationKey(busyA), ordered: [replacedA, noRouteC, waitB]) == conversationKey(replacedA),
+    "tabs: a newer response keeps its conversation selected")
+  check(TabSelection.resolve(selected: "gone", ordered: tabs) == conversationKey(waitB), "tabs: a gone selection falls back to newest waiting")
+  check(TabSelection.resolve(selected: nil, ordered: [busyA, noRouteC]) == conversationKey(busyA), "tabs: no waiting falls back to the newest")
+  check(TabSelection.resolve(selected: "x", ordered: []) == nil, "tabs: nothing to select")
+  check(tabIndex(digit: 1, count: 3) == 0 && tabIndex(digit: 3, count: 3) == 2, "tabs: ⌘1 and ⌘3")
+  check(tabIndex(digit: 4, count: 3) == nil && tabIndex(digit: 0, count: 3) == nil && tabIndex(digit: 10, count: 12) == nil, "tabs: out of range digits")
+  check(cycledIndex(current: 2, count: 3, forward: true) == 0 && cycledIndex(current: 0, count: 3, forward: false) == 2, "tabs: ⌃⇥ wraps")
+  check(cycledIndex(current: 0, count: 0, forward: true) == 0, "tabs: cycling with no tabs")
+  check(TabDot.of(waitB) == .waiting && TabDot.of(busyA) == .working && TabDot.of(noRouteC) == .none, "dots: waiting, working, no route")
+  check(TabDot.of(entry("s", conv: "s", state: "sending")) == .working && TabDot.of(entry("t", conv: "t", state: "typed")) == .typed, "dots: sending, typed")
+  check(metaLine(entry("m", conv: "m", at: 0), now: 120_000) == "web · claude · 2m ago", "meta: label · agent · age")
+  check(metaLine(entry("n", conv: "n", route: false, at: 0), now: 5_000) == "web · agent · 5s ago", "meta: no route shows the source")
+  check(metaLine(entry("o", conv: "o", route: false, label: nil, at: 0), now: 5_000) == "agent · 5s ago", "meta: no label, no route: the source once")
+
+  // Redesign: the view model (drafts, results and selection per conversation)
+  let vm = InboxViewModel()
+  let w1 = entry("w1", conv: "w", at: 3)
+  let x1 = entry("x1", conv: "x", state: "busy", at: 4)
+  vm.update([x1, w1])
+  check(vm.selected == conversationKey(w1), "vm: selects the newest waiting at first")
+  check(vm.waitingCount == 1, "vm: waiting count")
+  vm.drafts[conversationKey(w1)] = "half typed"
+  vm.update([x1, w1])
+  check(vm.drafts[conversationKey(w1)] == "half typed", "vm: drafts survive an update")
+  let w2 = entry("w2", conv: "w", at: 8)
+  vm.update([w2, x1])
+  check(vm.drafts[conversationKey(w2)] == "half typed", "vm: an unsent draft carries to a newer response")
+  check(vm.results[conversationKey(w2)] == .refused(reason: "newer", error: ""), "vm: a carried draft says a newer response arrived")
+  check(vm.selected == conversationKey(w2), "vm: the selection stays on the conversation")
+  vm.began(conversationKey(w2))
+  check(vm.inFlight.contains(conversationKey(w2)), "vm: in flight")
+  vm.finished(conversationKey(w2), .typed, sent: "half typed")
+  check(!vm.inFlight.contains(conversationKey(w2)) && vm.results[conversationKey(w2)] == .typed, "vm: typed result")
+  let w3 = entry("w3", conv: "w", at: 12)
+  vm.update([w3, x1])
+  check(vm.drafts[conversationKey(w3)] == nil, "vm: text already delivered does not carry")
+  check(vm.results[conversationKey(w3)] == nil, "vm: a newer response clears the old result")
+  vm.drafts[conversationKey(w3)] = "go"
+  vm.finished(conversationKey(w3), .submitted, sent: "go")
+  check(vm.drafts[conversationKey(w3)] == nil || vm.drafts[conversationKey(w3)] == "", "vm: submitted clears the draft")
+  vm.update([x1])
+  check(vm.drafts[conversationKey(w3)] == nil && vm.selected == conversationKey(x1), "vm: a removed conversation drops its draft; selection moves")
+  vm.update([entry("y1", conv: "y", at: 20), x1, entry("z1", conv: "z", at: 1)])
+  vm.select(digit: 3)
+  check(vm.selected == "agent\u{0}z", "vm: ⌘3 selects the third tab")
+  vm.cycle(forward: true)
+  check(vm.selected == "agent\u{0}y", "vm: ⌃⇥ wraps to the first tab")
+  vm.select(digit: 9)
+  check(vm.selected == "agent\u{0}y", "vm: a digit with no tab changes nothing")
+  let before = vm.focusRequest
+  vm.requestFocus()
+  check(vm.focusRequest == before + 1, "vm: focus requests count up")
+
+  // Review fixes: a pop-up never moves a key panel's selection; removal selects the tab in its place
+  let pv = InboxViewModel()
+  pv.update([entry("p1", conv: "p", at: 9), entry("q1", conv: "q", state: "busy", at: 5)])
+  pv.selected = "agent\u{0}q"
+  pv.selectForPopUp(panelIsKey: true)
+  check(pv.selected == "agent\u{0}q", "vm: a pop-up while you type in the panel keeps your tab")
+  pv.selectForPopUp(panelIsKey: false)
+  check(pv.selected == "agent\u{0}p", "vm: a pop-up on a hidden or unfocused panel selects the newest waiting")
+  let rv = InboxViewModel()
+  let six = (1...6).map { entry("r\($0)", conv: "r\($0)", state: "busy", at: Double(10 - $0)) }
+  rv.update(six)
+  rv.selected = conversationKey(six[3])
+  rv.update(six.filter { $0.id != "r4" })
+  check(rv.selected == conversationKey(six[4]), "vm: removing a tab selects the one that takes its place")
+  rv.selected = conversationKey(six[5])
+  rv.update(six.filter { $0.id != "r4" && $0.id != "r6" })
+  check(rv.selected == conversationKey(six[4]), "vm: removing the last tab selects the one above")
 
   if failures.isEmpty {
     print("ok")
