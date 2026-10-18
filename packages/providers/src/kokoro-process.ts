@@ -212,7 +212,7 @@ export function processKokoroLoader(
   };
 
   const onMessage = (h: Host, m: KokoroHostReply) => {
-    if (h.retired) return;
+    if (h.retired || typeof m !== "object" || m === null) return;
     if ("ready" in m) {
       clearTimeout(h.loadTimer);
       h.loaded = true;

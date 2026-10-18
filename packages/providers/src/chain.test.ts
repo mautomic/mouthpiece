@@ -7,6 +7,7 @@ import { chainProviders, createProviderChain, createProviders, PAID_PROVIDERS } 
 import { DeepgramProvider } from "./deepgram.ts";
 import { ElevenLabsProvider } from "./elevenlabs.ts";
 import { FakeProvider } from "./fake.ts";
+import { ProviderHttpError } from "./http.ts";
 import { InworldProvider } from "./inworld.ts";
 import {
   KOKORO_MS_PER_CHAR,
@@ -364,4 +365,33 @@ test("provider_fallback is rate-limited per provider and kind of error, not per 
     error: "Error: kokoro: no audio within 3150ms",
     suppressed: 1,
   });
+});
+
+test("provider_fallback treats HTTP errors with different statuses as different kinds", async () => {
+  const errors = [
+    new ProviderHttpError("inworld", 401, "no body"),
+    new ProviderHttpError("inworld", 429, "no body"), // same body, other status: logged at once
+    new ProviderHttpError("inworld", 429, "no body"), // repeat: suppressed
+  ];
+  let next = 0;
+  const flaky: TtsProvider = {
+    name: "inworld",
+    maxCharsPerRequest: 2000,
+    pricePerMillionChars: 5,
+    async synthesize() {
+      throw errors[next++];
+    },
+  };
+  const say = new FakeProvider({ name: "say" });
+  const clock = { t: 0 };
+  const { deps: d, logs } = deps();
+  const chain = chainProviders([flaky, say], resolveConfig({}), { ...d, now: () => clock.t });
+  for (const _ of errors) {
+    clock.t += 1_000;
+    await chain.synthesize("x");
+  }
+  expect(logs.map((l) => l.error)).toEqual([
+    "ProviderHttpError: inworld HTTP 401: no body",
+    "ProviderHttpError: inworld HTTP 429: no body",
+  ]);
 });

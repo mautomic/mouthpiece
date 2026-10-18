@@ -2,6 +2,7 @@ import type { Config, Env, Logger, TtsProvider } from "@mouthpiece/core";
 import { DeepgramProvider } from "./deepgram.ts";
 import { ElevenLabsProvider } from "./elevenlabs.ts";
 import { FallbackProvider } from "./fallback.ts";
+import { ProviderHttpError } from "./http.ts";
 import { InworldProvider } from "./inworld.ts";
 import { isKokoroInstalled, type KokoroLoader, KokoroProvider, kokoroTimeoutMs } from "./kokoro.ts";
 import { processKokoroLoader } from "./kokoro-process.ts";
@@ -162,15 +163,17 @@ function fallbackLogger(log: Logger, now: () => number): (from: string, error: u
 
 /**
  * An error's kind for rate limiting: its message with ids and numbers masked (timeouts, exit codes
- * and request ids vary between otherwise identical failures), cut to 80 characters.
+ * and request ids vary between otherwise identical failures), cut to 80 characters. An HTTP status
+ * is kept, so a 401 and a 429 with the same body are different kinds.
  */
 function errorKind(error: unknown): string {
-  return String(error)
+  const kind = String(error)
     .replace(/\b(?=[0-9a-f-]*\d)[0-9a-f-]{8,}\b/gi, "#")
     .replace(/\d+/g, "#")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 80);
+  return error instanceof ProviderHttpError ? `${error.status} ${kind}` : kind;
 }
 
 export function createProviderChain(config: Config, deps: ChainDeps): FallbackProvider {
