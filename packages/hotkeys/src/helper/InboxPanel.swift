@@ -118,6 +118,22 @@ func postDaemon(path: String, body: [String: Any], token: String, done: @escapin
 
 // MARK: - Panel
 
+/// The panel's translucent background. Its tracking area is `.activeAlways`, because during a pop-up
+/// the helper is never the active app, and SwiftUI's hover only follows the active app. The mouse
+/// entering cancels the pop-up's auto-hide.
+final class InboxBackground: NSVisualEffectView {
+  var onEnter: (() -> Void)?
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    for area in trackingAreas { removeTrackingArea(area) }
+    addTrackingArea(
+      NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+  }
+
+  override func mouseEntered(with event: NSEvent) { onEnter?() }
+}
+
 final class InboxPanel: NSObject, NSWindowDelegate {
   static let width: CGFloat = 420
   static let preferredHeight: CGFloat = 480
@@ -147,7 +163,6 @@ final class InboxPanel: NSObject, NSWindowDelegate {
     panel.delegate = self
     panel.titlebarAppearsTransparent = true
     panel.titleVisibility = .hidden
-    panel.isMovableByWindowBackground = true
     panel.isOpaque = false
     panel.backgroundColor = .clear
 
@@ -159,7 +174,8 @@ final class InboxPanel: NSObject, NSWindowDelegate {
       hide: { [weak self] in self?.hide() },
       hovered: { [weak self] in self?.cancelHide() })
 
-    let effect = NSVisualEffectView()
+    let effect = InboxBackground()
+    effect.onEnter = { [weak self] in self?.cancelHide() }
     effect.material = .popover
     effect.blendingMode = .behindWindow
     effect.state = .active
@@ -188,7 +204,7 @@ final class InboxPanel: NSObject, NSWindowDelegate {
     onCountChange?(model.waitingCount)
     let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     if fresh.contains(where: { shouldPop($0, mode: mode, frontmost: front) }) {
-      viewModel.selectNewestWaiting()
+      viewModel.selectForPopUp(panelIsKey: panel.isKeyWindow)
       popUp()
     }
   }

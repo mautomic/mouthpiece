@@ -23,7 +23,9 @@ struct InboxRootView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(shortcuts)
+    .ignoresSafeArea(.container, edges: .top)  // the header shares the title bar with the traffic lights
     .onHover { inside in if inside { model.actions?.hovered() } }
+    .onExitCommand { model.actions?.hide() }  // Esc outside the reply box hands the keyboard back too
   }
 
   private var header: some View {
@@ -48,7 +50,7 @@ struct InboxRootView: View {
       .fixedSize()
     }
     .padding(.horizontal, 12)
-    .frame(height: 38)
+    .frame(height: 28)  // the system title bar's height, so "Inbox" lines up with the traffic lights
   }
 
   /// ⌘1…⌘9 and ⌃⇥ / ⌃⇧⇥ while the reply box isn't taking them.
@@ -154,6 +156,7 @@ struct ConversationView: View {
         }
         .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 6)
       }
+      .id(entry.id)  // a new tab or response opens at the top
       ResultLine(model: model, entry: entry)
       if entry.route == nil {
         Text("Can't reply here.")

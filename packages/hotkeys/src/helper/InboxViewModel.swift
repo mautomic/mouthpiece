@@ -60,8 +60,22 @@ final class InboxViewModel: ObservableObject {
       lastSent[key] = nil
       inFlight.remove(key)
     }
+    // The selected tab went (✕, ⌘⌫, Clear all): select the tab that takes its place.
+    let removedAt = selected.flatMap { key in
+      entries.contains { conversationKey($0) == key } ? nil : ordered.firstIndex { conversationKey($0) == key }
+    }
     ordered = entries
-    selected = TabSelection.resolve(selected: selected, ordered: entries)
+    if let removedAt, let index = nextFocusIndex(removedAt: removedAt, remaining: entries.count) {
+      selected = conversationKey(entries[index])
+    } else {
+      selected = TabSelection.resolve(selected: selected, ordered: entries)
+    }
+  }
+
+  /// A pop-up picks the newest waiting tab, but never while you're in the panel (it's key): that
+  /// would move your cursor to another session mid-reply.
+  func selectForPopUp(panelIsKey: Bool) {
+    if !panelIsKey { selectNewestWaiting() }
   }
 
   func selectNewestWaiting() {

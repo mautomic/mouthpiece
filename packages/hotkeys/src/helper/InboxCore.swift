@@ -506,6 +506,24 @@ func runInboxSelfTest() -> Int32 {
   vm.requestFocus()
   check(vm.focusRequest == before + 1, "vm: focus requests count up")
 
+  // Review fixes: a pop-up never moves a key panel's selection; removal selects the tab in its place
+  let pv = InboxViewModel()
+  pv.update([entry("p1", conv: "p", at: 9), entry("q1", conv: "q", state: "busy", at: 5)])
+  pv.selected = "agent\u{0}q"
+  pv.selectForPopUp(panelIsKey: true)
+  check(pv.selected == "agent\u{0}q", "vm: a pop-up while you type in the panel keeps your tab")
+  pv.selectForPopUp(panelIsKey: false)
+  check(pv.selected == "agent\u{0}p", "vm: a pop-up on a hidden or unfocused panel selects the newest waiting")
+  let rv = InboxViewModel()
+  let six = (1...6).map { entry("r\($0)", conv: "r\($0)", state: "busy", at: Double(10 - $0)) }
+  rv.update(six)
+  rv.selected = conversationKey(six[3])
+  rv.update(six.filter { $0.id != "r4" })
+  check(rv.selected == conversationKey(six[4]), "vm: removing a tab selects the one that takes its place")
+  rv.selected = conversationKey(six[5])
+  rv.update(six.filter { $0.id != "r4" && $0.id != "r6" })
+  check(rv.selected == conversationKey(six[4]), "vm: removing the last tab selects the one above")
+
   if failures.isEmpty {
     print("ok")
     return 0
