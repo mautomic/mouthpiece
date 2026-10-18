@@ -1,8 +1,16 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type AudioClip, collectChunks, type Player, singleChunk } from "@mouthpiece/core";
 import { FakePlayerProcess } from "./fake-player-process.ts";
-import { StreamPlayer, type StreamPlayerOptions, spawnPlayer } from "./stream-player.ts";
+import {
+  createPlayer,
+  StreamPlayer,
+  type StreamPlayerOptions,
+  spawnPlayer,
+} from "./stream-player.ts";
 
 const FAKE_HOST = fileURLToPath(new URL("./fake-player-host.ts", import.meta.url));
 
@@ -301,4 +309,28 @@ test("stop() kills the player, and later clips go to the fallback", async () => 
   expect(h.logs.some((l) => l.msg === "player_exited")).toBe(false);
   await h.player.play(wavClip(), new AbortController().signal);
   expect(h.fallback.played).toEqual(["wav"]);
+});
+
+test("createPlayer: the stream player when it's built, afplay when it isn't or it's turned off", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mp-create-player-"));
+  try {
+    const binary = join(dir, "mouthpiece-player");
+    const fallback = new RecordingPlayer();
+    const logs: Record<string, unknown>[] = [];
+    const log = (r: Record<string, unknown>) => logs.push(r);
+    const missing = createPlayer({ backend: "auto", binary, fallback, log });
+    expect(missing.name).toBe("afplay");
+    expect(missing.player).toBe(fallback);
+    expect(logs).toContainEqual(expect.objectContaining({ msg: "player_afplay" }));
+    await writeFile(binary, "");
+    const built = createPlayer({ backend: "auto", binary, fallback, log });
+    expect(built.name).toBe("stream");
+    expect(built.player).toBeInstanceOf(StreamPlayer);
+    const off = createPlayer({ backend: "afplay", binary, fallback, log });
+    expect(off.name).toBe("afplay");
+    expect(off.player).toBe(fallback);
+    await built.stop();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

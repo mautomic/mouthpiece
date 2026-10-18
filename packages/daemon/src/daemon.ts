@@ -30,6 +30,7 @@ import {
   helperArgs,
   helperBinary,
   helperWanted,
+  playerBinary,
   type SpawnFn,
   superviseHotkeys,
 } from "@mouthpiece/hotkeys";
@@ -54,6 +55,7 @@ import { NOTICE_SOURCE, SpeechQueue } from "./queue.ts";
 import { QuotaGatedProvider, QuotaGuard } from "./quota.ts";
 import { type SaveResult, saveSettings, settingsOf } from "./settings.ts";
 import { createSpeaker, skipReason } from "./speaker.ts";
+import { createPlayer } from "./stream-player.ts";
 import { billingCycle, MeteredProvider, monthRange, UsageStore } from "./usage.ts";
 import { watchConfig } from "./watch.ts";
 
@@ -202,7 +204,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     log,
     onSummary: (stat) => usage.recordSummary(stat),
   });
-  const player = opts.player ?? new AfplayPlayer({ tmpDir });
+  // US-005: gap-free playback through mouthpiece-player when it's built; afplay plays the rest.
+  const players = opts.player
+    ? { player: opts.player, name: "custom", stop: async () => {} }
+    : createPlayer({
+        backend: config.player.backend,
+        binary: playerBinary(home),
+        fallback: new AfplayPlayer({ tmpDir }),
+        log,
+      });
+  const player = players.player;
   // Replays are not recorded, so history keeps the original full + summary (US-010, FR-7).
   const replays = new WeakSet<NormalizedSpeakEvent>();
   const queue = new SpeechQueue({
@@ -489,7 +500,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
         });
   if (configError !== undefined) notify(configNotice("using the default settings"));
 
-  log({ msg: "listening", url, provider: provider.name, version: VERSION });
+  log({ msg: "listening", url, provider: provider.name, player: players.name, version: VERSION });
   return {
     url,
     queue,
@@ -500,6 +511,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       unwatch();
       stopHelper();
       queue.stopAll();
+      await players.stop();
       server.stop(true);
       // Kills the Kokoro host (safe mid-render) and waits briefly for it to exit.
       await kokoroLoader.terminate?.();

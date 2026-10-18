@@ -1,8 +1,10 @@
+import { existsSync } from "node:fs";
 import {
   type AudioClip,
   collectChunks,
   type Logger,
   type Player,
+  type PlayerBackend,
   readWavPcm,
   singleChunk,
   type WavPcm,
@@ -258,4 +260,21 @@ async function* readLines(stream: ReadableStream<Uint8Array>): AsyncIterable<str
       buffer = buffer.slice(nl + 1);
     }
   }
+}
+
+/** The stream player when it's built and not turned off (`[player] backend`); `fallback` otherwise. */
+export function createPlayer(opts: {
+  backend: PlayerBackend;
+  binary: string;
+  fallback: Player;
+  log: Logger;
+}): { player: Player; name: "stream" | "afplay"; stop(): Promise<void> } {
+  const afplay = { player: opts.fallback, name: "afplay" as const, stop: async () => {} };
+  if (opts.backend === "afplay") return afplay;
+  if (!existsSync(opts.binary)) {
+    opts.log({ msg: "player_afplay", hint: "run `mouthpiece build-helper` for gap-free playback" });
+    return afplay;
+  }
+  const stream = new StreamPlayer({ binary: opts.binary, fallback: opts.fallback, log: opts.log });
+  return { player: stream, name: "stream", stop: () => stream.stop() };
 }
