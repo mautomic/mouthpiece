@@ -99,8 +99,19 @@ test("a voice say does not know is retried once in the system voice, with a warn
   expect(new TextDecoder().decode(await collectChunks(clip.chunks))).toBe("FORMfake");
   const made = await calls();
   expect(made).toHaveLength(2);
-  expect(made[0]).toEndWith("-v JBFqnCBsd6RMkjVDRZzb");
-  expect(made[1]).not.toContain("-v");
+  // Compare whole argument lists, not substrings: the temp dir is mkdtemp's `mp-say-XXXXXX`, and
+  // a random suffix starting with "v" (about 1 run in 64) puts "-v" inside every path.
+  const [first, retry] = made.map((line) => line.split(" "));
+  expect(first).toEqual([
+    "-f",
+    expect.stringMatching(/\.txt$/),
+    "-o",
+    expect.stringMatching(/\.aiff$/),
+    "-v",
+    "JBFqnCBsd6RMkjVDRZzb",
+  ]);
+  // The retry renders the same text to the same file, in the system voice.
+  expect(retry).toEqual(first?.slice(0, 4));
   expect(logs).toEqual([
     expect.objectContaining({
       level: "warn",
