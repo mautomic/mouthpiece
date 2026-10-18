@@ -103,6 +103,20 @@ test("Kokoro voice ids are used; foreign or unknown ids fall back to the configu
   ]);
 });
 
+test("an unknown configured voice warns once and uses af_heart", async () => {
+  const h = harness({ voice: "af_hart" }); // a typo
+  expect(h.logs).toEqual([
+    { level: "warn", msg: "kokoro_voice_invalid", voice: "af_hart", using: "af_heart" },
+  ]);
+  await h.provider.synthesize("a");
+  await h.provider.synthesize("b");
+  expect(h.calls.map((c) => c.voice)).toEqual(["af_heart", "af_heart"]);
+  expect(h.provider.cacheKey).toBe("af_heart\0q8");
+  expect(h.logs).toHaveLength(1);
+
+  expect(harness({ voice: "bm_george" }).logs).toEqual([]);
+});
+
 test("an abort before generate rejects without generating", async () => {
   const h = harness();
   const ac = new AbortController();

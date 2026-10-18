@@ -28,7 +28,12 @@ export interface ChainDeps {
    * a config reload doesn't start a second worker).
    */
   kokoroLoader?: KokoroLoader;
+  /** Clock for rate-limiting the provider_fallback log. Default Date.now. */
+  now?: () => number;
 }
+
+/** A provider that keeps failing (e.g. every chunk) logs provider_fallback at most this often. */
+export const FALLBACK_LOG_INTERVAL_MS = 60_000;
 
 /**
  * Builds the configured chain's providers in order, unwrapped. Paid providers without a key, and
@@ -109,7 +114,7 @@ function createPaid(name: PaidProviderName, apiKey: string, config: Config): Tts
 export function chainProviders(
   providers: readonly TtsProvider[],
   config: Config,
-  deps: Pick<ChainDeps, "log" | "wrap">,
+  deps: Pick<ChainDeps, "log" | "wrap" | "now">,
 ): FallbackProvider {
   const wrap = deps.wrap ?? ((p: TtsProvider) => p);
   return new FallbackProvider(
@@ -120,10 +125,33 @@ export function chainProviders(
         name === "kokoro"
           ? kokoroTimeoutMs(text, config.fallback.firstByteTimeoutMs)
           : config.fallback.firstByteTimeoutMs,
-      onFallback: (from, error) =>
-        deps.log({ level: "warn", msg: "provider_fallback", provider: from, error: String(error) }),
+      onFallback: fallbackLogger(deps.log, deps.now ?? Date.now),
     },
   );
+}
+
+/**
+ * Logs provider_fallback once per provider per FALLBACK_LOG_INTERVAL_MS; the next log carries
+ * how many were suppressed in between. The fallback itself still happens for every chunk.
+ */
+function fallbackLogger(log: Logger, now: () => number): (from: string, error: unknown) => void {
+  const last = new Map<string, { at: number; suppressed: number }>();
+  return (from, error) => {
+    const t = now();
+    const seen = last.get(from);
+    if (seen && t - seen.at < FALLBACK_LOG_INTERVAL_MS) {
+      seen.suppressed++;
+      return;
+    }
+    last.set(from, { at: t, suppressed: 0 });
+    log({
+      level: "warn",
+      msg: "provider_fallback",
+      provider: from,
+      error: String(error),
+      ...(seen?.suppressed ? { suppressed: seen.suppressed } : {}),
+    });
+  };
 }
 
 export function createProviderChain(config: Config, deps: ChainDeps): FallbackProvider {

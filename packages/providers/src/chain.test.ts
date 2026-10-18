@@ -281,3 +281,44 @@ test("kokoro renders a whole chunk before any audio, so its timeout scales with 
   });
   expect(kokoroTimeoutMs("x".repeat(400), 3000)).toBe(3000 + 400 * KOKORO_MS_PER_CHAR);
 });
+
+test("provider_fallback is logged once per provider per minute, with the suppressed count", async () => {
+  const broken = new FakeProvider({ name: "kokoro", failWith: new Error("bad voice") });
+  const alsoBroken = new FakeProvider({ name: "inworld", failWith: new Error("down") });
+  const say = new FakeProvider({ name: "say" });
+  const clock = { t: 0 };
+  const { deps: d, logs } = deps();
+  const chain = chainProviders([broken, alsoBroken, say], resolveConfig({}), {
+    ...d,
+    now: () => clock.t,
+  });
+  for (const t of [0, 10_000, 59_999]) {
+    clock.t = t;
+    await chain.synthesize("x");
+  }
+  // Every chunk still fell back (unchanged), but each provider was logged once.
+  expect(say.calls).toEqual(["x", "x", "x"]);
+  expect(logs).toEqual([
+    { level: "warn", msg: "provider_fallback", provider: "kokoro", error: "Error: bad voice" },
+    { level: "warn", msg: "provider_fallback", provider: "inworld", error: "Error: down" },
+  ]);
+
+  clock.t = 60_000;
+  await chain.synthesize("x");
+  expect(logs.slice(2)).toEqual([
+    {
+      level: "warn",
+      msg: "provider_fallback",
+      provider: "kokoro",
+      error: "Error: bad voice",
+      suppressed: 2,
+    },
+    {
+      level: "warn",
+      msg: "provider_fallback",
+      provider: "inworld",
+      error: "Error: down",
+      suppressed: 2,
+    },
+  ]);
+});

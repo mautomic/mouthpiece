@@ -17,6 +17,7 @@ export interface KokoroEngine {
 
 export type KokoroLoader = () => Promise<KokoroEngine>;
 
+export const KOKORO_DEFAULT_VOICE = "af_heart";
 export const KOKORO_MODEL = "onnx-community/Kokoro-82M-v1.0-ONNX";
 export const KOKORO_DTYPE = "q8";
 
@@ -121,9 +122,21 @@ export class KokoroProvider implements TtsProvider {
   readonly cacheKey: string;
   #engine: Promise<KokoroEngine> | undefined;
   #loadFailureLogged = false;
+  /** The configured voice, or the default when it isn't a Kokoro voice. */
+  readonly #voice: string;
 
   constructor(private readonly opts: KokoroProviderOptions) {
-    this.cacheKey = `${opts.voice}\0${KOKORO_DTYPE}`;
+    // An unknown voice makes kokoro-js print its whole voice table and throw on every chunk.
+    this.#voice = VOICE_IDS.has(opts.voice) ? opts.voice : KOKORO_DEFAULT_VOICE;
+    if (this.#voice !== opts.voice) {
+      opts.log?.({
+        level: "warn",
+        msg: "kokoro_voice_invalid",
+        voice: opts.voice,
+        using: this.#voice,
+      });
+    }
+    this.cacheKey = `${this.#voice}\0${KOKORO_DTYPE}`;
   }
 
   async synthesize(text: string, options: SynthesizeOptions = {}): Promise<AudioClip> {
@@ -131,7 +144,7 @@ export class KokoroProvider implements TtsProvider {
     const engine = await this.#load();
     options.signal?.throwIfAborted();
     // A voice from another provider in the chain (or a typo) is not a Kokoro voice: use ours.
-    const voice = options.voice && VOICE_IDS.has(options.voice) ? options.voice : this.opts.voice;
+    const voice = options.voice && VOICE_IDS.has(options.voice) ? options.voice : this.#voice;
     const audio = await engine.generate(text, { voice });
     options.signal?.throwIfAborted();
     return { format: "wav", chunks: singleChunk(new Uint8Array(audio.toWav())) };
@@ -146,7 +159,7 @@ export class KokoroProvider implements TtsProvider {
       return; // already logged as kokoro_load_failed
     }
     try {
-      await engine.generate("Ready.", { voice: this.opts.voice });
+      await engine.generate("Ready.", { voice: this.#voice });
     } catch (error) {
       this.opts.log?.({ level: "warn", msg: "kokoro_warmup_failed", error: String(error) });
     }
