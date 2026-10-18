@@ -138,15 +138,23 @@ export interface ProviderUsage {
   resetsAt?: string;
 }
 
-/**
- * How to chunk text for a provider whose chunks don't flow into each other (a local model renders
- * each one as a clip with its own start-up and silence), so it gets fewer, longer chunks.
- */
-export interface ChunkHint {
-  /** The first chunk is packed up to this many characters instead of being the first sentence alone. */
-  firstChars: number;
+/** How to pack sentences into chunks; see chunkText's options of the same names. */
+export interface ChunkPacking {
+  /** The first chunk is packed up to this many characters; absent, the first sentence goes alone. */
+  firstChars?: number;
   /** Later chunks are packed up to this many characters. */
   targetChars: number;
+}
+
+/**
+ * How a provider whose every chunk is a separate render (a local model) wants text chunked. The
+ * speaker picks by its player.
+ */
+export interface ChunkHint {
+  /** For a player with a break between clips (afplay): fewer, longer chunks. */
+  withBreaks: ChunkPacking;
+  /** For a gap-free player: short chunks, so speech starts on the first sentence. */
+  gapless: ChunkPacking;
 }
 
 export interface TtsProvider {
@@ -168,6 +176,8 @@ export interface TtsProvider {
 export interface Player {
   /** Resolves when playback finishes or `signal` aborts. Rejects if the clip cannot be played. */
   play(clip: AudioClip, signal: AbortSignal): Promise<void>;
+  /** True when consecutive clips play back to back with no break; the speaker chunks text for it. */
+  readonly gapless?: boolean;
 }
 
 /** Phase 2 (US-009). */

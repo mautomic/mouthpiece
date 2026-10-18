@@ -223,7 +223,7 @@ test("the first provider's chunking hint survives every wrapper in the chain (US
   const fast = new FakeProvider({
     name: "kokoro",
     pricePerMillionChars: 1,
-    chunking: { firstChars: 60, targetChars: 60 },
+    chunking: { withBreaks: { firstChars: 60, targetChars: 60 }, gapless: { targetChars: 60 } },
   });
   await boot(sayChain(), { providers: [fast, new FakeProvider({ name: "say" })] });
   await speak(

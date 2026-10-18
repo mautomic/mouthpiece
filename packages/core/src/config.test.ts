@@ -233,3 +233,13 @@ test.each([
   expect(() => resolveConfig(raw)).toThrow(ConfigError);
   expect(() => resolveConfig(raw)).toThrow(message);
 });
+
+test("player backend: auto by default, afplay when set, anything else rejected", () => {
+  expect(DEFAULT_CONFIG.player).toEqual({ backend: "auto" });
+  expect(resolveConfig({}).player).toEqual({ backend: "auto" });
+  expect(resolveConfig({ player: { backend: "afplay" } }).player).toEqual({ backend: "afplay" });
+  expect(() => resolveConfig({ player: { backend: "vlc" } })).toThrow(
+    "player.backend must be one of: auto, afplay",
+  );
+  expect(() => resolveConfig({ player: "afplay" })).toThrow("player must be a table");
+});

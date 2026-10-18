@@ -9,6 +9,10 @@ export const HOTKEYS_SOURCE = HELPER_SOURCE;
 
 export const HELPER_BUNDLE_ID = "dev.mouthpiece.helper";
 export const HELPER_EXECUTABLE = "mouthpiece-helper";
+/** Swift source of the gap-free audio player the daemon plays through (US-005). */
+export const PLAYER_SOURCE = join(import.meta.dir, "MouthpiecePlayer.swift");
+export const PLAYER_EXECUTABLE = "mouthpiece-player";
+export const PLAYER_IDENTIFIER = "dev.mouthpiece.player";
 const HELPER_NAME = "MouthpieceHelper";
 
 export function helperAppPath(home: string): string {
@@ -18,6 +22,11 @@ export function helperAppPath(home: string): string {
 /** The executable inside the bundle. Launching it directly keeps a process handle for the supervisor. */
 export function helperBinary(home: string): string {
   return join(helperAppPath(home), "Contents", "MacOS", HELPER_EXECUTABLE);
+}
+
+/** The gap-free player, a second executable in the helper bundle. */
+export function playerBinary(home: string): string {
+  return join(helperAppPath(home), "Contents", "MacOS", PLAYER_EXECUTABLE);
 }
 
 /** @deprecated Phase 2 name; use helperBinary. */
@@ -50,7 +59,7 @@ export function infoPlist(): string {
 `;
 }
 
-/** Builds `<home>/MouthpieceHelper.app`: Info.plist, swiftc, then an ad-hoc signature. Returns the app path. */
+/** Builds <home>/MouthpieceHelper.app: Info.plist, the helper and the player (swiftc), then ad-hoc signatures. Returns the app path. */
 export async function buildHelper(opts: {
   home: string;
   exec?: Exec;
@@ -60,18 +69,29 @@ export async function buildHelper(opts: {
   const app = helperAppPath(opts.home);
   await mkdir(join(app, "Contents", "MacOS"), { recursive: true });
   await writeFile(join(app, "Contents", "Info.plist"), infoPlist());
-  const compile = await exec([
-    opts.swiftc ?? "swiftc",
-    "-O",
-    "-swift-version",
-    "5",
-    "-o",
-    helperBinary(opts.home),
-    HELPER_SOURCE,
-  ]);
-  if (compile.code !== 0)
-    throw new Error(`swiftc failed (${compile.code}): ${compile.stderr.trim()}`);
-  const sign = await exec(["codesign", "-f", "-s", "-", "--identifier", HELPER_BUNDLE_ID, app]);
-  if (sign.code !== 0) throw new Error(`codesign failed (${sign.code}): ${sign.stderr.trim()}`);
+  for (const [source, binary] of [
+    [HELPER_SOURCE, helperBinary(opts.home)],
+    [PLAYER_SOURCE, playerBinary(opts.home)],
+  ] as const) {
+    const compile = await exec([
+      opts.swiftc ?? "swiftc",
+      "-O",
+      "-swift-version",
+      "5",
+      "-o",
+      binary,
+      source,
+    ]);
+    if (compile.code !== 0)
+      throw new Error(`swiftc failed (${compile.code}): ${compile.stderr.trim()}`);
+  }
+  // The bundle's seal covers the other executable, so it is signed first.
+  for (const [identifier, path] of [
+    [PLAYER_IDENTIFIER, playerBinary(opts.home)],
+    [HELPER_BUNDLE_ID, app],
+  ] as const) {
+    const sign = await exec(["codesign", "-f", "-s", "-", "--identifier", identifier, path]);
+    if (sign.code !== 0) throw new Error(`codesign failed (${sign.code}): ${sign.stderr.trim()}`);
+  }
   return app;
 }

@@ -18,11 +18,11 @@ afterEach(async () => {
   await rm(scriptDir, { recursive: true, force: true });
 });
 
-test.skipIf(!onMac)("renders AIFF without playing and cleans temp files", async () => {
+test.skipIf(!onMac)("renders 16-bit WAV without playing and cleans temp files", async () => {
   const clip = await new SayProvider({ tmpDir: dir }).synthesize("Hello from Mouthpiece.");
-  expect(clip.format).toBe("aiff");
+  expect(clip.format).toBe("wav");
   const bytes = await collectChunks(clip.chunks);
-  expect(new TextDecoder().decode(bytes.slice(0, 4))).toBe("FORM");
+  expect(new TextDecoder().decode(bytes.slice(0, 4))).toBe("RIFF");
   expect(await readdir(dir)).toEqual([]);
 });
 
@@ -106,12 +106,14 @@ test("a voice say does not know is retried once in the system voice, with a warn
     "-f",
     expect.stringMatching(/\.txt$/),
     "-o",
-    expect.stringMatching(/\.aiff$/),
+    expect.stringMatching(/\.wav$/),
+    "--file-format=WAVE",
+    "--data-format=LEI16@24000",
     "-v",
     "JBFqnCBsd6RMkjVDRZzb",
   ]);
   // The retry renders the same text to the same file, in the system voice.
-  expect(retry).toEqual(first?.slice(0, 4));
+  expect(retry).toEqual(first?.slice(0, 6));
   expect(logs).toEqual([
     expect.objectContaining({
       level: "warn",

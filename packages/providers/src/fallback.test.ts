@@ -109,7 +109,7 @@ test("timeoutFor overrides the first-byte timeout per provider and text", async 
 });
 
 test("takes its chunking hint from the first provider", () => {
-  const hint = { firstChars: 80, targetChars: 150 };
+  const hint = { withBreaks: { firstChars: 400, targetChars: 400 }, gapless: { targetChars: 150 } };
   const chain = (first: FakeProvider, second: FakeProvider) =>
     new FallbackProvider([first, second], { firstByteTimeoutMs: 1000 });
   expect(chain(new FakeProvider({ chunking: hint }), new FakeProvider()).chunking).toEqual(hint);

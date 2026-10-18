@@ -37,7 +37,31 @@ export function trimWavSilence(
   return out;
 }
 
+export interface WavPcm {
+  sampleRate: number;
+  channels: number;
+  encoding: "f32le" | "s16le";
+  /** Interleaved little-endian samples, whole frames only. */
+  data: Uint8Array;
+}
+
+/** The samples of a 16-bit PCM or 32-bit float WAV, for a player that takes raw PCM; undefined otherwise. */
+export function readWavPcm(wav: Uint8Array): WavPcm | undefined {
+  const parsed = parseWav(wav);
+  if (!parsed) return undefined;
+  const { dataOffset, dataLength, rate, frameBytes, channels, encoding } = parsed;
+  const length = Math.floor(dataLength / frameBytes) * frameBytes;
+  return {
+    sampleRate: rate,
+    channels,
+    encoding,
+    data: wav.subarray(dataOffset, dataOffset + length),
+  };
+}
+
 interface ParsedWav {
+  channels: number;
+  encoding: "f32le" | "s16le";
   dataOffset: number;
   dataLength: number;
   rate: number;
@@ -67,7 +91,15 @@ function parseWav(wav: Uint8Array): ParsedWav | undefined {
       const frameBytes = (bits / 8) * channels;
       if (channels < 1 || rate < 1) return undefined;
       if (format === FLOAT && bits === 32) {
-        return { dataOffset, dataLength, rate, frameBytes, read: (o) => view.getFloat32(o, true) };
+        return {
+          dataOffset,
+          dataLength,
+          rate,
+          frameBytes,
+          channels,
+          encoding: "f32le",
+          read: (o) => view.getFloat32(o, true),
+        };
       }
       if (format === PCM && bits === 16) {
         return {
@@ -75,6 +107,8 @@ function parseWav(wav: Uint8Array): ParsedWav | undefined {
           dataLength,
           rate,
           frameBytes,
+          channels,
+          encoding: "s16le",
           read: (o) => view.getInt16(o, true) / 32768,
         };
       }

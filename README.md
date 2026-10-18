@@ -19,7 +19,7 @@ It runs entirely on your Mac. The default voices are free: macOS `say`, or the l
 - [Bun](https://bun.sh) 1.2 or later, the native arm64 build on Apple Silicon. `install.sh` installs it if it's missing.
 - Optional:
   - [Claude Code](https://claude.com/claude-code), for spoken responses and for summaries (`claude -p`, using your subscription).
-  - Xcode Command Line Tools (`xcode-select --install`), to build the helper app that provides the hotkeys, menubar icon, and pause-while-dictating.
+  - Xcode Command Line Tools (`xcode-select --install`), to build the helper app that provides the hotkeys, menubar icon, pause-while-dictating, and gap-free playback.
   - An API key for Inworld, ElevenLabs, Deepgram, or OpenAI, if you want a cloud voice.
 
 ## Install
@@ -105,6 +105,8 @@ web = "bm_george"
 api = "af_bella"
 ```
 
+With the helper app built (`mouthpiece build-helper`), speech plays through a gap-free player: Kokoro starts speaking after the first sentence and continues without breaks between sentences. Without it, Mouthpiece plays each clip with `afplay`, which adds about a second between clips.
+
 ## Configuration
 
 The config file is `~/.config/mouthpiece/config.toml`. It's optional: every setting has a default. Changes apply as soon as you save, without a restart. If the file can't be read (for example, a TOML syntax error), Mouthpiece says so, keeps the previous settings, and shows the error in `mouthpiece status`.
@@ -122,6 +124,7 @@ Commonly changed settings:
 | `micPause.enabled` | `true` | Pause while the mic is in use |
 | `micPause.ignoreBundleIds` | `[]` | Apps whose mic use doesn't pause speech, e.g. `["us.zoom.xos"]` |
 | `usage.quotas.<provider>` | none | e.g. `{ chars = 100000 }`: warn at 80%, switch to a free voice at 100% |
+| `player.backend` | `"auto"` | `auto` plays through the gap-free player when it's built; `afplay` always uses afplay (restart the daemon after changing it) |
 
 All settings and their defaults are in [`packages/core/src/config.ts`](packages/core/src/config.ts).
 

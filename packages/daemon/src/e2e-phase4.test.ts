@@ -474,3 +474,9 @@ test("a reload that doesn't change the helper's config keeps the helper and its 
   expect(helper.started[1]?.join(" ")).toContain("--mic-resume-delay 1500");
   expect((await status(o())).pauseReasons).toEqual([]);
 }, 20_000);
+
+test("without the player built, the daemon plays through afplay and says so", async () => {
+  await boot(resolveConfig({}), { provider: new FakeProvider() });
+  expect(logs).toContainEqual(expect.objectContaining({ msg: "listening", player: "afplay" }));
+  expect(logs).toContainEqual(expect.objectContaining({ msg: "player_afplay" }));
+});
