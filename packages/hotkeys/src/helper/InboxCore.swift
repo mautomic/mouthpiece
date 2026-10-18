@@ -368,6 +368,16 @@ func runInboxSelfTest() -> Int32 {
   check(nextFocusIndex(removedAt: 3, remaining: 3) == 2, "focus: removing the last row moves to the one above")
   check(nextFocusIndex(removedAt: 0, remaining: 0) == nil, "focus: nothing left, no focus")
 
+  // Menu shortcuts: a hotkey binding shown on its menu item (keyCodes and modifierMasks are main.swift's)
+  let inboxKey = Binding(
+    action: "inbox", keyCode: keyCodes["i"]!, modifiers: UInt32(modifierMasks["ctrl"]! | modifierMasks["alt"]!))
+  check(menuShortcut(inboxKey).map { "\($0.key) \($0.modifiers)" } == "i [\"ctrl\", \"alt\"]", "menu: ctrl+alt+i")
+  let everyModifier = Binding(
+    action: "stop", keyCode: keyCodes["s"]!,
+    modifiers: UInt32(modifierMasks["cmd"]! | modifierMasks["shift"]! | modifierMasks["ctrl"]! | modifierMasks["alt"]!))
+  check(menuShortcut(everyModifier)?.modifiers == ["ctrl", "alt", "shift", "cmd"], "menu: every modifier, in menu order")
+  check(menuShortcut(Binding(action: "stop", keyCode: 999, modifiers: 0)) == nil, "menu: an unknown key shows nothing")
+
   if failures.isEmpty {
     print("ok")
     return 0

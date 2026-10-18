@@ -29,6 +29,15 @@ let keyCodes: [String: UInt32] = [
   "8": 28, "0": 29, "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, "n": 45, "m": 46,
 ]
 let modifierMasks: [String: Int] = ["ctrl": controlKey, "alt": optionKey, "shift": shiftKey, "cmd": cmdKey]
+
+/// A hotkey binding as a menu item shows it: the key and its modifiers, in the menu's order (⌃⌥⇧⌘).
+func menuShortcut(_ binding: Binding) -> (key: String, modifiers: [String])? {
+  guard let key = keyCodes.first(where: { $0.value == binding.keyCode })?.key else { return nil }
+  let modifiers = ["ctrl", "alt", "shift", "cmd"].filter { name in
+    modifierMasks[name].map { binding.modifiers & UInt32($0) != 0 } ?? false
+  }
+  return (key, modifiers)
+}
 let routes: [String: (path: String, body: String)] = [
   "stop": ("/v1/stop", "{}"),
   "skip": ("/v1/skip", "{}"),
@@ -273,9 +282,9 @@ final class Menubar: NSObject, NSMenuDelegate {
     item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     super.init()
     menu.autoenablesItems = false
-    addAction("Stop", "/v1/stop", "{}")
-    addAction("Skip", "/v1/skip", "{}")
-    addAction("Replay", "/v1/replay", "{}")
+    addAction("Stop", "/v1/stop", "{}", hotkey: "stop")
+    addAction("Skip", "/v1/skip", "{}", hotkey: "skip")
+    addAction("Replay", "/v1/replay", "{}", hotkey: "replay")
     addAction("Replay full", "/v1/replay", "{\"full\":true}")
 
     let modeMenu = NSMenu()
@@ -285,6 +294,11 @@ final class Menubar: NSObject, NSMenuDelegate {
       modeMenu.addItem(entry)
       modeItems[mode] = entry
     }
+    modeMenu.addItem(NSMenuItem.separator())
+    let toggle = routeItem("Summary ↔ Full", "/v1/mode", "{\"toggle\":true}")
+    showShortcut(toggle, for: "toggleMode")
+    modeMenu.addItem(toggle)
+    actionItems.append(toggle)
     let modeItem = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
     modeItem.submenu = modeMenu
     menu.addItem(modeItem)
@@ -322,6 +336,7 @@ final class Menubar: NSObject, NSMenuDelegate {
     openInbox = open
     let entry = NSMenuItem(title: "Inbox", action: #selector(openInboxItem(_:)), keyEquivalent: "")
     entry.target = self
+    showShortcut(entry, for: "inbox")
     menu.insertItem(entry, at: 0)
     menu.insertItem(NSMenuItem.separator(), at: 1)
     inboxItem = entry
@@ -329,6 +344,17 @@ final class Menubar: NSObject, NSMenuDelegate {
   }
 
   @objc func openInboxItem(_ sender: NSMenuItem) { openInbox?() }
+
+  /// Shows `action`'s hotkey on `entry`, as other apps' menus do. While the menu is open the key
+  /// triggers the item; otherwise the global hotkey has it. An unbound action shows nothing.
+  func showShortcut(_ entry: NSMenuItem, for action: String) {
+    guard let binding = bindings.first(where: { $0.action == action }), let shortcut = menuShortcut(binding) else {
+      return
+    }
+    let flags: [String: NSEvent.ModifierFlags] = ["ctrl": .control, "alt": .option, "shift": .shift, "cmd": .command]
+    entry.keyEquivalent = shortcut.key
+    entry.keyEquivalentModifierMask = NSEvent.ModifierFlags(shortcut.modifiers.compactMap { flags[$0] })
+  }
 
   /// A menu item that posts `body` to `path` when chosen.
   func routeItem(_ title: String, _ path: String, _ body: String) -> NSMenuItem {
@@ -338,8 +364,9 @@ final class Menubar: NSObject, NSMenuDelegate {
     return entry
   }
 
-  func addAction(_ title: String, _ path: String, _ body: String) {
+  func addAction(_ title: String, _ path: String, _ body: String, hotkey: String? = nil) {
     let entry = routeItem(title, path, body)
+    if let hotkey { showShortcut(entry, for: hotkey) }
     menu.addItem(entry)
     actionItems.append(entry)
   }
