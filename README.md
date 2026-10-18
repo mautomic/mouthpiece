@@ -58,6 +58,7 @@ When Claude needs your approval to use a tool, you hear an alert that names the 
 | ⌃⌥N | Skip to the next item |
 | ⌃⌥R | Replay the last response |
 | ⌃⌥M | Switch between summary and full |
+| ⌃⌥I | Open the reply inbox (with `[reply] enabled`) |
 
 The menubar icon shows whether Mouthpiece is idle, speaking, or paused, and how many items are queued. Its menu has the same controls, plus mode and pause, and a **Settings** submenu for the Kokoro voice and speed. A change there is saved to your config file and you hear the new voice right away. **Quit Mouthpiece** (⌘Q while the menu is open) stops the daemon until your next login or `mouthpiece daemon start`.
 
@@ -129,8 +130,10 @@ Commonly changed settings:
 | `summarizer.thresholdChars` | `300` | Responses shorter than this are spoken in full |
 | `summarizer.maxChars` | `700` | The longest a summary can be; each one is sized to its response (about 40% of its length) |
 | `filter.minChars` | `20` | Shorter responses (and "done", "ok", …) aren't spoken |
-| `hotkeys.stop` / `skip` / `replay` / `toggleMode` | `ctrl+alt+s` / `n` / `r` / `m` | Global hotkeys |
+| `hotkeys.stop` / `skip` / `replay` / `toggleMode` / `inbox` | `ctrl+alt+s` / `n` / `r` / `m` / `i` | Global hotkeys |
 | `menubar.enabled` | `true` | Show the menubar icon |
+| `reply.enabled` | `false` | Reply to sessions from the inbox (see "Replying to a session") |
+| `reply.popup` | `"away"` | When the inbox pops up: `away`, `always` or `never` |
 | `micPause.enabled` | `true` | Pause while the mic is in use |
 | `micPause.ignoreBundleIds` | `[]` | Apps whose mic use doesn't pause speech, e.g. `["us.zoom.xos"]` |
 | `usage.quotas.<provider>` | none | e.g. `{ chars = 100000 }`: warn at 80%, switch to a free voice at 100% |
@@ -200,6 +203,23 @@ prompt; anything it can't check is refused, never typed blind. A reply is joined
 means Mouthpiece couldn't confirm the agent started; check the terminal, or run `mouthpiece reply --submit <id>`.
 Works with Claude Code and Codex sessions. `enabled` applies without a restart. The Orca CLI path is
 `[reply] orca`, by default Orca's bundled one; it is read when the daemon starts.
+
+### The inbox panel
+
+With `[reply] enabled`, the helper app shows an inbox panel: each session's latest response, with a reply box.
+⌃⌥I (or the menubar's **Inbox**) opens it with the cursor in the newest waiting reply; ⌘↩ sends, Esc closes.
+
+```toml
+[reply]
+popup = "away"      # pop up on a new response unless the session's terminal app (Orca) is in front;
+                    # "always" pops on every one; "never" only opens on ⌃⌥I or from the menubar
+[hotkeys]
+inbox = "ctrl+alt+i"
+```
+
+A pop-up never takes your keystrokes, and hides after 20 seconds if you don't touch it. Orca can't say which tab
+you're looking at, so while Orca is in front, "away" stays quiet for every Orca session.
+Rebuild the helper after updating (`mouthpiece build-helper`, then `mouthpiece daemon restart`).
 
 ## Running the daemon
 

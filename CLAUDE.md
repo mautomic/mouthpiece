@@ -36,7 +36,7 @@ packages/core       contracts (types), envelope validation, cleaning, chunking, 
 packages/providers  TtsProvider implementations (say, kokoro, inworld, elevenlabs, deepgram, openai), voice map, fallback chain
 packages/daemon     HTTP server, speech queue (pause/resume by reason), speaker pipeline (render-ahead + start gate), stream player (mouthpiece-player) with afplay fallback, settings (GET/POST /v1/settings writes config.toml), usage metering, quota gate, status
 packages/summarizers  Summarizer backends (claude -p; prompt sized to the reply: key results first, the user's to-dos and questions last; trimmed from the middle) + first-sentence fallback
-packages/hotkeys    helper app bundle: MouthpieceHelper (global hotkeys, menubar, mic watcher) and mouthpiece-player (gap-free audio): Swift sources + TypeScript build/args/supervisor
+packages/hotkeys    helper app bundle: MouthpieceHelper (src/helper/*.swift: global hotkeys, menubar, mic watcher, reply inbox panel) and mouthpiece-player (gap-free audio): Swift sources + TypeScript build/args/supervisor
 packages/client     @mouthpiece/client: speak/interrupt/stop/skip/health/mode/replay/usage/voices/status/pause/resume/settings over HTTP
 packages/hook-kit   @mouthpiece/hook-kit: silent hook runtime (runHook, HookContext, labelFromCwd, approvalText) shared by hook adapters
 packages/cli        `mouthpiece` CLI
@@ -84,6 +84,7 @@ Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client`
 2. **No audio and no paid API calls in automated tests.**
    - Use `FakeProvider`, `FakePlayer` and `FakePlayerProcess`.
    - The Swift player's tests run it only with `--self-test` or `--self-test-idle`, which render offline into memory. Never run `mouthpiece-player` without one of them in a test or an agent.
+   - The helper's inbox logic is tested only through `mouthpiece-helper --self-test-inbox`, which needs no daemon and opens no window. Never launch the helper otherwise in a test or an agent.
    - Live tests (real `say` playback, Inworld) only run when `MOUTHPIECE_LIVE_TESTS=1`.
 3. **Hook scripts** run through `@mouthpiece/hook-kit` `runHook()`: they never write to stdout or stderr, always exit 0, and give up after 300 ms. If they block the host tool, that's a bug (Gemini CLI retries the turn on any output or non-zero exit).
 4. **The daemon binds to `127.0.0.1` only.** Every endpoint except `GET /v1/health` requires `Authorization: Bearer <token>`.
