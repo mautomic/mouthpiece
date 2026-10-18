@@ -24,13 +24,14 @@ const BINDS = [
 ];
 
 function cfg(
-  on: { hotkeys?: boolean; menubar?: boolean; micPause?: boolean } = {},
+  on: { hotkeys?: boolean; menubar?: boolean; micPause?: boolean; reply?: boolean } = {},
   micPause: Partial<HelperConfig["micPause"]> = {},
 ): HelperConfig {
   return {
     hotkeys: { ...DEFAULT_CONFIG.hotkeys, enabled: on.hotkeys ?? true },
     menubar: { enabled: on.menubar ?? true },
     micPause: { ...DEFAULT_CONFIG.micPause, ...micPause, enabled: on.micPause ?? true },
+    reply: { ...DEFAULT_CONFIG.reply, enabled: on.reply ?? false },
   };
 }
 
@@ -152,4 +153,34 @@ test("Swift key-code table matches KEY_CODES", async () => {
     [...swift.matchAll(/"([a-z0-9])": (\d+)/g)].map((m) => [m[1], Number(m[2])]),
   );
   expect(table).toEqual(KEY_CODES);
+});
+
+test("with replies off there is no inbox and no inbox hotkey", () => {
+  const args = helperArgs(cfg(), target);
+  expect(args).not.toContain("--inbox");
+  expect(args.join(" ")).not.toContain("inbox=");
+});
+
+test("with replies on the helper gets the inbox, its pop-up mode and its hotkey", () => {
+  const c = cfg({ reply: true });
+  const args = helperArgs(c, target);
+  expect(args).toEqual(
+    expect.arrayContaining(["--bind", "inbox=ctrl+alt+i", "--inbox", "--inbox-popup", "away"]),
+  );
+  c.reply = { ...c.reply, popup: "always" };
+  expect(helperArgs(c, target).slice(-2)).toEqual(["--inbox-popup", "always"]);
+});
+
+test("replies alone are enough to want the helper", () => {
+  expect(helperWanted(cfg({ hotkeys: false, menubar: false, micPause: false, reply: true }))).toBe(
+    true,
+  );
+});
+
+test("the inbox hotkey clashing with another is rejected only while it is bound", () => {
+  const c = cfg({ reply: true });
+  c.hotkeys = { ...c.hotkeys, inbox: "ctrl+alt+s" };
+  expect(() => helperArgs(c, target)).toThrow("both");
+  c.reply = { ...c.reply, enabled: false };
+  expect(() => helperArgs(c, target)).not.toThrow();
 });

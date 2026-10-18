@@ -1,6 +1,6 @@
-import type { Config } from "@mouthpiece/core";
+import { type Config, DEFAULT_CONFIG } from "@mouthpiece/core";
 
-export const HOTKEY_ACTIONS = ["stop", "skip", "replay", "toggleMode"] as const;
+export const HOTKEY_ACTIONS = ["stop", "skip", "replay", "toggleMode", "inbox"] as const;
 export type HotkeyAction = (typeof HOTKEY_ACTIONS)[number];
 const MODIFIERS = ["ctrl", "alt", "shift", "cmd"] as const;
 type Modifier = (typeof MODIFIERS)[number];
@@ -73,17 +73,24 @@ export function parseBinding(action: HotkeyAction, spec: string): Binding {
 }
 
 /** The config sections the helper app reads. */
-export type HelperConfig = Pick<Config, "hotkeys" | "menubar" | "micPause">;
+export type HelperConfig = Pick<Config, "hotkeys" | "menubar" | "micPause" | "reply">;
 
-/** True when any helper feature (hotkeys, menubar, mic pause) is enabled. */
+/** True when any helper feature (hotkeys, menubar, mic pause, the reply inbox) is enabled. */
 export function helperWanted(config: HelperConfig): boolean {
-  return config.hotkeys.enabled || config.menubar.enabled || config.micPause.enabled;
+  return (
+    config.hotkeys.enabled ||
+    config.menubar.enabled ||
+    config.micPause.enabled ||
+    config.reply.enabled
+  );
 }
 
-function bindArgs(hotkeys: Config["hotkeys"]): string[] {
+/** `--bind` arguments; the inbox hotkey only while the inbox is on. */
+function bindArgs(hotkeys: Config["hotkeys"], inbox: boolean): string[] {
   const args: string[] = [];
   const seen = new Map<string, HotkeyAction>();
   for (const action of HOTKEY_ACTIONS) {
+    if (action === "inbox" && !inbox) continue;
     const b = parseBinding(action, hotkeys[action]);
     const combo = `${[...b.modifiers].sort().join("+")}+${b.key}`;
     const clash = seen.get(combo);
@@ -117,17 +124,19 @@ export function helperArgs(
           hotkeys: { ...config, enabled: true },
           menubar: { enabled: false },
           micPause: { enabled: false, ignoreBundleIds: [], resumeDelayMs: 0, maxPauseMs: 0 },
+          reply: { ...DEFAULT_CONFIG.reply, enabled: false },
         }
       : config;
   if (!helperWanted(c))
-    throw new Error("no helper feature is enabled (hotkeys, menubar, micPause)");
+    throw new Error("no helper feature is enabled (hotkeys, menubar, micPause, reply)");
   const args = ["--url", target.url, "--token-file", target.tokenPath];
-  if (c.hotkeys.enabled) args.push(...bindArgs(c.hotkeys));
+  if (c.hotkeys.enabled) args.push(...bindArgs(c.hotkeys, c.reply.enabled));
   if (c.menubar.enabled) args.push("--menubar");
   if (c.micPause.enabled) {
     args.push("--mic-pause", "--mic-resume-delay", String(c.micPause.resumeDelayMs));
     args.push("--mic-refresh", String(micRefreshMs(c.micPause.maxPauseMs)));
     for (const id of c.micPause.ignoreBundleIds) args.push("--mic-ignore", id);
   }
+  if (c.reply.enabled) args.push("--inbox", "--inbox-popup", c.reply.popup);
   return args;
 }

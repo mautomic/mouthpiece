@@ -57,7 +57,15 @@ export interface Config {
     monthlyBudgetUsd?: number;
   };
   alerts: { dedupeWindowMs: number };
-  hotkeys: { enabled: boolean; stop: string; skip: string; replay: string; toggleMode: string };
+  hotkeys: {
+    enabled: boolean;
+    stop: string;
+    skip: string;
+    replay: string;
+    toggleMode: string;
+    /** Opens the inbox panel (US-026); bound only while `[reply] enabled`. */
+    inbox: string;
+  };
   /** Menubar status item in the helper app (US-018). */
   menubar: { enabled: boolean };
   /** Pause speech while another app uses the microphone (US-022). */
@@ -76,7 +84,7 @@ export interface Config {
    */
   player: { backend: PlayerBackend };
   /** `[reply]`: typing replies back into sessions (PRD §13). `orca` is read at start. */
-  reply: { enabled: boolean; confirmMs: number; orca?: string };
+  reply: { enabled: boolean; confirmMs: number; orca?: string; popup: ReplyPopup };
 }
 
 /** The largest `micPause.maxPauseMs`: 24 hours. */
@@ -120,11 +128,12 @@ export const DEFAULT_CONFIG: Config = {
     skip: "ctrl+alt+n",
     replay: "ctrl+alt+r",
     toggleMode: "ctrl+alt+m",
+    inbox: "ctrl+alt+i",
   },
   menubar: { enabled: true },
   micPause: { enabled: true, ignoreBundleIds: [], resumeDelayMs: 800, maxPauseMs: 600_000 },
   player: { backend: "auto" },
-  reply: { enabled: false, confirmMs: 5000 },
+  reply: { enabled: false, confirmMs: 5000, popup: "away" },
 };
 
 export class ConfigError extends Error {}
@@ -298,6 +307,7 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
       toggleMode:
         optional(hotkeys.toggleMode, "hotkeys.toggleMode", nonEmptyString) ??
         base.hotkeys.toggleMode,
+      inbox: optional(hotkeys.inbox, "hotkeys.inbox", nonEmptyString) ?? base.hotkeys.inbox,
     },
     menubar: {
       enabled: optional(menubar.enabled, "menubar.enabled", bool) ?? base.menubar.enabled,
@@ -322,6 +332,7 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
     reply: {
       enabled: optional(reply.enabled, "reply.enabled", bool) ?? base.reply.enabled,
       confirmMs: optional(reply.confirmMs, "reply.confirmMs", positiveInt) ?? base.reply.confirmMs,
+      popup: optional(reply.popup, "reply.popup", oneOf(REPLY_POPUPS)) ?? base.reply.popup,
       ...optionalField(
         "orca",
         optional(reply.orca, "reply.orca", nonEmptyString) ?? base.reply.orca,
@@ -395,6 +406,10 @@ function positiveNumber(value: unknown, name: string): number {
   }
   return value;
 }
+
+/** `[reply] popup`: when the inbox panel pops up (US-026). `away`: unless the session's terminal app is in front. */
+export const REPLY_POPUPS = ["away", "always", "never"] as const;
+export type ReplyPopup = (typeof REPLY_POPUPS)[number];
 
 export const PLAYER_BACKENDS = ["auto", "afplay"] as const;
 export type PlayerBackend = (typeof PLAYER_BACKENDS)[number];
