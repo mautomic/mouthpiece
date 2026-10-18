@@ -138,3 +138,60 @@ test("marginStateDir follows Margin's own order", () => {
   expect(marginStateDir({ XDG_RUNTIME_DIR: "/x", HOME: "/h" })).toBe("/x/margin");
   expect(marginStateDir({ HOME: "/h" })).toBe("/h/.cache/margin");
 });
+
+test("a torn line already in the log when following starts never brings back its history", async () => {
+  const prd = await doc("PRD.md", reply(1, "H1") + reply(2, "H2"));
+  const repaired = (await Bun.file(prd.log).text()).length;
+  await appendFile(prd.log, '{"seq":3,"type":"rep'); // an earlier Margin crash
+  await recent([prd.path]);
+  const h = follower();
+  await h.f.poll();
+  await truncate(prd.log, repaired); // Margin's repair at the next reply
+  await appendFile(prd.log, reply(3, "New."));
+  await h.f.poll();
+  expect(h.spoken.map((m) => m.text)).toEqual(["New."]);
+});
+
+test("a crash and repair before any new reply never brings back the history", async () => {
+  const prd = await doc("PRD.md", reply(1, "H1") + reply(2, "H2"));
+  await recent([prd.path]);
+  const h = follower();
+  await h.f.poll();
+  const before = (await Bun.file(prd.log).text()).length;
+  await appendFile(prd.log, '{"seq":3,"type":"rep');
+  await h.f.poll();
+  await truncate(prd.log, before);
+  await appendFile(prd.log, reply(3, "New."));
+  await h.f.poll();
+  expect(h.spoken.map((m) => m.text)).toEqual(["New."]);
+});
+
+test("a pass that stalls never lets polls pile up behind it", async () => {
+  const prd = await doc("PRD.md", reply(1, "old"));
+  await recent([prd.path]);
+  let stats = 0;
+  const f = new MarginFollower({
+    env: { MARGIN_STATE_DIR: state },
+    onMessage: () => {},
+    pollMs: 1,
+    fs: {
+      stat: () => {
+        stats++;
+        return new Promise(() => {}); // an offline volume: never answers
+      },
+      readRange: async () => new Uint8Array(),
+      listDir: async () => [],
+    },
+  });
+  let polls = 0;
+  const poll = f.poll.bind(f);
+  f.poll = () => {
+    polls++;
+    return poll();
+  };
+  f.start();
+  await Bun.sleep(30);
+  f.stop();
+  expect(stats).toBe(1);
+  expect(polls).toBeLessThanOrEqual(1);
+});

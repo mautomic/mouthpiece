@@ -18,14 +18,21 @@ export function marginDoc(logFile: string): string {
   return join(dirname(dirname(logFile)), basename(logFile, ".jsonl"));
 }
 
+/** A Margin log parser that can be told where a log stood when following began. */
+export type MarginParser = LineParser & {
+  /** Marks every event up to `seq` in `file` as seen (the log is followed from its end). */
+  prime(file: string, seq: number): void;
+};
+
 /**
  * A parser for Margin logs: an agent's reply, or an agent suggestion's note. Each event's `seq`
- * only grows within a log, so an event at or below the last seen in that file is skipped. When
- * Margin cuts a torn line after a crash, the tailer re-reads from 0 and nothing is repeated.
+ * only grows within a log, so an event at or below the last seen (or primed) in that file is
+ * skipped. When Margin cuts a torn line after a crash, the tailer re-reads from 0 and nothing is
+ * repeated.
  */
-export function createMarginParser(): LineParser {
+export function createMarginParser(): MarginParser {
   const lastSeq = new Map<string, number>();
-  return (line, file) => {
+  const parse: LineParser = (line, file) => {
     let record: unknown;
     try {
       record = JSON.parse(line);
@@ -47,6 +54,25 @@ export function createMarginParser(): LineParser {
       label: (name.slice(0, name.length - extname(name).length) || name).slice(0, MAX_LABEL_CHARS),
     };
   };
+  return Object.assign(parse, {
+    prime(file: string, seq: number) {
+      lastSeq.set(file, Math.max(seq, lastSeq.get(file) ?? seq));
+    },
+  });
+}
+
+/** The `seq` of the last complete event in a log's tail bytes; undefined when there is none. */
+export function lastMarginSeq(tail: string): number | undefined {
+  const lines = tail.split("\n").slice(0, -1); // the last piece is torn or empty
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const record: unknown = JSON.parse(lines[i] ?? "");
+      if (isRecord(record) && typeof record.seq === "number") return record.seq;
+    } catch {
+      // The window's first piece can start mid-line; keep looking back.
+    }
+  }
+  return undefined;
 }
 
 function spokenText(record: Record<string, unknown>): string | null {

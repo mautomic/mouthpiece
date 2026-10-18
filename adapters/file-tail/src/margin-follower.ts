@@ -3,10 +3,12 @@
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import type { Env } from "@mouthpiece/core";
-import { createMarginParser, marginLog } from "./margin.ts";
+import { createMarginParser, lastMarginSeq, marginLog } from "./margin.ts";
 import { FileTailer, nodeTailFs, type TailFs, type TailMessage } from "./tailer.ts";
 
 const DEFAULT_RESCAN_MS = 5000;
+/** How much of a log's end is read to find where it stands when following begins. */
+const PRIME_BYTES = 64 * 1024;
 
 export interface MarginFollowerOptions {
   /** Follow just this doc; by default, every doc in Margin's recent list. */
@@ -42,6 +44,7 @@ export class MarginFollower {
   private lastScanAt: number | null = null;
   private chain: Promise<void> = Promise.resolve();
   private timer: ReturnType<typeof setInterval> | undefined;
+  private busy = false;
   private stopped = false;
 
   constructor(private readonly opts: MarginFollowerOptions) {
@@ -53,7 +56,10 @@ export class MarginFollower {
     if (this.timer) return;
     this.stopped = false;
     void this.poll();
-    this.timer = setInterval(() => void this.poll(), this.opts.pollMs ?? 500);
+    // A pass that stalls (an offline volume) must not queue more passes behind it.
+    this.timer = setInterval(() => {
+      if (!this.busy) void this.poll();
+    }, this.opts.pollMs ?? 500);
   }
 
   stop(): void {
@@ -67,11 +73,14 @@ export class MarginFollower {
   poll(): Promise<void> {
     this.chain = this.chain.then(async () => {
       if (this.stopped) return;
+      this.busy = true;
       try {
         await this.discover();
         for (const tailer of this.tailers.values()) await tailer.poll();
       } catch (error) {
         this.opts.onError?.(error);
+      } finally {
+        this.busy = false;
       }
     });
     return this.chain;
@@ -90,6 +99,7 @@ export class MarginFollower {
     for (const doc of docs) {
       const log = marginLog(doc);
       if (this.tailers.has(log)) continue;
+      await this.prime(log);
       this.tailers.set(
         log,
         new FileTailer({
@@ -103,6 +113,20 @@ export class MarginFollower {
       );
       this.opts.onFollow?.(log);
     }
+  }
+
+  /**
+   * An existing log is followed from its end, so the parser must know the last event already in
+   * it: otherwise a torn-line repair, which makes the tailer re-read from 0, would speak the
+   * history. Events appended between this read and the tailer's first poll are skipped, never
+   * repeated.
+   */
+  private async prime(log: string): Promise<void> {
+    const stat = await this.fs.stat(log);
+    if (!stat || stat.isDirectory || stat.size === 0) return;
+    const bytes = await this.fs.readRange(log, Math.max(0, stat.size - PRIME_BYTES), stat.size);
+    const seq = lastMarginSeq(new TextDecoder().decode(bytes));
+    if (seq !== undefined) this.parser.prime(log, seq);
   }
 
   /** Margin's recent docs; [] when the list is missing or unreadable (e.g. caught mid-write). */
