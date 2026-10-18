@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { NormalizedSpeakEvent } from "@mouthpiece/core";
-import { NOTICE_SOURCE, type PlayContext, type QueueItem, SpeechQueue } from "./queue.ts";
+import {
+  NOTICE_SOURCE,
+  type PlayContext,
+  type QueueItem,
+  type QueueTimers,
+  SpeechQueue,
+} from "./queue.ts";
 
 function event(text: string, extra: Partial<NormalizedSpeakEvent> = {}): NormalizedSpeakEvent {
   return {
@@ -254,19 +260,47 @@ function stubbornPlay() {
   return { play, started };
 }
 
+/** Timers the test fires by hand. */
+function fakeTimers() {
+  const pending = new Map<number, { fn: () => void; ms: number }>();
+  let seq = 0;
+  const timers: QueueTimers = {
+    set: (fn, ms) => {
+      pending.set(++seq, { fn, ms });
+      return seq;
+    },
+    clear: (handle) => {
+      pending.delete(handle as number);
+    },
+  };
+  return {
+    timers,
+    /** Delays of the timers still scheduled. */
+    delays: () => [...pending.values()].map((t) => t.ms),
+    /** Runs every scheduled timer once. */
+    fireAll: () => {
+      const due = [...pending.entries()];
+      for (const [id] of due) pending.delete(id);
+      for (const [, t] of due) t.fn();
+    },
+  };
+}
+
 function pausable(opts: { maxPauseMs?: number; expireAfterMs?: number } = {}) {
   const nowRef = { t: 0 };
   const p = controllablePlay();
   const errors: unknown[] = [];
+  const clock = fakeTimers();
   const queue = new SpeechQueue({
     play: p.play,
     expireAfterMs: opts.expireAfterMs ?? 5 * 60_000,
     labelWindowMs: 10 * 60_000,
     maxPauseMs: opts.maxPauseMs ?? 600_000,
     now: () => nowRef.t,
+    timers: clock.timers,
     onError: (e) => errors.push(e),
   });
-  return { queue, p, errors, nowRef };
+  return { queue, p, errors, nowRef, clock };
 }
 
 describe("SpeechQueue pause/resume (US-022)", () => {
@@ -550,6 +584,49 @@ describe("SpeechQueue pause/resume (US-022)", () => {
     nowRef.t = 4000;
     queue.enqueue(event("b", { conversationId: "2" }));
     expect(p.texts()).toEqual(["a", "b"]);
+  });
+
+  test("a pause expires on its own timer, with nothing polling (US-022)", async () => {
+    const { queue, p, nowRef, clock } = pausable({ maxPauseMs: 1000 });
+    queue.enqueue(event("a"));
+    p.started[0]?.ctx.onChunk(2);
+    queue.pause("mic");
+    await tick();
+    expect(clock.delays()).toEqual([1001]); // expiry is `older than` maxPauseMs
+    nowRef.t = 1001;
+    clock.fireAll();
+    expect(p.started[1]?.ctx.startChunk).toBe(2); // the held item resumed without any request
+    expect(clock.delays()).toEqual([]);
+  });
+
+  test("the expiry timer follows the earliest reason and is cleared when none remain", async () => {
+    const { queue, nowRef, clock } = pausable({ maxPauseMs: 1000 });
+    queue.pause("mic");
+    nowRef.t = 400;
+    queue.pause("user");
+    expect(clock.delays()).toEqual([601]); // mic's expiry, rescheduled on the second pause
+    nowRef.t = 1001;
+    clock.fireAll();
+    expect(queue.pauseReasons()).toEqual(["user"]);
+    expect(clock.delays()).toEqual([400]); // user expires at 1401
+    queue.resume("user");
+    expect(clock.delays()).toEqual([]);
+
+    queue.pause("mic");
+    queue.configure({ expireAfterMs: 5 * 60_000, labelWindowMs: 10 * 60_000, maxPauseMs: 50 });
+    expect(clock.delays()).toEqual([51]);
+  });
+
+  test("a repeated pause restarts the reason's clock and its timer", () => {
+    const { queue, nowRef, clock } = pausable({ maxPauseMs: 1000 });
+    queue.pause("mic");
+    nowRef.t = 900;
+    queue.pause("mic");
+    expect(clock.delays()).toEqual([1001]);
+    nowRef.t = 1100;
+    clock.fireAll(); // fired early (e.g. a stale timer): nothing has expired yet
+    expect(queue.pauseReasons()).toEqual(["mic"]);
+    expect(clock.delays()).toEqual([801]);
   });
 
   test("only expired reasons are pruned", () => {

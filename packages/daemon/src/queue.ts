@@ -29,6 +29,21 @@ export const NOTICE_SOURCE = "mouthpiece";
 
 export type PlayFn = (item: QueueItem, ctx: PlayContext) => Promise<void>;
 
+/** Timer seam for pause expiry; the default uses unref'd `setTimeout`. */
+export interface QueueTimers {
+  set(fn: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+const DEFAULT_TIMERS: QueueTimers = {
+  set: (fn, ms) => {
+    const timer = setTimeout(fn, ms);
+    timer.unref?.(); // never keeps a process alive on its own
+    return timer;
+  },
+  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
 export interface SpeechQueueOptions {
   play: PlayFn;
   expireAfterMs: number;
@@ -36,6 +51,8 @@ export interface SpeechQueueOptions {
   /** A pause reason older than this expires, so a lost resume cannot mute speech forever. */
   maxPauseMs?: number;
   now?: () => number;
+  /** Test seam: schedules the eager pause expiry. */
+  timers?: QueueTimers;
   onError?: (error: unknown, item: QueueItem) => void;
 }
 
@@ -81,6 +98,7 @@ export class SpeechQueue {
   #expireAfterMs: number;
   #labelWindowMs: number;
   #maxPauseMs: number;
+  #expiryTimer: unknown;
 
   constructor(private readonly opts: SpeechQueueOptions) {
     this.#expireAfterMs = opts.expireAfterMs;
@@ -93,6 +111,7 @@ export class SpeechQueue {
     this.#expireAfterMs = opts.expireAfterMs;
     this.#labelWindowMs = opts.labelWindowMs;
     if (opts.maxPauseMs !== undefined) this.#maxPauseMs = opts.maxPauseMs;
+    this.#armExpiry();
   }
 
   get depth(): number {
@@ -139,6 +158,7 @@ export class SpeechQueue {
       };
       current.controller.abort();
     }
+    this.#armExpiry();
     return this.#pauseState();
   }
 
@@ -146,6 +166,7 @@ export class SpeechQueue {
   resume(reason: string): PauseResponse {
     this.#expireReasons();
     if (this.#reasons.delete(reason) && this.#reasons.size === 0) this.#pump();
+    this.#armExpiry();
     return this.#pauseState();
   }
 
@@ -229,10 +250,33 @@ export class SpeechQueue {
   #expireReasons(): void {
     if (this.#reasons.size === 0) return;
     const now = this.#now();
+    let expired = false;
     for (const [reason, since] of this.#reasons) {
-      if (now - since > this.#maxPauseMs) this.#reasons.delete(reason);
+      if (now - since > this.#maxPauseMs) expired = this.#reasons.delete(reason);
     }
+    if (!expired) return;
     if (this.#reasons.size === 0) this.#pump();
+    this.#armExpiry();
+  }
+
+  /**
+   * Expires pause reasons eagerly: one timer for the earliest reason's expiry, so a held item
+   * resumes on time even when nothing polls the queue (e.g. no menubar). Cleared when no reason
+   * is left.
+   */
+  #armExpiry(): void {
+    const timers = this.opts.timers ?? DEFAULT_TIMERS;
+    if (this.#expiryTimer !== undefined) timers.clear(this.#expiryTimer);
+    this.#expiryTimer = undefined;
+    if (this.#reasons.size === 0) return;
+    const earliest = Math.min(...this.#reasons.values());
+    // A reason expires once it is *older* than maxPauseMs, hence the + 1.
+    const delay = Math.max(0, earliest + this.#maxPauseMs + 1 - this.#now());
+    this.#expiryTimer = timers.set(() => {
+      this.#expiryTimer = undefined;
+      this.#expireReasons();
+      this.#armExpiry();
+    }, delay);
   }
 
   /** Resolves `idle()` waiters once nothing is playing, held or queued. */
