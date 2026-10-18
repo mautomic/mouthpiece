@@ -1,7 +1,7 @@
 # PRD: Mouthpiece
 
-> **Status:** v0.4 · Phases 0–4 implemented and on `main` (2026-10-17). Plans and decisions: `docs/superpowers/plans/`.
-> **Date:** 2026-10-17
+> **Status:** v0.5 · Phases 0–4 and the reply inbox (Phase 5: US-024 to US-026) implemented and on `main`; US-027 open. Plans and decisions: `docs/superpowers/plans/`, designs: `docs/superpowers/specs/`.
+> **Date:** 2026-10-18
 > **Owner:** @mautomic
 
 ## 1. Introduction
@@ -486,14 +486,17 @@ Stories are grouped by phase. Each should fit in one focused session.
 #### US-026: Inbox panel in the menubar app
 **Description:** As a user, I want a small window that shows each new response with a reply box, so I can answer a session without finding its terminal.
 
-*Implemented 2026-10-18. Spec: `docs/superpowers/specs/2026-10-18-reply-inbox-panel-design.md`.*
+*Implemented 2026-10-18. Specs: `docs/superpowers/specs/2026-10-18-reply-inbox-panel-design.md` (behaviour) and `2026-10-18-inbox-panel-redesign-design.md` (the SwiftUI "Conversation" layout, native macOS look).*
 
 **Acceptance Criteria:**
 - [x] A floating panel that doesn't take focus. It pops up per `[reply] popup` (`away` by default: unless the session's terminal app is in front), and also opens from the menubar and a hotkey (⌃⌥O; it was ⌃⌥I, which window managers like Magnet use).
-- [x] Each row shows the label, age and spoken summary, with the full text on expand
-- [ ] The reply box previews the text as one line, exactly as it will be typed. *The field is one line; line breaks in pasted text are joined by the daemon, not shown in the field.*
+- [x] Each session is a tab (status dot, ✕ on hover). The selected tab shows its full response, with inline markdown, under a "label · agent · age" line. *Changed from the first version's rows with the spoken summary and "Show full".*
+- [ ] The reply box previews the text as one line, exactly as it will be typed. *Changed: the box grows to 5 lines and ↩ adds a line; the daemon joins lines into one before typing.*
 - [x] ⌘↩ sends the reply. The row shows the result: submitted, typed but not submitted (with a **Submit** button that sends Enter alone), busy, newer response, or no route.
 - [x] The reply box is turned off, with the reason shown, for rows with no route; alerts are never rows (part 1)
+- [x] Rows can be removed: a tab's ✕, ⌘⌫ in an empty reply box, **Clear all** in the panel's ··· menu, and `mouthpiece inbox --dismiss <id|label>` / `--clear` (`POST /v1/inbox/dismiss`). A session's next response brings it back.
+- [x] ⌘1–⌘9 and ⌃⇥ switch tabs; ⌘V, ⌘C, ⌘A and ⌘Z work in the reply box (a hidden Edit menu), so dictation that pastes (Wispr Flow) works too
+- [x] The menubar shows "✉N" while N sessions wait, and its items show their hotkeys
 - [x] Built and tested only into a temp dir (Guardrail 6)
 
 #### US-027: Reply from a notification (stretch)
@@ -524,9 +527,9 @@ Stories are grouped by phase. Each should fit in one focused session.
 ## 7. Non-Goals (v1)
 
 - No speech-to-text. Wispr Flow already covers input.
-- No voice *conversation* or agent: Mouthpiece speaks, it doesn't converse. *Proposed for later:* typed replies from an inbox (§13).
+- No voice *conversation* or agent: Mouthpiece speaks, it doesn't converse. *Since 2026-10-18:* typed (or dictated) replies from the inbox (§13, US-024 to US-026).
 - No cross-platform support in v1. macOS only, though Linux shouldn't be precluded.
-- No GUI beyond the optional menubar stretch goal. *Proposed for later:* the inbox panel (§13).
+- No GUI beyond the optional menubar stretch goal. *Since 2026-10-18:* the inbox panel (§13, US-026).
 - No reading of tool output, diffs, or file contents. Only assistant prose.
 - No cloud hosting or multi-user anything. Single user, local only.
 - No custom voice cloning workflow in v1 (providers support it; revisit later).
@@ -534,6 +537,8 @@ Stories are grouped by phase. Each should fit in one focused session.
 ## 8. Technical Considerations
 
 ### 8.1 Proposed layout (Bun monorepo)
+
+*The original proposal; `CLAUDE.md` § Layout has the current packages and adapters (it adds `hook-kit`, `client`, `hotkeys`, `summarizers`, `listen`, `adapters/tmux` and `adapters/orca`).*
 
 ```
 mouthpiece/
@@ -594,11 +599,11 @@ Claude Code is the first source, not a special one. **Everything source-specific
 
 | Extension point | Interface | v1 implementations |
 |---|---|---|
-| **Sources / adapters** | Generic envelope over `POST /v1/speak` and `/v1/interrupt` | Claude Code, CLI/pipe, Codex, Gemini |
-| **TTS providers** | `TtsProvider` | `say`, Inworld |
-| **Summarizers** | `Summarizer`: `summarize(text, profile) → string` | `claude -p`, Anthropic API, first-sentences fallback |
+| **Sources / adapters** | Generic envelope over `POST /v1/speak` and `/v1/interrupt` | Claude Code, CLI/pipe, Codex, Gemini; log tailers (`mouthpiece tail`, `[[follow]]`) incl. Margin; lambda-ai posts directly |
+| **TTS providers** | `TtsProvider` | `say`, Kokoro (local), Inworld, ElevenLabs, Deepgram, OpenAI |
+| **Summarizers** | `Summarizer`: `summarize(text, profile) → string` | `claude -p`, first-sentences fallback |
 | **Source profiles** | Config: prompt, cleaning rules, mode, voice | Claude Code, default |
-| **Conversation drivers** | `ConversationDriver` (§12, §13) | none in v1; `TmuxDriver` added later as a spike (`mouthpiece send`) |
+| **Conversation drivers** | `ConversationDriver` (§12); `ReplyDriver` (§13) | `TmuxDriver` (spike, `mouthpiece send`); `OrcaReplyDriver` (the reply inbox) |
 
 **v1 framework commitments (cheap now, expensive to retrofit):**
 - The HTTP API is versioned (`/v1`), documented in `docs/api.md`, and changed only additively within v1.
@@ -757,7 +762,14 @@ Either way, the summarizer is negligible next to TTS, and it cuts TTS spend by a
 - Would conversation mode run alongside the terminal UI, or replace it?
 - How do we handle long autonomous runs mid-conversation, e.g. "I'll tell you when I'm done"?
 
-## 13. Future direction: reply inbox (proposed 2026-10-18, not in scope)
+## 13. Reply inbox (proposed and implemented 2026-10-18)
+
+> **As built** (specs `docs/superpowers/specs/2026-10-18-reply-inbox-engine-design.md`, `…-reply-inbox-panel-design.md`, `…-inbox-panel-redesign-design.md`). This section is the original proposal; where they differ, the specs win:
+> - **Orca only.** The tmux and `url` routes are later. The route is `{ via: "orca", target, agent }`. A headless `claude -p` run attaches none, and a terminal belongs to the latest session that reported from it.
+> - **States** are `waiting`, `busy`, `sending` and `typed`. Entries leave under the history limits, by a newer response, or by being dismissed (`POST /v1/inbox/dismiss`). Alerts attach to an entry without blocking replies; a permission menu is refused by the screen check.
+> - **The checks** read `orca terminal show` (same agent, writable) and `orca terminal read --screen` (per-agent rules for idle and an empty prompt). Anything unrecognized is refused. There is no `check_prompt = false` override. Orca's composer draft is ignored: it isn't the terminal's prompt.
+> - **"Submitted"** comes from Orca's receipt (`turn_started`) or the session's prompt-submit hook within `confirmMs`.
+> - **The panel** is SwiftUI in the "Conversation" layout, with a native look: tabs, the full response, and a growing reply box. It opens on ⌃⌥O; ⌃⌥I clashed with window managers. `[reply] popup` is `away` by default.
 
 **Idea:** the Mac app shows each response as soon as the daemon queues it, in an inbox panel with a reply box. A reply you type there goes back into the session the response came from, as if you had typed it at that session's prompt. It is the text-first half of §12. Wispr Flow already types into any focused text field, so you can dictate into the reply box from day one.
 
@@ -845,8 +857,8 @@ Codex, Gemini and opencode sessions in Orca or tmux use the same terminal routes
        If a check can't be done, the reply is refused rather than sent blind (`409 unverified`). A per-route `[reply] check_prompt = false` can turn the empty-prompt check off, at your own risk.
 
 **Open questions:**
-- Should the panel pop up for every response, or only when you're away from the terminal that sent it? Or should it stay a notification, plus a hotkey?
-- Multi-line replies: lines are joined into one for now (delivery control 2). *Verify* whether `orca terminal send` keeps newlines as a paste, or submits at the first one.
+- ~~Should the panel pop up for every response, or only when you're away?~~ *Decided:* `[reply] popup = "away" | "always" | "never"`, `away` by default.
+- Multi-line replies: the reply box takes several lines, and the daemon joins them into one before typing. *Still to verify:* whether `orca terminal send` keeps newlines as a paste, which would allow real multi-line replies.
 - Is a Claude Code channel worth adding for sessions outside Orca and tmux, given the launch flag and the `<channel>` framing?
 - Should a Margin row deep-link to the thread in its page?
 
