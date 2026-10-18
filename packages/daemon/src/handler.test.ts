@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { NormalizedSpeakEvent } from "@mouthpiece/core";
+import type { NormalizedSpeakEvent, StatusResponse } from "@mouthpiece/core";
 import { createHandler, type HandlerDeps } from "./handler.ts";
 
 const TOKEN = "t".repeat(64);
@@ -7,6 +7,7 @@ const TOKEN = "t".repeat(64);
 function setup(overrides: Partial<HandlerDeps> = {}) {
   const enqueued: NormalizedSpeakEvent[] = [];
   const voiceCalls: (string | undefined)[] = [];
+  const pauseCalls: string[] = [];
   const deps: HandlerDeps = {
     token: TOKEN,
     version: "0.1.0",
@@ -35,10 +36,30 @@ function setup(overrides: Partial<HandlerDeps> = {}) {
         ],
       };
     },
+    status: () => STATUS,
+    pause: (reason) => {
+      pauseCalls.push(`pause:${reason}`);
+      return { paused: true, pauseReasons: [reason] };
+    },
+    resume: (reason) => {
+      pauseCalls.push(`resume:${reason}`);
+      return { paused: false, pauseReasons: [] };
+    },
     ...overrides,
   };
-  return { handle: createHandler(deps), enqueued, voiceCalls };
+  return { handle: createHandler(deps), enqueued, voiceCalls, pauseCalls };
 }
+
+const STATUS: StatusResponse = {
+  version: "0.1.0",
+  speaking: true,
+  paused: false,
+  pauseReasons: [],
+  mode: "summary",
+  queueDepth: 2,
+  provider: "say",
+  current: { source: "cli", label: "web" },
+};
 
 const req = (method: string, path: string, body?: unknown, token: string | null = TOKEN) =>
   new Request(`http://127.0.0.1:7317${path}`, {
@@ -194,4 +215,64 @@ test("usage may be async; a rejected month is still 400", async () => {
   expect(bad.status).toBe(400);
   expect(await bad.json()).toEqual({ error: "month must be YYYY-MM" });
   expect((await handle(req("GET", "/v1/usage", undefined, null))).status).toBe(401);
+});
+
+test("status returns the daemon's status (US-018)", async () => {
+  const res = await setup().handle(req("GET", "/v1/status"));
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual(STATUS);
+});
+
+test("pause and resume pass the reason through (US-022)", async () => {
+  const { handle, pauseCalls } = setup();
+  const paused = await handle(req("POST", "/v1/pause", { reason: "mic" }));
+  expect(paused.status).toBe(200);
+  expect(await paused.json()).toEqual({ paused: true, pauseReasons: ["mic"] });
+  const resumed = await handle(req("POST", "/v1/resume", { reason: "mic" }));
+  expect(resumed.status).toBe(200);
+  expect(await resumed.json()).toEqual({ paused: false, pauseReasons: [] });
+  expect(pauseCalls).toEqual(["pause:mic", "resume:mic"]);
+});
+
+test("pause and resume default the reason to user, with or without a body", async () => {
+  const { handle, pauseCalls } = setup();
+  expect((await handle(req("POST", "/v1/pause"))).status).toBe(200);
+  expect((await handle(req("POST", "/v1/resume", {}))).status).toBe(200);
+  expect(pauseCalls).toEqual(["pause:user", "resume:user"]);
+});
+
+test.each(["/v1/pause", "/v1/resume"])("%s rejects a bad reason with 400", async (path) => {
+  const { handle, pauseCalls } = setup();
+  for (const reason of ["Mic", "1mic", "", "a".repeat(33), 7]) {
+    const res = await handle(req("POST", path, { reason }));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("reason");
+  }
+  expect(pauseCalls).toEqual([]);
+});
+
+test.each([
+  ["GET", "/v1/status"],
+  ["POST", "/v1/pause"],
+  ["POST", "/v1/resume"],
+])("%s %s requires auth", async (method, path) => {
+  const { handle, pauseCalls } = setup();
+  expect((await handle(req(method, path, undefined, null))).status).toBe(401);
+  expect((await handle(req(method, path, undefined, "wrong"))).status).toBe(401);
+  expect(pauseCalls).toEqual([]);
+});
+
+test("status, pause and resume are 404 when the daemon does not provide them", async () => {
+  const { handle } = setup({ status: undefined, pause: undefined, resume: undefined });
+  expect((await handle(req("GET", "/v1/status"))).status).toBe(404);
+  expect((await handle(req("POST", "/v1/pause", { reason: "mic" }))).status).toBe(404);
+  expect((await handle(req("POST", "/v1/resume", { reason: "mic" }))).status).toBe(404);
+});
+
+test("status and pause reject the wrong method", async () => {
+  const { handle } = setup();
+  const res = await handle(req("POST", "/v1/status"));
+  expect(res.status).toBe(405);
+  expect(res.headers.get("allow")).toBe("GET");
+  expect((await handle(req("GET", "/v1/pause"))).status).toBe(405);
 });

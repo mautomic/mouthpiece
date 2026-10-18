@@ -238,3 +238,405 @@ describe("SpeechQueue", () => {
     expect(errors).toEqual([]);
   });
 });
+
+/** A play() that ignores abort until released, so a pause abort races the play promise settling. */
+function stubbornPlay() {
+  const started: {
+    item: QueueItem;
+    ctx: PlayContext;
+    release: () => void;
+    fail: (e: unknown) => void;
+  }[] = [];
+  const play = (item: QueueItem, ctx: PlayContext) =>
+    new Promise<void>((resolve, reject) => {
+      started.push({ item, ctx, release: resolve, fail: reject });
+    });
+  return { play, started };
+}
+
+function pausable(opts: { maxPauseMs?: number; expireAfterMs?: number } = {}) {
+  const nowRef = { t: 0 };
+  const p = controllablePlay();
+  const errors: unknown[] = [];
+  const queue = new SpeechQueue({
+    play: p.play,
+    expireAfterMs: opts.expireAfterMs ?? 5 * 60_000,
+    labelWindowMs: 10 * 60_000,
+    maxPauseMs: opts.maxPauseMs ?? 600_000,
+    now: () => nowRef.t,
+    onError: (e) => errors.push(e),
+  });
+  return { queue, p, errors, nowRef };
+}
+
+describe("SpeechQueue pause/resume (US-022)", () => {
+  test("pausing mid-item resumes from the reported chunk with the same id", async () => {
+    const { queue, p, errors } = pausable();
+    const item = queue.enqueue(event("long", { conversationId: "1" }));
+    expect(p.started[0]?.ctx.startChunk).toBe(0);
+    p.started[0]?.ctx.onChunk(0);
+    p.started[0]?.ctx.onChunk(1);
+    p.started[0]?.ctx.onChunk(2);
+    expect(queue.pause("user")).toEqual({ paused: true, pauseReasons: ["user"] });
+    expect(p.started[0]?.ctx.signal.aborted).toBe(true);
+    await tick();
+    expect(p.started).toHaveLength(1);
+    expect(queue.held?.id).toBe(item.id);
+    expect(queue.resume("user")).toEqual({ paused: false, pauseReasons: [] });
+    expect(p.started).toHaveLength(2);
+    expect(p.started[1]?.item.id).toBe(item.id);
+    expect(p.started[1]?.ctx.startChunk).toBe(2);
+    expect(queue.held).toBeNull();
+    p.started[1]?.release();
+    await queue.idle();
+    expect(errors).toEqual([]);
+  });
+
+  test("a pause before any chunk is reported resumes from the play's start chunk", async () => {
+    const { queue, p } = pausable();
+    queue.enqueue(event("long"));
+    p.started[0]?.ctx.onChunk(3);
+    queue.pause("mic");
+    await tick();
+    queue.resume("mic");
+    expect(p.started[1]?.ctx.startChunk).toBe(3);
+    // Paused again before the resumed play reports a chunk: still chunk 3, not 0.
+    queue.pause("mic");
+    await tick();
+    queue.resume("mic");
+    expect(p.started[2]?.ctx.startChunk).toBe(3);
+  });
+
+  test("a resumed item keeps its label decision", async () => {
+    const { queue, p, nowRef } = pausable();
+    queue.enqueue(event("other", { conversationId: "2", label: "api" }));
+    p.started[0]?.release();
+    await tick();
+    queue.enqueue(event("labeled", { conversationId: "1", label: "web" }));
+    expect(p.started[1]?.ctx.announceLabel).toBe(true);
+    queue.pause("user");
+    await tick();
+    nowRef.t = 11 * 60_000; // the other conversation has left the label window
+    queue.resume("user");
+    expect(p.started[2]?.ctx.announceLabel).toBe(true);
+  });
+
+  test("a pause abort is not reported, does not drop the item, and does not pump", async () => {
+    const s = stubbornPlay();
+    const errors: unknown[] = [];
+    const queue = new SpeechQueue({
+      play: s.play,
+      expireAfterMs: 1000,
+      labelWindowMs: 1000,
+      now: () => 0,
+      onError: (e) => errors.push(e),
+    });
+    const a = queue.enqueue(event("a", { conversationId: "1" }));
+    queue.enqueue(event("b", { conversationId: "2" }));
+    s.started[0]?.ctx.onChunk(1);
+    queue.pause("mic");
+    s.started[0]?.fail(new Error("aborted by pause"));
+    await tick();
+    expect(errors).toEqual([]);
+    expect(s.started).toHaveLength(1);
+    expect(queue.held?.id).toBe(a.id);
+    expect(queue.depth).toBe(1);
+    queue.resume("mic");
+    expect(s.started[1]?.item.id).toBe(a.id);
+    expect(s.started[1]?.ctx.startChunk).toBe(1);
+  });
+
+  test("resuming before the paused play settles waits for it (no overlap)", async () => {
+    const s = stubbornPlay();
+    const queue = new SpeechQueue({ play: s.play, expireAfterMs: 1000, labelWindowMs: 1000 });
+    queue.enqueue(event("a"));
+    s.started[0]?.ctx.onChunk(2);
+    queue.pause("mic");
+    queue.resume("mic");
+    expect(s.started).toHaveLength(1);
+    expect(queue.speaking).toBe(false);
+    s.started[0]?.release(); // the aborted play finally winds down
+    await tick();
+    expect(s.started).toHaveLength(2);
+    expect(s.started[1]?.ctx.startChunk).toBe(2);
+    expect(queue.speaking).toBe(true);
+  });
+
+  test("pausing again while the paused play is still settling keeps one held item", async () => {
+    const s = stubbornPlay();
+    const queue = new SpeechQueue({ play: s.play, expireAfterMs: 1000, labelWindowMs: 1000 });
+    queue.enqueue(event("a"));
+    s.started[0]?.ctx.onChunk(1);
+    queue.pause("mic");
+    queue.resume("mic");
+    queue.pause("user");
+    s.started[0]?.release();
+    await tick();
+    expect(s.started).toHaveLength(1);
+    queue.resume("user");
+    expect(s.started).toHaveLength(2);
+    expect(s.started[1]?.ctx.startChunk).toBe(1);
+  });
+
+  test("onChunk from a play that was paused is ignored", async () => {
+    const s = stubbornPlay();
+    const queue = new SpeechQueue({ play: s.play, expireAfterMs: 1000, labelWindowMs: 1000 });
+    queue.enqueue(event("a"));
+    s.started[0]?.ctx.onChunk(1);
+    queue.pause("mic");
+    s.started[0]?.ctx.onChunk(2); // a late report while winding down
+    s.started[0]?.release();
+    await tick();
+    queue.resume("mic");
+    expect(s.started[1]?.ctx.startChunk).toBe(1);
+  });
+
+  test("two reasons both need resuming", () => {
+    const { queue, p } = pausable();
+    queue.pause("mic");
+    expect(queue.pause("user")).toEqual({ paused: true, pauseReasons: ["mic", "user"] });
+    queue.enqueue(event("x"));
+    expect(queue.resume("mic")).toEqual({ paused: true, pauseReasons: ["user"] });
+    expect(p.started).toHaveLength(0);
+    queue.resume("user");
+    expect(p.texts()).toEqual(["x"]);
+  });
+
+  test("re-pausing an active reason keeps one entry and restarts its expiry clock", () => {
+    const { queue, nowRef } = pausable({ maxPauseMs: 1000 });
+    queue.pause("mic");
+    nowRef.t = 800;
+    expect(queue.pause("mic")).toEqual({ paused: true, pauseReasons: ["mic"] });
+    nowRef.t = 1500;
+    expect(queue.paused).toBe(true);
+    expect(queue.pauseReasons()).toEqual(["mic"]);
+  });
+
+  test("resuming an unknown reason is a no-op", () => {
+    const { queue, p } = pausable();
+    queue.pause("mic");
+    queue.enqueue(event("x"));
+    expect(queue.resume("user")).toEqual({ paused: true, pauseReasons: ["mic"] });
+    expect(p.started).toHaveLength(0);
+  });
+
+  test("resuming when not paused does nothing", () => {
+    const { queue, p } = pausable();
+    queue.enqueue(event("x"));
+    expect(queue.resume("user")).toEqual({ paused: false, pauseReasons: [] });
+    expect(p.started).toHaveLength(1);
+    expect(p.started[0]?.ctx.signal.aborted).toBe(false);
+  });
+
+  test("an item queued while paused plays after resume", () => {
+    const { queue, p } = pausable();
+    queue.pause("user");
+    queue.enqueue(event("later"));
+    expect(queue.depth).toBe(1);
+    expect(p.started).toHaveLength(0);
+    queue.resume("user");
+    expect(p.texts()).toEqual(["later"]);
+    expect(p.started[0]?.ctx.startChunk).toBe(0);
+  });
+
+  test("the held item plays first on resume, before even an alert queued while paused", async () => {
+    const { queue, p } = pausable();
+    queue.enqueue(event("held", { conversationId: "1" }));
+    queue.pause("user");
+    await tick();
+    queue.enqueue(event("alert", { conversationId: "2", kind: "alert", priority: "high" }));
+    queue.resume("user");
+    expect(p.texts()).toEqual(["held", "held"]);
+    p.started[1]?.release();
+    await tick();
+    expect(p.texts()).toEqual(["held", "held", "alert"]);
+  });
+
+  test("a newer event from the held item's conversation does not replace it", async () => {
+    const { queue, p } = pausable();
+    queue.enqueue(event("held", { conversationId: "1" }));
+    queue.pause("user");
+    await tick();
+    queue.enqueue(event("newer", { conversationId: "1" }));
+    queue.resume("user");
+    p.started[1]?.release();
+    await tick();
+    expect(p.texts()).toEqual(["held", "held", "newer"]);
+  });
+
+  test("interrupt while paused drops the held item for good", async () => {
+    const { queue, p } = pausable();
+    queue.enqueue(event("a", { conversationId: "1" }));
+    queue.enqueue(event("b", { conversationId: "2" }));
+    queue.pause("user");
+    await tick();
+    expect(queue.interrupt("test", "1")).toEqual({ stopped: true, dropped: 0 });
+    expect(queue.held).toBeNull();
+    queue.resume("user");
+    expect(p.texts()).toEqual(["a", "b"]);
+  });
+
+  test("interrupt for another conversation leaves the held item", async () => {
+    const { queue, p } = pausable();
+    queue.enqueue(event("a", { conversationId: "1" }));
+    queue.pause("user");
+    await tick();
+    expect(queue.interrupt("test", "2")).toEqual({ stopped: false, dropped: 0 });
+    queue.resume("user");
+    expect(p.texts()).toEqual(["a", "a"]);
+  });
+
+  test("interrupt while the paused play is still settling drops the held item", async () => {
+    const s = stubbornPlay();
+    const queue = new SpeechQueue({ play: s.play, expireAfterMs: 1000, labelWindowMs: 1000 });
+    queue.enqueue(event("a"));
+    queue.pause("user");
+    expect(queue.interrupt("test")).toEqual({ stopped: true, dropped: 0 });
+    queue.resume("user");
+    s.started[0]?.release();
+    await queue.idle();
+    expect(s.started).toHaveLength(1);
+  });
+
+  test("skip while paused drops the held item; the next one plays on resume", async () => {
+    const { queue, p } = pausable();
+    queue.enqueue(event("a", { conversationId: "1" }));
+    queue.enqueue(event("b", { conversationId: "2" }));
+    queue.pause("user");
+    await tick();
+    expect(queue.skip()).toBe(true);
+    expect(queue.held).toBeNull();
+    expect(queue.depth).toBe(1);
+    expect(queue.skip()).toBe(false);
+    queue.resume("user");
+    expect(p.texts()).toEqual(["a", "b"]);
+  });
+
+  test("stopAll while paused drops the held item and the queue", async () => {
+    const { queue, p } = pausable();
+    queue.enqueue(event("a", { conversationId: "1" }));
+    queue.enqueue(event("b", { conversationId: "2" }));
+    queue.pause("user");
+    await tick();
+    expect(queue.stopAll()).toEqual({ stopped: true, dropped: 1 });
+    queue.resume("user");
+    await queue.idle();
+    expect(p.texts()).toEqual(["a"]);
+  });
+
+  test("an expired reason auto-resumes", async () => {
+    const { queue, p, nowRef } = pausable({ maxPauseMs: 1000 });
+    queue.enqueue(event("a"));
+    p.started[0]?.ctx.onChunk(1);
+    queue.pause("mic");
+    await tick();
+    nowRef.t = 1000;
+    expect(queue.paused).toBe(true);
+    nowRef.t = 1001;
+    expect(queue.paused).toBe(false);
+    expect(p.started[1]?.ctx.startChunk).toBe(1);
+  });
+
+  test("expiry is checked when pauseReasons() is read and when an item is queued", async () => {
+    const { queue, p, nowRef } = pausable({ maxPauseMs: 1000 });
+    queue.pause("mic");
+    queue.enqueue(event("a", { conversationId: "1" }));
+    nowRef.t = 2000;
+    expect(queue.pauseReasons()).toEqual([]);
+    expect(p.texts()).toEqual(["a"]);
+    p.started[0]?.release();
+    await tick();
+    queue.pause("mic");
+    nowRef.t = 4000;
+    queue.enqueue(event("b", { conversationId: "2" }));
+    expect(p.texts()).toEqual(["a", "b"]);
+  });
+
+  test("only expired reasons are pruned", () => {
+    const { queue, nowRef } = pausable({ maxPauseMs: 1000 });
+    queue.pause("mic");
+    nowRef.t = 500;
+    queue.pause("user");
+    nowRef.t = 1200;
+    expect(queue.pauseReasons()).toEqual(["user"]);
+    expect(queue.paused).toBe(true);
+  });
+
+  test("configure changes maxPauseMs", () => {
+    const { queue, nowRef } = pausable({ maxPauseMs: 1000 });
+    queue.configure({ expireAfterMs: 5 * 60_000, labelWindowMs: 10 * 60_000, maxPauseMs: 50 });
+    queue.pause("mic");
+    nowRef.t = 51;
+    expect(queue.paused).toBe(false);
+  });
+
+  test("maxPauseMs defaults to ten minutes", () => {
+    const nowRef = { t: 0 };
+    const queue = new SpeechQueue({
+      play: controllablePlay().play,
+      expireAfterMs: 1000,
+      labelWindowMs: 1000,
+      now: () => nowRef.t,
+    });
+    queue.pause("mic");
+    nowRef.t = 600_000;
+    expect(queue.paused).toBe(true);
+    nowRef.t = 600_001;
+    expect(queue.paused).toBe(false);
+  });
+
+  test("the held item does not expire while paused; other queued items still do", async () => {
+    const { queue, p, nowRef } = pausable({ expireAfterMs: 1000, maxPauseMs: 60_000 });
+    queue.enqueue(event("held", { conversationId: "1" }));
+    queue.enqueue(event("queued", { conversationId: "2" }));
+    queue.pause("user");
+    await tick();
+    nowRef.t = 5000;
+    queue.resume("user");
+    expect(p.texts()).toEqual(["held", "held"]);
+    p.started[1]?.release();
+    await queue.idle();
+    expect(p.texts()).toEqual(["held", "held"]);
+  });
+
+  test("speaking is true while playing and false while paused", async () => {
+    const { queue, p } = pausable();
+    expect(queue.speaking).toBe(false);
+    queue.enqueue(event("a"));
+    expect(queue.speaking).toBe(true);
+    queue.pause("user");
+    expect(queue.speaking).toBe(false);
+    await tick();
+    expect(queue.speaking).toBe(false);
+    expect(queue.current).toBeNull();
+    queue.resume("user");
+    expect(queue.speaking).toBe(true);
+    p.started[1]?.release();
+    await queue.idle();
+    expect(queue.speaking).toBe(false);
+  });
+
+  test("idle() waits for the held item to finish after resume", async () => {
+    const { queue, p } = pausable();
+    queue.enqueue(event("a"));
+    queue.pause("user");
+    await tick();
+    let idle = false;
+    void queue.idle().then(() => {
+      idle = true;
+    });
+    await tick();
+    expect(idle).toBe(false);
+    queue.resume("user");
+    p.started[1]?.release();
+    await tick();
+    expect(idle).toBe(true);
+  });
+
+  test("pausing while idle holds nothing; idle() resolves", async () => {
+    const { queue } = pausable();
+    queue.pause("user");
+    expect(queue.held).toBeNull();
+    await queue.idle();
+  });
+});

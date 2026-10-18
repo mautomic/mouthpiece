@@ -1,10 +1,15 @@
 import { expect, test } from "bun:test";
-import type { NormalizedSpeakEvent, TtsProvider } from "@mouthpiece/core";
+import {
+  collectChunks,
+  type NormalizedSpeakEvent,
+  type Player,
+  type TtsProvider,
+} from "@mouthpiece/core";
 import { FakeProvider } from "@mouthpiece/providers";
 import { FirstSentencesSummarizer } from "@mouthpiece/summarizers";
 import { FakePlayer } from "./fake-player.ts";
 import { createPreparer } from "./prepare.ts";
-import type { QueueItem } from "./queue.ts";
+import type { PlayContext, QueueItem } from "./queue.ts";
 import { createSpeaker, skipReason } from "./speaker.ts";
 import type { SpokenRecord } from "./types.ts";
 
@@ -26,9 +31,16 @@ function item(text: string, extra: Partial<NormalizedSpeakEvent> = {}): QueueIte
     },
   };
 }
-const ctx = (announceLabel = false, signal = new AbortController().signal) => ({
+const ctx = (
+  announceLabel = false,
+  signal = new AbortController().signal,
+  extra: Partial<PlayContext> = {},
+): PlayContext => ({
   announceLabel,
   signal,
+  startChunk: 0,
+  onChunk: () => {},
+  ...extra,
 });
 const prepare = createPreparer({
   resolveMode: () => "full",
@@ -190,4 +202,145 @@ test("an event without voice or label leaves both undefined", async () => {
   );
   expect(provider.options[0]?.voice).toBeUndefined();
   expect(provider.options[0]?.label).toBeUndefined();
+});
+
+const FOUR_CHUNKS = "Alpha one. Bravo two. Charlie 3. Delta four.";
+
+/** A player that logs each clip's text into a shared timeline. */
+function timelinePlayer(timeline: string[]): Player {
+  return {
+    play: async (clip) => {
+      timeline.push(`play:${new TextDecoder().decode(await collectChunks(clip.chunks))}`);
+    },
+  };
+}
+
+test("reports each chunk before playing it", async () => {
+  const timeline: string[] = [];
+  await createSpeaker({
+    provider: new FakeProvider({ maxCharsPerRequest: 12 }),
+    player: timelinePlayer(timeline),
+    log: () => {},
+    prepare,
+  })(
+    item(FOUR_CHUNKS, { format: "plain" }),
+    ctx(false, undefined, { onChunk: (i) => timeline.push(`chunk:${i}`) }),
+  );
+  expect(timeline).toEqual([
+    "chunk:0",
+    "play:Alpha one.",
+    "chunk:1",
+    "play:Bravo two.",
+    "chunk:2",
+    "play:Charlie 3.",
+    "chunk:3",
+    "play:Delta four.",
+  ]);
+});
+
+test("starts from startChunk without synthesizing the earlier chunks (US-022)", async () => {
+  const provider = new FakeProvider({ maxCharsPerRequest: 12 });
+  const timeline: string[] = [];
+  await createSpeaker({ provider, player: timelinePlayer(timeline), log: () => {}, prepare })(
+    item(FOUR_CHUNKS, { format: "plain" }),
+    ctx(false, undefined, { startChunk: 2, onChunk: (i) => timeline.push(`chunk:${i}`) }),
+  );
+  expect(provider.calls).toEqual(["Charlie 3.", "Delta four."]);
+  expect(timeline).toEqual(["chunk:2", "play:Charlie 3.", "chunk:3", "play:Delta four."]);
+});
+
+test("a resumed item keeps the label prefix in chunk 0, so chunk indices line up", async () => {
+  const provider = new FakeProvider({ maxCharsPerRequest: 12 });
+  const it = item("Bravo two. Charlie 3. Delta four.", { format: "plain", label: "web" });
+  const whole = new FakePlayer();
+  await createSpeaker({ provider, player: whole, log: () => {}, prepare })(it, ctx(true));
+  expect(whole.played[0]).toStartWith("web:");
+  const resumed = new FakePlayer();
+  await createSpeaker({ provider, player: resumed, log: () => {}, prepare })(
+    it,
+    ctx(true, undefined, { startChunk: 1 }),
+  );
+  expect(resumed.played).toEqual(whole.played.slice(1));
+});
+
+test("a resumed item does not call onSpoken again or log first_audio", async () => {
+  const records: SpokenRecord[] = [];
+  const logs: Record<string, unknown>[] = [];
+  await createSpeaker({
+    provider: new FakeProvider({ maxCharsPerRequest: 12 }),
+    player: new FakePlayer(),
+    log: (r) => logs.push(r),
+    prepare,
+    onSpoken: (r) => records.push(r),
+  })(item(FOUR_CHUNKS, { format: "plain" }), ctx(false, undefined, { startChunk: 1 }));
+  expect(records).toEqual([]);
+  expect(logs.filter((l) => l.msg === "first_audio")).toEqual([]);
+});
+
+test("an item resumed from chunk 0 (paused before its first chunk) is recorded once", async () => {
+  const records: SpokenRecord[] = [];
+  const paused = new AbortController();
+  const player = new FakePlayer();
+  const speak = createSpeaker({
+    provider: new FakeProvider(),
+    player,
+    log: () => {},
+    prepare,
+    onSpoken: (r) => {
+      records.push(r);
+      paused.abort(); // the pause lands after the record, before chunk 0 plays
+    },
+  });
+  const it = item("Hello there.", { format: "plain" });
+  await speak(it, ctx(false, paused.signal));
+  expect(player.played).toEqual([]);
+  await speak(it, ctx());
+  expect(player.played).toEqual(["Hello there."]);
+  expect(records).toHaveLength(1);
+});
+
+test("a startChunk past the last chunk plays nothing", async () => {
+  const provider = new FakeProvider({ maxCharsPerRequest: 12 });
+  const player = new FakePlayer();
+  await createSpeaker({ provider, player, log: () => {}, prepare })(
+    item("Alpha one.", { format: "plain" }),
+    ctx(false, undefined, { startChunk: 5 }),
+  );
+  expect(provider.calls).toEqual([]);
+  expect(player.played).toEqual([]);
+});
+
+test("a pause while the next chunk is still synthesizing resumes from that chunk", async () => {
+  const fake = new FakeProvider({ maxCharsPerRequest: 12 });
+  let reachedBravo: () => void = () => {};
+  const bravoStarted = new Promise<void>((r) => {
+    reachedBravo = r;
+  });
+  const slow: TtsProvider = {
+    name: "slow-bravo",
+    maxCharsPerRequest: 12,
+    pricePerMillionChars: 0,
+    synthesize: async (text, options) => {
+      if (text.startsWith("Bravo")) {
+        reachedBravo();
+        await new Promise((_, reject) =>
+          options?.signal?.addEventListener("abort", () => reject(new Error("aborted"))),
+        );
+      }
+      return fake.synthesize(text, options);
+    },
+  };
+  const reported: number[] = [];
+  const pause = new AbortController();
+  const player = new FakePlayer();
+  const done = createSpeaker({ provider: slow, player, log: () => {}, prepare })(
+    item(FOUR_CHUNKS, { format: "plain" }),
+    ctx(false, pause.signal, { onChunk: (i) => reported.push(i) }),
+  );
+  await bravoStarted;
+  await Bun.sleep(5); // chunk 0 has played; chunk 1 is still synthesizing
+  pause.abort();
+  await done;
+  expect(player.played).toEqual(["Alpha one."]);
+  expect(reported.at(-1)).toBe(1);
 });
