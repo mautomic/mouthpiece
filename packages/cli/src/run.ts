@@ -1,3 +1,4 @@
+import { MouthpieceError } from "@mouthpiece/client";
 import { authCommand } from "./commands/auth.ts";
 import { buildHotkeysCommand } from "./commands/build-hotkeys.ts";
 import { installAgentCommand } from "./commands/install-agent.ts";
@@ -57,9 +58,15 @@ export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<num
       case "skip":
         io.out(`${JSON.stringify(await deps.client.skip())}\n`);
         return 0;
-      case "status":
-        io.out(`${JSON.stringify(await deps.client.health(), null, 2)}\n`);
+      case "status": {
+        // An older daemon has no /v1/status (404): fall back to its health report.
+        const status = await deps.client.status().catch((error: unknown) => {
+          if (error instanceof MouthpieceError && error.status === 404) return deps.client.health();
+          throw error;
+        });
+        io.out(`${JSON.stringify(status, null, 2)}\n`);
         return 0;
+      }
       case "pause":
         return await pauseCommand(rest, io, deps);
       case "resume":

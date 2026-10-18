@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { MouthpieceError } from "@mouthpiece/client";
 import type { SpeakEvent } from "@mouthpiece/core";
 import { run } from "./run.ts";
 import type { CliDeps, CliIO } from "./types.ts";
@@ -104,8 +105,43 @@ test("stop, skip, status", async () => {
   const h = harness();
   expect(await run(["stop"], h.io, h.deps)).toBe(0);
   expect(await run(["skip"], h.io, h.deps)).toBe(0);
+  h.out.length = 0;
   expect(await run(["status"], h.io, h.deps)).toBe(0);
-  expect(h.out.join("\n")).toContain('"provider": "say"');
+  expect(JSON.parse(h.out.join(""))).toMatchObject({
+    speaking: false,
+    paused: false,
+    pauseReasons: [],
+    provider: "say",
+  });
+});
+
+test("status falls back to health when the daemon has no /v1/status (404)", async () => {
+  const h = harness();
+  h.deps.client = {
+    ...h.deps.client,
+    status: async () => {
+      throw new MouthpieceError("not found", 404);
+    },
+  };
+  expect(await run(["status"], h.io, h.deps)).toBe(0);
+  expect(JSON.parse(h.out.join(""))).toEqual({
+    ok: true,
+    version: "0.1.0",
+    provider: "say",
+    queueDepth: 0,
+  });
+});
+
+test("status does not hide other errors behind the health fallback", async () => {
+  const h = harness();
+  h.deps.client = {
+    ...h.deps.client,
+    status: async () => {
+      throw new MouthpieceError("unauthorized", 401);
+    },
+  };
+  expect(await run(["status"], h.io, h.deps)).toBe(1);
+  expect(h.err.join("")).toContain("unauthorized");
 });
 
 test("start launches the daemon", async () => {
@@ -167,14 +203,11 @@ test("usage text shows every flag of say, voices, tail and the hook targets", as
     expect(usage).toContain(flag);
 });
 
-test.each([["pause"], ["resume"], ["send"]])(
-  "%s routes to its (not yet implemented) command",
-  async (cmd) => {
-    const h = harness();
-    expect(await run([cmd], h.io, h.deps)).toBe(1);
-    expect(h.err.join("")).toContain(`${cmd} is not implemented`);
-  },
-);
+test.each([["send"]])("%s routes to its (not yet implemented) command", async (cmd) => {
+  const h = harness();
+  expect(await run([cmd], h.io, h.deps)).toBe(1);
+  expect(h.err.join("")).toContain(`${cmd} is not implemented`);
+});
 
 test("build-helper is an alias of build-hotkeys", async () => {
   const home = await mkdtemp(join(tmpdir(), "mp-run-helper-"));
