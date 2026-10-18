@@ -4,6 +4,7 @@ export * from "./dedupe.ts";
 export * from "./fake-player.ts";
 export * from "./handler.ts";
 export * from "./history.ts";
+export * from "./inbox.ts";
 export * from "./log.ts";
 export * from "./modes.ts";
 export * from "./player.ts";
