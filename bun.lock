@@ -48,6 +48,13 @@
         "@mouthpiece/hook-kit": "workspace:*",
       },
     },
+    "adapters/orca": {
+      "name": "@mouthpiece/adapter-orca",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/core": "workspace:*",
+      },
+    },
     "adapters/tmux": {
       "name": "@mouthpiece/adapter-tmux",
       "version": "0.1.0",
@@ -155,6 +162,8 @@
     "@mouthpiece/adapter-file-tail": ["@mouthpiece/adapter-file-tail@workspace:adapters/file-tail"],
 
     "@mouthpiece/adapter-gemini": ["@mouthpiece/adapter-gemini@workspace:adapters/gemini"],
+
+    "@mouthpiece/adapter-orca": ["@mouthpiece/adapter-orca@workspace:adapters/orca"],
 
     "@mouthpiece/adapter-tmux": ["@mouthpiece/adapter-tmux@workspace:adapters/tmux"],
 
