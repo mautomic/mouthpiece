@@ -3,12 +3,8 @@ import { DeepgramProvider } from "./deepgram.ts";
 import { ElevenLabsProvider } from "./elevenlabs.ts";
 import { FallbackProvider } from "./fallback.ts";
 import { InworldProvider } from "./inworld.ts";
-import {
-  defaultKokoroLoader,
-  isKokoroInstalled,
-  type KokoroLoader,
-  KokoroProvider,
-} from "./kokoro.ts";
+import { isKokoroInstalled, type KokoroLoader, KokoroProvider, kokoroTimeoutMs } from "./kokoro.ts";
+import { workerKokoroLoader } from "./kokoro-worker-loader.ts";
 import { OpenAIProvider } from "./openai.ts";
 import { SayProvider } from "./say.ts";
 import { VoiceMapProvider } from "./voice-map.ts";
@@ -27,7 +23,10 @@ export interface ChainDeps {
   wrap?: (p: TtsProvider) => TtsProvider;
   /** Mouthpiece home; Kokoro is installed under `<home>/kokoro`. Without it, Kokoro is skipped. */
   home?: string;
-  /** Test seam: replaces `defaultKokoroLoader(home)`. */
+  /**
+   * Replaces `workerKokoroLoader(home)` (a test seam, or a loader the caller shares across chains so
+   * a config reload doesn't start a second worker).
+   */
   kokoroLoader?: KokoroLoader;
 }
 
@@ -81,7 +80,7 @@ function createKokoro(config: Config, deps: ChainDeps): KokoroProvider | undefin
   }
   return new KokoroProvider({
     voice: config.provider.kokoro.voice,
-    load: deps.kokoroLoader ?? defaultKokoroLoader(deps.home),
+    load: deps.kokoroLoader ?? workerKokoroLoader(deps.home),
     log: deps.log,
   });
 }
@@ -117,6 +116,10 @@ export function chainProviders(
     providers.map((p) => new VoiceMapProvider(wrap(p), config.voices[p.name] ?? {})),
     {
       firstByteTimeoutMs: config.fallback.firstByteTimeoutMs,
+      timeoutFor: (name, text) =>
+        name === "kokoro"
+          ? kokoroTimeoutMs(text, config.fallback.firstByteTimeoutMs)
+          : config.fallback.firstByteTimeoutMs,
       onFallback: (from, error) =>
         deps.log({ level: "warn", msg: "provider_fallback", provider: from, error: String(error) }),
     },

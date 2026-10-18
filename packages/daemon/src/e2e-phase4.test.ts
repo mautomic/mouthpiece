@@ -374,3 +374,25 @@ test("a chain listing Kokoro without it installed skips it with one warning", as
   ]);
   expect(loads).toBe(0);
 });
+
+test("stopping the daemon terminates Kokoro's worker (US-019)", async () => {
+  let terminated = 0;
+  const engine: KokoroEngine = {
+    async generate(text) {
+      return { toWav: () => new TextEncoder().encode(text).buffer as ArrayBuffer };
+    },
+  };
+  const loader = Object.assign(async () => engine, {
+    terminate: () => {
+      terminated++;
+    },
+  });
+  const d = await boot(
+    resolveConfig({ provider: { chain: ["kokoro", "say"] } }),
+    { player: new FakePlayer(), kokoroLoader: loader },
+    installFakeKokoro,
+  );
+  await d.stop();
+  daemon = undefined;
+  expect(terminated).toBe(1);
+});

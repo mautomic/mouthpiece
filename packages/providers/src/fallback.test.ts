@@ -88,3 +88,22 @@ test("the last provider has no first-byte timeout because nothing follows it", a
   expect(await decode(chain, "hi")).toBe("hi");
   expect(fallbacks).toEqual(["a"]);
 });
+
+test("timeoutFor overrides the first-byte timeout per provider and text", async () => {
+  const fallbacks: string[] = [];
+  const seen: [string, string][] = [];
+  const chain = new FallbackProvider(
+    [new FakeProvider({ name: "local", delayMs: 120 }), new FakeProvider({ name: "say" })],
+    {
+      firstByteTimeoutMs: 30,
+      timeoutFor: (provider, text) => {
+        seen.push([provider, text]);
+        return provider === "local" ? 5_000 : 30;
+      },
+      onFallback: (from) => fallbacks.push(from),
+    },
+  );
+  expect(await decode(chain, "a long chunk")).toBe("a long chunk");
+  expect(fallbacks).toEqual([]);
+  expect(seen).toEqual([["local", "a long chunk"]]);
+});

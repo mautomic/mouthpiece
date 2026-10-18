@@ -37,6 +37,7 @@ import {
   type KokoroLoader,
   KokoroProvider,
   PAID_PROVIDERS,
+  workerKokoroLoader,
 } from "@mouthpiece/providers";
 import { createSummarizer, FirstSentencesSummarizer } from "@mouthpiece/summarizers";
 import { CachingProvider } from "./cache.ts";
@@ -82,8 +83,11 @@ export interface DaemonOptions {
   hotkeys?: boolean;
   /** Test seam: how the helper supervisor starts the helper process. */
   helperSpawn?: SpawnFn;
-  /** Test seam: replaces `defaultKokoroLoader(home)` when Kokoro is installed under the home. */
-  kokoroLoader?: KokoroLoader;
+  /**
+   * Test seam: replaces `workerKokoroLoader(home)` when Kokoro is installed under the home. Its
+   * `terminate()`, when present, runs on stop and when a reload drops Kokoro from the chain.
+   */
+  kokoroLoader?: KokoroLoader & { terminate?(): void | Promise<void> };
 }
 
 export interface RunningDaemon {
@@ -126,6 +130,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
   // Assigned once the queue exists; quota notices are only raised while speaking, after startup.
   let notify: (text: string) => void = () => {};
   let noticeSeq = 0;
+  // One Kokoro worker for the daemon's lifetime, shared by every chain a reload builds. It starts
+  // on first use, so a chain without Kokoro never spawns it.
+  const kokoroLoader = opts.kokoroLoader ?? workerKokoroLoader(home);
   const guard = new QuotaGuard({
     store: usage,
     config: () => config,
@@ -141,7 +148,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     for (const name of PAID_PROVIDERS) {
       if (c.provider.chain.includes(name)) secrets[name] = await resolveSecret(name, { env, exec });
     }
-    return createProviders(c, { env, tmpDir, log, secrets, home, kokoroLoader: opts.kokoroLoader });
+    return createProviders(c, { env, tmpDir, log, secrets, home, kokoroLoader });
   };
   /** Outermost first: voice map (applied by the chain), quota gate, metering, cache for priced providers. */
   const buildProvider = (c: Config, list: TtsProvider[]): TtsProvider => {
@@ -378,11 +385,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
   };
   startHelper(config);
 
-  /** US-019: load Kokoro in the background so the first item doesn't pay for it. */
+  /**
+   * US-019: load Kokoro in the background so the first item doesn't pay for it. A chain without
+   * Kokoro stops its worker (and frees the model); the next use starts a new one.
+   */
   const warmUp = (list: TtsProvider[]) => {
-    for (const p of list) {
-      if (p instanceof KokoroProvider) void p.warmUp();
-    }
+    const kokoro = list.filter((p) => p instanceof KokoroProvider);
+    for (const p of kokoro) void p.warmUp();
+    if (kokoro.length === 0) void kokoroLoader.terminate?.();
   };
   warmUp(providers);
 
@@ -422,6 +432,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       stopHelper();
       queue.stopAll();
       server.stop(true);
+      // Awaited: exiting while the worker (with onnxruntime loaded) is still closing crashes Bun.
+      await kokoroLoader.terminate?.();
       usage.close();
     },
   };

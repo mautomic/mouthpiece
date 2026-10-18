@@ -8,7 +8,12 @@ import { DeepgramProvider } from "./deepgram.ts";
 import { ElevenLabsProvider } from "./elevenlabs.ts";
 import { FakeProvider } from "./fake.ts";
 import { InworldProvider } from "./inworld.ts";
-import { type KokoroEngine, KokoroProvider } from "./kokoro.ts";
+import {
+  KOKORO_MS_PER_CHAR,
+  type KokoroEngine,
+  KokoroProvider,
+  kokoroTimeoutMs,
+} from "./kokoro.ts";
 import { OpenAIProvider } from "./openai.ts";
 import { SayProvider } from "./say.ts";
 
@@ -248,4 +253,31 @@ test("kokoro is built with the configured voice and the injected loader when ins
     expect(voices).toEqual(["bm_george"]);
     expect(logs).toEqual([]);
   });
+});
+
+test("kokoro renders a whole chunk before any audio, so its timeout scales with the text", async () => {
+  await withHome(async (home) => {
+    const pkg = join(home, "kokoro", "node_modules", "kokoro-js");
+    await mkdir(pkg, { recursive: true });
+    await writeFile(join(pkg, "package.json"), "{}");
+    const engine: KokoroEngine = {
+      async generate(text) {
+        await Bun.sleep(150); // longer than the first-byte timeout below
+        return { toWav: () => new TextEncoder().encode(text).buffer as ArrayBuffer };
+      },
+    };
+    const config = resolveConfig({
+      provider: { chain: ["kokoro", "say"] },
+      fallback: { firstByteTimeoutMs: 50 },
+    });
+    const { deps: d, logs } = deps();
+    const clip = await createProviderChain(config, {
+      ...d,
+      home,
+      kokoroLoader: async () => engine,
+    }).synthesize("A sentence of a realistic length for one chunk.");
+    expect(clip.format).toBe("wav");
+    expect(logs).toEqual([]);
+  });
+  expect(kokoroTimeoutMs("x".repeat(400), 3000)).toBe(3000 + 400 * KOKORO_MS_PER_CHAR);
 });

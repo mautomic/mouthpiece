@@ -59,6 +59,18 @@ export const KOKORO_VOICES: readonly VoiceInfo[] = VOICES.map(([id, name]) => ({
   language: id.startsWith("a") ? "en-US" : "en-GB",
 }));
 
+/**
+ * Render-time allowance per character. Kokoro returns audio only once the whole chunk is rendered
+ * (about 20 ms per character on an M4 Pro: 3.3 s for 150 characters), so a fixed first-byte
+ * timeout would drop every long chunk to the next provider. 50 leaves room for slower Macs.
+ */
+export const KOKORO_MS_PER_CHAR = 50;
+
+/** Kokoro's first-byte timeout for `text`: the configured timeout plus the render allowance. */
+export function kokoroTimeoutMs(text: string, firstByteTimeoutMs: number): number {
+  return firstByteTimeoutMs + text.length * KOKORO_MS_PER_CHAR;
+}
+
 const VOICE_IDS = new Set(VOICES.map(([id]) => id));
 
 /** `<home>/kokoro`: its own package root for `kokoro-js` and the model cache (`hf/`). */
