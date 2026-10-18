@@ -117,6 +117,47 @@ Pause semantics (US-022):
 - Safety: a reason expires after `micPause.maxPauseMs` (default 600000 ms, at most 86400000), and the daemon clears `mic` as soon as the helper
   that reported it exits.
 
+## GET /v1/inbox
+200 `InboxResponse`: `{ "enabled": false, "entries": [InboxEntry…] }`, newest first (PRD §13, US-025). One entry per
+`source` + `conversationId`, holding its latest `response` (muted and trivial ones included); entries are dropped under
+`[history]` limits. In memory only.
+
+| Field | Notes |
+|---|---|
+| `id` | the entry's id; a new response replaces the entry with a new id |
+| `source`, `conversationId`, `label`, `text`, `at` | from the response (`at` in ms) |
+| `summary` | the spoken text, once prepared |
+| `alert` | `{ text, at }`: the latest alert on this conversation; it never blocks replies |
+| `route` | the reply route (`POST /v1/speak` `reply`), if any |
+| `state` | `waiting` (replyable), `busy` (a prompt was submitted), `sending`, `typed` (typed, not submitted) |
+| `reply` | `{ at }`: when a reply was last sent; its text is never returned |
+
+## GET /v1/inbox/events
+`text/event-stream`. First `event: snapshot` with the `InboxResponse`, then `event: entry` (an `InboxEntry`) or
+`event: remove` (`{ "id" }`) per change; a `: keepalive` comment every 10 s.
+
+## POST /v1/reply
+Body `{ "id": "<entry id>", "text": "…" }`. Types the text, joined into one line, into the entry's terminal and presses
+Enter, under the delivery controls (PRD §13): only into a `waiting` entry whose terminal still runs the same agent, is
+idle, and has an empty prompt; one reply per conversation at a time; submission confirmed, never assumed or retried.
+Replies with a status within about 20 s:
+
+| Status | Body | When |
+|---|---|---|
+| 202 | `{ "status": "submitted" }` | a turn start was observed (the host's report or the session's prompt-submit interrupt within `[reply] confirmMs`) |
+| 202 | `{ "status": "typed" }` | typed, not confirmed; see `/v1/reply/submit` |
+| 400 | `{ "error", "reason": "invalid" }` | bad body, or empty text |
+| 403 | `reason: "disabled"` | `[reply] enabled` is false (the default) |
+| 409 | `reason: "busy" \| "newer" \| "in-flight" \| "draft" \| "not-idle" \| "not-agent" \| "unverified"` | refused; nothing was typed. `newer`: a newer response replaced this entry |
+| 410 | `reason: "gone"` | the entry was dropped, or the terminal is gone |
+| 413 | `reason: "too-long"` | over 4,000 characters after joining |
+| 422 | `reason: "no-route"` | the entry has no route, or no driver for it |
+| 502 | `reason: "send-failed"` | typing into the terminal failed |
+
+## POST /v1/reply/submit
+Body `{ "id": "<entry id>" }`. Presses Enter for a `typed` reply, if the agent is idle and its prompt still starts with
+that reply. Same responses as `/v1/reply`, plus 409 `reason: "not-typed"`.
+
 ## GET /v1/mode
 200 `ModeState`: `{ "default": "summary", "overrides": [{ "source": "claude-code", "conversationId": "s1", "mode": "full" }] }`
 

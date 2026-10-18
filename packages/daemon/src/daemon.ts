@@ -14,6 +14,7 @@ import {
   type Player,
   type ProviderUsage,
   parseSpeakEvent,
+  type ReplyDriver,
   readOrCreateToken,
   resolveConfig,
   resolveSecret,
@@ -47,12 +48,14 @@ import { CachingProvider } from "./cache.ts";
 import { AlertDeduper } from "./dedupe.ts";
 import { createHandler, MAX_BODY_BYTES } from "./handler.ts";
 import { History } from "./history.ts";
+import { Inbox } from "./inbox.ts";
 import { jsonLogger } from "./log.ts";
 import { ModeStore } from "./modes.ts";
 import { AfplayPlayer } from "./player.ts";
 import { createPreparer } from "./prepare.ts";
 import { NOTICE_SOURCE, SpeechQueue } from "./queue.ts";
 import { QuotaGatedProvider, QuotaGuard } from "./quota.ts";
+import { ReplyController } from "./reply.ts";
 import { type SaveResult, saveSettings, settingsOf } from "./settings.ts";
 import { createSpeaker, skipReason } from "./speaker.ts";
 import { createPlayer } from "./stream-player.ts";
@@ -98,6 +101,8 @@ export interface DaemonOptions {
    * `terminate()`, when present, runs on stop and when a reload drops Kokoro from the chain.
    */
   kokoroLoader?: KokoroLoader & { terminate?(): void | Promise<void> };
+  /** Reply drivers (PRD §13), built once from the start-up config. The CLI passes the Orca driver. */
+  replyDrivers?: (config: Config) => ReplyDriver[];
 }
 
 export interface RunningDaemon {
@@ -105,6 +110,7 @@ export interface RunningDaemon {
   queue: SpeechQueue;
   modes: ModeStore;
   history: History;
+  inbox: Inbox;
   usage: UsageStore;
   stop(): Promise<void>;
 }
@@ -198,6 +204,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
   let summarizer = buildSummarizer(config);
   const modes = new ModeStore(config.modes.default, config.profiles);
   const history = new History(config.history);
+  const inbox = new Inbox({ history: config.history });
+  const replies = new ReplyController({
+    inbox,
+    drivers: opts.replyDrivers?.(config) ?? [],
+    config: () => config.reply,
+    log,
+  });
   const deduper = new AlertDeduper(config.alerts.dedupeWindowMs);
   const preparer = createPreparer({
     resolveMode: (e) => modes.resolve(e),
@@ -241,13 +254,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
   });
 
   const enqueue = (event: NormalizedSpeakEvent): SpeakResponse => {
+    // Every response goes to the inbox, even muted or trivial ones: you may still answer it (US-025).
+    const entryId = inbox.record(event);
     if (event.kind === "response" && modes.resolve(event) === "off") {
       return { id: null, skipped: "muted" };
     }
     if (deduper.isDuplicate(event)) return { id: null, skipped: "duplicate" };
     const reason = skipReason(event, config.filter);
     if (reason) return { id: null, skipped: reason };
-    void preparer.prepare(event); // start summarizing now; overlaps whatever is playing
+    // Start summarizing now; it overlaps whatever is playing.
+    const prepared = preparer.prepare(event);
+    if (entryId !== undefined) {
+      prepared.then((p) => inbox.summarized(entryId, p.spoken)).catch(() => {});
+    }
     return { id: queue.enqueue(event).id };
   };
   notify = (text) => {
@@ -341,13 +360,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     hostname: "127.0.0.1",
     port: opts.port ?? Number(env.MOUTHPIECE_PORT || DEFAULT_PORT),
     maxRequestBodySize: MAX_BODY_BYTES,
+    // A reply waits on the terminal for up to ~19 s; the event stream sends a keepalive every 10 s.
+    idleTimeout: 30,
     fetch: createHandler({
       token,
       version: VERSION,
       providerName: () => provider.name,
       queueDepth: () => queue.depth,
       enqueue,
-      interrupt: (r) => queue.interrupt(r.source, r.conversationId),
+      interrupt: (r) => {
+        inbox.interrupted(r.source, r.conversationId);
+        replies.interrupted(r.source, r.conversationId);
+        return queue.interrupt(r.source, r.conversationId);
+      },
+      inbox: () => ({ enabled: config.reply.enabled, entries: inbox.list() }),
+      subscribeInbox: (listener) => inbox.subscribe(listener),
+      reply: (r) => replies.reply(r),
+      submitReply: (r) => replies.submit(r),
       stopAll: () => queue.stopAll(),
       skip: () => ({ skipped: queue.skip() }),
       getMode: () => modes.state(),
@@ -480,6 +509,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     summarizer = buildSummarizer(next);
     modes.configure(next.modes.default, next.profiles);
     history.configure(next.history);
+    inbox.configure(next.history);
     deduper.windowMs = next.alerts.dedupeWindowMs;
     queue.configure({ ...next.queue, maxPauseMs: next.micPause.maxPauseMs });
     startHelper(next);
@@ -521,6 +551,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     queue,
     modes,
     history,
+    inbox,
     usage,
     stop: () =>
       (stopping ??= (async () => {

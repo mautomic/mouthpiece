@@ -7,6 +7,7 @@ import {
   type StatusResponse,
 } from "@mouthpiece/core";
 import { createHandler, type HandlerDeps } from "./handler.ts";
+import type { InboxChange } from "./inbox.ts";
 
 const TOKEN = "t".repeat(64);
 
@@ -57,6 +58,10 @@ function setup(overrides: Partial<HandlerDeps> = {}) {
       return { stopping: true };
     },
     updateSettings: async () => ({ ok: true, config: resolveConfig({}) }),
+    inbox: () => ({ enabled: true, entries: [] }),
+    subscribeInbox: () => () => {},
+    reply: async () => ({ ok: true, status: "submitted" }),
+    submitReply: async () => ({ ok: true, status: "typed" }),
     ...overrides,
   };
   return { handle: createHandler(deps), enqueued, voiceCalls, pauseCalls };
@@ -344,4 +349,62 @@ test("POST /v1/shutdown needs the token, then asks the daemon to stop", async ()
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ stopping: true });
   expect(pauseCalls).toEqual(["shutdown"]);
+});
+
+test("POST /v1/reply maps a result to its status and body", async () => {
+  const { handle } = setup({
+    reply: async () => ({
+      ok: false,
+      http: 409,
+      reason: "draft",
+      error: "the prompt is not empty",
+    }),
+  });
+  const res = await handle(req("POST", "/v1/reply", { id: "e1", text: "go" }));
+  expect(res.status).toBe(409);
+  expect(await res.json()).toEqual({ error: "the prompt is not empty", reason: "draft" });
+});
+
+test("POST /v1/reply: 202 with the status, and 400 for a bad body", async () => {
+  const { handle } = setup();
+  const ok = await handle(req("POST", "/v1/reply", { id: "e1", text: "go" }));
+  expect([ok.status, await ok.json()]).toEqual([202, { status: "submitted" }]);
+  const bad = await handle(req("POST", "/v1/reply", { text: "go" }));
+  expect(bad.status).toBe(400);
+  expect(await bad.json()).toMatchObject({ reason: "invalid" });
+});
+
+test("POST /v1/reply/submit and GET /v1/inbox need the token", async () => {
+  const { handle } = setup();
+  expect((await handle(req("GET", "/v1/inbox", undefined, null))).status).toBe(401);
+  expect((await handle(req("POST", "/v1/reply/submit", { id: "e1" }, null))).status).toBe(401);
+  const sub = await handle(req("POST", "/v1/reply/submit", { id: "e1" }));
+  expect([sub.status, await sub.json()]).toEqual([202, { status: "typed" }]);
+  const inbox = await handle(req("GET", "/v1/inbox"));
+  expect(await inbox.json()).toEqual({ enabled: true, entries: [] });
+});
+
+test("GET /v1/inbox/events sends a snapshot, then each change, and unsubscribes on close", async () => {
+  let listener: ((c: InboxChange) => void) | undefined;
+  let unsubscribed = false;
+  const { handle } = setup({
+    subscribeInbox: (l) => {
+      listener = l;
+      return () => {
+        unsubscribed = true;
+      };
+    },
+  });
+  const res = await handle(req("GET", "/v1/inbox/events"));
+  expect(res.headers.get("content-type")).toBe("text/event-stream");
+  const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+  const decode = async () => new TextDecoder().decode((await reader.read()).value);
+  expect(await decode()).toBe(
+    `event: snapshot\ndata: ${JSON.stringify({ enabled: true, entries: [] })}\n\n`,
+  );
+  listener?.({ type: "remove", id: "e9" });
+  expect(await decode()).toBe(`event: remove\ndata: {"id":"e9"}\n\n`);
+  await reader.cancel();
+  expect(unsubscribed).toBe(true);
+  expect(() => listener?.({ type: "remove", id: "e10" })).not.toThrow();
 });
