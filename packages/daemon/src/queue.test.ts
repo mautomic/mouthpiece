@@ -19,6 +19,8 @@ function event(text: string, extra: Partial<NormalizedSpeakEvent> = {}): Normali
     mode: undefined,
     format: "plain",
     voice: undefined,
+    verbatim: false,
+    announce: "auto",
     ...extra,
   };
 }

@@ -17,12 +17,14 @@ Body (generic event envelope, PRD §8.3):
 | `text` | string, required | | ≤ 100,000 chars; markdown unless `format: "plain"` |
 | `source` | string, required | | `^[a-z0-9][a-z0-9._-]{0,63}$`, e.g. `claude-code`, `discord`, `cli` |
 | `conversationId` | string | `"default"` | unit of coalescing and interrupts (≤ 256) |
-| `label` | string | none | spoken prefix when several conversations are active (≤ 100) |
+| `label` | string | none | spoken prefix (see `announce`) (≤ 100) |
 | `kind` | `response` \| `alert` \| `info` | `response` | `response` items are subject to the trivial-text filter |
 | `priority` | `high` \| `normal` \| `low` | `high` for alerts, else `normal` | higher priority jumps the queue, never interrupts |
 | `mode` | `summary` \| `full` \| `off` | runtime override, then source profile, then `modes.default` | see `POST /v1/mode` for precedence |
 | `format` | `markdown` \| `plain` | `markdown` | `plain` skips markdown cleaning |
 | `voice` | string | none | provider voice for this event (≤ 100); see voice selection below |
+| `verbatim` | boolean | `false` | speak `text` as given: never summarized, whatever the mode or length. Mode `off` still mutes it; markdown is still cleaned unless `format: "plain"` |
+| `announce` | `always` \| `auto` | `auto` | `always`: speak `label` before every item (when there is one); `auto`: only when 2+ conversations spoke within `queue.labelWindowMs`. A source profile can override it (see below) |
 
 202 `{ "id": "<item id>" }`, or 202 `{ "id": null, "skipped": "trivial" }` when filtered.
 A new event replaces any not-yet-playing item from the same `source` + `conversationId`.

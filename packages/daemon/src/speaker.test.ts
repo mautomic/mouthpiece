@@ -31,6 +31,8 @@ function item(text: string, extra: Partial<NormalizedSpeakEvent> = {}): QueueIte
       mode: undefined,
       format: "markdown",
       voice: undefined,
+      verbatim: false,
+      announce: "auto",
       ...extra,
     },
   };
