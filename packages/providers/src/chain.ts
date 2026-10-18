@@ -3,9 +3,18 @@ import { DeepgramProvider } from "./deepgram.ts";
 import { ElevenLabsProvider } from "./elevenlabs.ts";
 import { FallbackProvider } from "./fallback.ts";
 import { InworldProvider } from "./inworld.ts";
+import {
+  defaultKokoroLoader,
+  isKokoroInstalled,
+  type KokoroLoader,
+  KokoroProvider,
+} from "./kokoro.ts";
 import { OpenAIProvider } from "./openai.ts";
 import { SayProvider } from "./say.ts";
 import { VoiceMapProvider } from "./voice-map.ts";
+
+// The package barrel (index.ts) is outside Track A; re-export Kokoro through the chain module.
+export * from "./kokoro.ts";
 
 /** Providers that need an API key (env `<NAME>_API_KEY` or the Keychain account `<name>`). */
 export const PAID_PROVIDERS = ["inworld", "elevenlabs", "deepgram", "openai"] as const;
@@ -19,11 +28,15 @@ export interface ChainDeps {
   secrets?: Record<string, string | undefined>;
   /** Applied to each provider individually (caching, metering). */
   wrap?: (p: TtsProvider) => TtsProvider;
+  /** Mouthpiece home; Kokoro is installed under `<home>/kokoro`. Without it, Kokoro is skipped. */
+  home?: string;
+  /** Test seam: replaces `defaultKokoroLoader(home)`. */
+  kokoroLoader?: KokoroLoader;
 }
 
 /**
- * Builds the configured chain's providers in order, unwrapped. Paid providers without a key are
- * skipped with a warning, and the list always ends in `say` (FR-8).
+ * Builds the configured chain's providers in order, unwrapped. Paid providers without a key, and
+ * Kokoro when it isn't installed, are skipped with a warning; the list always ends in `say` (FR-8).
  */
 export function createProviders(config: Config, deps: ChainDeps): TtsProvider[] {
   const say = () =>
@@ -32,6 +45,11 @@ export function createProviders(config: Config, deps: ChainDeps): TtsProvider[] 
   for (const name of config.provider.chain) {
     if (name === "say") {
       providers.push(say());
+      continue;
+    }
+    if (name === "kokoro") {
+      const kokoro = createKokoro(config, deps);
+      if (kokoro) providers.push(kokoro);
       continue;
     }
     if (!isPaid(name)) throw new Error(`unknown provider: ${name}`);
@@ -51,6 +69,24 @@ export function createProviders(config: Config, deps: ChainDeps): TtsProvider[] 
   // FR-8: the chain always ends in macOS say (also bounds a trailing paid provider by the timeout).
   if (providers.at(-1)?.name !== "say") providers.push(say());
   return providers;
+}
+
+/** US-019: free and keyless, but only usable after `mouthpiece kokoro install`. */
+function createKokoro(config: Config, deps: ChainDeps): KokoroProvider | undefined {
+  if (deps.home === undefined || !isKokoroInstalled(deps.home)) {
+    deps.log({
+      level: "warn",
+      msg: "provider_skipped",
+      provider: "kokoro",
+      reason: "not installed; run mouthpiece kokoro install",
+    });
+    return undefined;
+  }
+  return new KokoroProvider({
+    voice: config.provider.kokoro.voice,
+    load: deps.kokoroLoader ?? defaultKokoroLoader(deps.home),
+    log: deps.log,
+  });
 }
 
 function isPaid(name: string): name is PaidProviderName {
