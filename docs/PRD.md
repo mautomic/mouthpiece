@@ -433,50 +433,55 @@ Stories are grouped by phase. Each should fit in one focused session.
   - API keys come from plugin user-config options or `mouthpiece auth` (Keychain).
   - Test with `claude --plugin-dir`, then with a real marketplace install on a clean machine.
 
-### Phase 5: Reply inbox (proposed 2026-10-18; design in §13)
+### Phase 5: Reply inbox (2026-10-18; design in §13; US-024 and US-025 implemented)
 
 #### US-024: Reply routes on speak events
 **Description:** As a user, I want each response to remember where it came from, so a reply can go back to that exact terminal.
 
+*Implemented 2026-10-18, Orca only. Spec: `docs/superpowers/specs/2026-10-18-reply-inbox-engine-design.md`.*
+
 **Acceptance Criteria:**
-- [ ] `SpeakEvent.reply?: { via: "orca" | "tmux" | "url"; target: string }`, added in `contracts.ts` and `docs/api.md` in the same commit
-- [ ] Validation:
-  - Orca handles must match `^term_[\w-]+$`.
-  - tmux targets must match `TMUX_TARGET`.
-  - `url` must be loopback http.
-  - A bad or unknown route drops the field and the event is still spoken.
-- [ ] A `hook-kit` helper reads `ORCA_TERMINAL_HANDLE` first, then `TMUX_PANE`. The Claude Code, Codex and Gemini adapters attach the route it returns.
-- [ ] `bun run check` passes
+- [x] `SpeakEvent.reply?: { via: "orca"; target: string; agent: string }`, added in `contracts.ts` and `docs/api.md` in the same commit. The `tmux` and `url` routes come later.
+- [x] Validation:
+  - [x] Orca handles must match `^term_[A-Za-z0-9-]{1,128}$`.
+  - [ ] tmux targets must match `TMUX_TARGET` (later).
+  - [ ] `url` must be loopback http (later).
+  - [x] A bad or unknown route drops the field and the event is still spoken.
+- [x] A `hook-kit` helper (`replyRoute`) reads `ORCA_TERMINAL_HANDLE`. The Claude Code and Codex adapters attach the route it returns. `TMUX_PANE` comes later, and so does Gemini (its screen hasn't been seen).
+- [x] `bun run check` passes
 
 #### US-025: Daemon inbox and reply endpoint
 **Description:** As a user, I want the daemon to keep the latest response per conversation and send my reply back to it.
 
+*Implemented 2026-10-18, Orca only (same spec).*
+
 **Acceptance Criteria:**
-- [ ] `GET /v1/inbox` lists one entry per conversation, holding its latest response, and drops entries under FR-7's limits
-- [ ] `GET /v1/inbox/events` streams new and changed entries
-- [ ] `POST /v1/reply {id, text}` sends through the entry's stored route, under the delivery controls in §13. It returns:
+- [x] `GET /v1/inbox` lists one entry per conversation, holding its latest response, and drops entries under FR-7's limits
+- [x] `GET /v1/inbox/events` streams new and changed entries
+- [x] `POST /v1/reply {id, text}` sends through the entry's stored route, under the delivery controls in §13. It returns:
   - `202 {status: "submitted" | "typed"}` when sent;
   - `409` when the session is busy, has a newer response than `id` (`newer`), already has a reply in flight, or couldn't be checked (`unverified`);
   - `410` when the entry is gone;
   - `413` when the text is over 4,000 characters;
   - `422` when the entry has no route;
   - `403` while `[reply] enabled` is false.
-- [ ] "submitted" needs proof: Orca's `--wait-submit` turn start, or that session's prompt-submit hook within 5 s. Without it the status is "typed". The text is never resent and Enter is never pressed again automatically. `POST /v1/reply/submit {id}` sends Enter alone.
-- [ ] Lines are joined into one before sending
-- [ ] Before typing, the driver checks that the session is idle and its prompt is empty, and refuses if it can't tell
-- [ ] An Orca driver (`adapters/orca`) runs `orca terminal wait`, `orca terminal read` and `orca terminal send … --enter --wait-submit 5 --json` through an injected `exec`, and maps the JSON result to a status. The tmux driver gains a 150 ms settle before Enter and a `capture-pane` prompt check. `mouthpiece start` injects both into the daemon.
-- [ ] Tests (fake `exec`, injected clock) cover each failure:
+- [x] "submitted" needs proof: Orca's `--wait-submit` turn start, or that session's prompt-submit hook within 5 s. Without it the status is "typed". The text is never resent and Enter is never pressed again automatically. `POST /v1/reply/submit {id}` sends Enter alone.
+  - Orca's own report waits on a real run of `orca terminal send` being recorded. Until then the hook confirms.
+- [x] Lines are joined into one before sending
+- [x] Before typing, the driver checks that the session is idle and its prompt is empty, and refuses if it can't tell
+- [x] An Orca driver (`adapters/orca`) runs `orca terminal show`, `orca terminal read --screen` and `orca terminal send … --enter --wait-submit 5 --json` through an injected `exec`. `mouthpiece start` passes it to the daemon. A tmux driver comes later.
+- [x] Tests (fake `exec`, injected clock) cover each failure:
   - Enter absorbed: no hook arrives, so the status is "typed";
   - multi-line input is joined;
   - text is left at the prompt, so the reply is refused;
   - mid-turn, so the reply is refused;
   - a newer response, so the reply is refused;
   - two replies at once, so the second is refused.
-- [ ] Alert entries can't be replied to
-- [ ] Reply text never appears in logs
-- [ ] `mouthpiece inbox` and `mouthpiece reply <label|id> <text…>` work
-- [ ] Tests use fake `exec` and fake drivers; no real terminal is ever typed into
-- [ ] `bun run check` passes
+- [x] Alerts are never inbox entries. They attach to an entry without blocking replies; a permission menu is refused by the screen check.
+- [x] Reply text never appears in logs
+- [x] `mouthpiece inbox` and `mouthpiece reply <label|id> <text…>` work
+- [x] Tests use fake `exec` and fake drivers; no real terminal is ever typed into
+- [x] `bun run check` passes
 
 #### US-026: Inbox panel in the menubar app
 **Description:** As a user, I want a small window that shows each new response with a reply box, so I can answer a session without finding its terminal.
