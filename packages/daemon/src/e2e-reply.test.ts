@@ -129,3 +129,37 @@ test("dismissing an entry removes it from the inbox", async () => {
   expect([res.status, await res.json()]).toEqual([200, { dismissed: 1 }]);
   expect(await entries()).toEqual([]);
 });
+
+test("an entry's summary is set only when the response was summarized", async () => {
+  await boot(new FakeDriver());
+  await speak(
+    { text: "Short reply, spoken in full.", source: "agent", conversationId: "c1", reply: route },
+    o(),
+  );
+  await daemon.queue.idle();
+  const [short] = await entries();
+  expect(short.summary).toBeUndefined();
+});
+
+test("a summarized response's entry carries the summary", async () => {
+  home = await mkdtemp(join(tmpdir(), "mp-e2e-reply-"));
+  daemon = await startDaemon({
+    env: { MOUTHPIECE_HOME: home, MOUTHPIECE_CONFIG: join(home, "config.toml") },
+    port: 0,
+    provider: new FakeProvider(),
+    player: new FakePlayer({ durationMs: 1 }),
+    log: () => {},
+    summarizer: { name: "fake", summarize: async () => "The short version." },
+    hotkeys: false,
+    watch: false,
+    config: resolveConfig({ reply: { enabled: true } }),
+    replyDrivers: () => [new FakeDriver()],
+  });
+  const long =
+    "The migration ran, every table was checked, and the report is ready to read. ".repeat(8);
+  await speak({ text: long, source: "agent", conversationId: "c1", reply: route }, o());
+  await daemon.queue.idle();
+  const [entry] = await entries();
+  expect(entry.summary).toBe("The short version.");
+  expect(entry.text).toBe(long);
+});

@@ -149,10 +149,16 @@ struct ConversationView: View {
             Text(metaLine(entry, now: context.date.timeIntervalSince1970 * 1000))
               .font(.system(size: 11)).foregroundStyle(.secondary)
           }
-          Text(markdown(entry.text))
+          let shown = messageDisplay(entry, expanded: model.isExpanded(key))
+          Text(markdown(shown.text))
             .font(.system(size: 13)).lineSpacing(2)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
+          if let toggle = shown.toggle {
+            Button(toggle) { model.toggleExpanded(key) }
+              .buttonStyle(.link)
+              .font(.system(size: 12))
+          }
         }
         .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 6)
       }

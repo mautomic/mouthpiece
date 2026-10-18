@@ -292,6 +292,24 @@ func metaLine(_ entry: InboxEntry, now: Double) -> String {
   return parts.joined(separator: " · ")
 }
 
+// MARK: - Message (summary first)
+
+/// What the message area shows: the spoken summary until expanded, else the full reply. The
+/// toggle's title, or nil when there's no summary (a reply spoken in full).
+struct MessageDisplay: Equatable {
+  let text: String
+  let toggle: String?
+}
+
+func messageDisplay(_ entry: InboxEntry, expanded: Bool) -> MessageDisplay {
+  guard let summary = entry.summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    return MessageDisplay(text: entry.text, toggle: nil)
+  }
+  return expanded
+    ? MessageDisplay(text: entry.text, toggle: "Show summary")
+    : MessageDisplay(text: summary, toggle: "Show full response")
+}
+
 // MARK: - Self-test (--self-test-inbox)
 
 /// Checks the inbox logic offline. Prints "ok" and returns 0, or one "FAIL <case>" line per failure and 1.
@@ -523,6 +541,36 @@ func runInboxSelfTest() -> Int32 {
   rv.selected = conversationKey(six[5])
   rv.update(six.filter { $0.id != "r4" && $0.id != "r6" })
   check(rv.selected == conversationKey(six[4]), "vm: removing the last tab selects the one above")
+
+  // Summary first: the message shows the spoken summary until you expand it
+  let longReply = InboxEntry(
+    id: "s1", source: "agent", conversationId: "s", label: "web", text: "The whole long reply.",
+    summary: "The short version.", at: 1, route: nil, state: "waiting")
+  let shortReply = InboxEntry(
+    id: "s2", source: "agent", conversationId: "t", label: "web", text: "Done.", summary: nil, at: 1,
+    route: nil, state: "waiting")
+  check(
+    messageDisplay(longReply, expanded: false) == MessageDisplay(text: "The short version.", toggle: "Show full response"),
+    "message: a summarized reply shows its summary first")
+  check(
+    messageDisplay(longReply, expanded: true) == MessageDisplay(text: "The whole long reply.", toggle: "Show summary"),
+    "message: expanded shows the full reply")
+  check(messageDisplay(shortReply, expanded: false) == MessageDisplay(text: "Done.", toggle: nil), "message: no summary, no toggle")
+  let blankSummary = InboxEntry(
+    id: "s3", source: "agent", conversationId: "u", label: nil, text: "Full.", summary: "  ", at: 1, route: nil,
+    state: "waiting")
+  check(messageDisplay(blankSummary, expanded: false).toggle == nil, "message: a blank summary counts as none")
+  let ev = InboxViewModel()
+  let e1 = entry("e1", conv: "e", at: 1)
+  ev.update([e1])
+  check(!ev.isExpanded(conversationKey(e1)), "vm: starts collapsed")
+  ev.toggleExpanded(conversationKey(e1))
+  check(ev.isExpanded(conversationKey(e1)), "vm: toggles to expanded")
+  ev.update([entry("e2", conv: "e", at: 2)])
+  check(!ev.isExpanded(conversationKey(e1)), "vm: a newer response starts collapsed")
+  ev.toggleExpanded(conversationKey(e1))
+  ev.update([])
+  check(!ev.isExpanded(conversationKey(e1)), "vm: a removed conversation forgets it")
 
   if failures.isEmpty {
     print("ok")

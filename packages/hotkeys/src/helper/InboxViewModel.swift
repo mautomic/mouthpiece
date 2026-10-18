@@ -22,6 +22,8 @@ final class InboxViewModel: ObservableObject {
   /// The result line under the message, per conversation.
   @Published private(set) var results: [String: ReplyOutcome] = [:]
   @Published private(set) var inFlight: Set<String> = []
+  /// Conversations showing their full reply instead of the summary.
+  @Published private(set) var expanded: Set<String> = []
   /// Bumped to move the cursor into the reply box (the hotkey or menubar path only).
   @Published private(set) var focusRequest = 0
   var actions: InboxActions?
@@ -43,6 +45,7 @@ final class InboxViewModel: ObservableObject {
       keys.insert(key)
       if let previous = entryIds[key], previous != entry.id {
         results[key] = nil
+        expanded.remove(key)  // a newer response starts collapsed
         if let draft = drafts[key] {
           if carriedDraft(text: draft, lastSent: lastSent[key]) != nil {
             results[key] = .refused(reason: "newer", error: "")
@@ -59,6 +62,7 @@ final class InboxViewModel: ObservableObject {
       results[key] = nil
       lastSent[key] = nil
       inFlight.remove(key)
+      expanded.remove(key)
     }
     // The selected tab went (✕, ⌘⌫, Clear all): select the tab that takes its place.
     let removedAt = selected.flatMap { key in
@@ -93,6 +97,12 @@ final class InboxViewModel: ObservableObject {
   }
 
   func requestFocus() { focusRequest += 1 }
+
+  func isExpanded(_ key: String) -> Bool { expanded.contains(key) }
+
+  func toggleExpanded(_ key: String) {
+    if expanded.contains(key) { expanded.remove(key) } else { expanded.insert(key) }
+  }
 
   func began(_ key: String) { inFlight.insert(key) }
 
