@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import type { Env, Summarizer } from "@mouthpiece/core";
 import { summaryPrompt, wrapMessage } from "./prompt.ts";
-import { trimToSentences } from "./trim.ts";
+import { trimKeepingLast } from "./trim.ts";
 
 export interface ClaudeCliOptions {
   command: string;
@@ -73,7 +73,11 @@ export class ClaudeCliSummarizer implements Summarizer {
       ]);
       options.signal?.throwIfAborted();
       if (code !== 0) throw new Error(`claude exited with ${code}: ${stderr.trim()}`);
-      const summary = trimToSentences(stdout.trim(), this.opts.maxChars);
+      // Cut from the middle: the summary ends with what the user needs to do.
+      // Code and emphasis marks the model sometimes adds would be read out; underscores stay
+      // (voice ids like af_bella).
+      const spoken = stdout.trim().replace(/[`*]/g, "");
+      const summary = trimKeepingLast(spoken, this.opts.maxChars);
       if (!summary) throw new Error("empty summary");
       return summary;
     } finally {

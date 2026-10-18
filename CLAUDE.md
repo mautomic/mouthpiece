@@ -35,7 +35,7 @@ Mouthpiece is a local, source-agnostic voice layer. A loopback daemon accepts te
 packages/core       contracts (types), envelope validation, cleaning, chunking, config (+ setTomlValue line editor), WAV helpers (readWavPcm, trimWavSilence), home/token
 packages/providers  TtsProvider implementations (say, kokoro, inworld, elevenlabs, deepgram, openai), voice map, fallback chain
 packages/daemon     HTTP server, speech queue (pause/resume by reason), speaker pipeline (render-ahead + start gate), stream player (mouthpiece-player) with afplay fallback, settings (GET/POST /v1/settings writes config.toml), usage metering, quota gate, status
-packages/summarizers  Summarizer backends (claude -p; prompt sized to the reply, to-dos first) + first-sentence fallback
+packages/summarizers  Summarizer backends (claude -p; prompt sized to the reply: key results first, the user's to-dos and questions last; trimmed from the middle) + first-sentence fallback
 packages/hotkeys    helper app bundle: MouthpieceHelper (global hotkeys, menubar, mic watcher) and mouthpiece-player (gap-free audio): Swift sources + TypeScript build/args/supervisor
 packages/client     @mouthpiece/client: speak/interrupt/stop/skip/health/mode/replay/usage/voices/status/pause/resume/settings over HTTP
 packages/hook-kit   @mouthpiece/hook-kit: silent hook runtime (runHook, HookContext, labelFromCwd, approvalText) shared by hook adapters

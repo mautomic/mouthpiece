@@ -10,13 +10,19 @@ test("the target is about 40% of the message, at least 200, and 60 under the lim
   expect(summaryPrompt(700, 1000)).toContain("Aim for about 400 characters, never more.");
 });
 
-test("questions and what the user must do come before what happened, so trimming can't drop them", () => {
+test("the most important results come first, and what the user must do or answer comes last", () => {
   const prompt = summaryPrompt(700, 1000);
-  const question = prompt.indexOf("1. Any question or decision");
-  const userAction = prompt.indexOf("2. Anything the user needs to do");
-  const happened = prompt.indexOf("3. What the assistant did");
-  expect(question).toBeGreaterThan(-1);
-  expect(userAction).toBeGreaterThan(question);
-  expect(happened).toBeGreaterThan(userAction);
-  expect(prompt).toContain("Never leave out");
+  const results = prompt.indexOf("1. The most important things the assistant did");
+  const userAction = prompt.indexOf("2. End with anything the user needs to do");
+  expect(results).toBeGreaterThan(-1);
+  expect(userAction).toBeGreaterThan(results);
+  expect(prompt).toContain("most important first");
+  expect(prompt).toContain("including any question");
+  expect(prompt).toContain("Never leave out a question or something the user needs to do");
+});
+
+test("with nothing for the user to do, the summary just ends (no 'no action needed')", () => {
+  expect(summaryPrompt(700, 1000)).toContain(
+    "If there is nothing for the user to do or answer, just end",
+  );
 });

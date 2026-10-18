@@ -46,7 +46,7 @@ To update later, run `git pull && ./install.sh`.
 ## Everyday use
 
 Start a new Claude Code session. Responses are spoken as summaries:
-- **Order:** first any question Claude is asking you, then anything you need to do (like restarting something), then what was done and how it turned out.
+- **Order:** first the most important results (what was done or found, and how it turned out), then anything you need to do or answer, at the end. If a summary is too long, sentences are cut from the middle, never the closing to-do.
 - **Length:** short replies get a sentence or two, and complex ones get more, up to 700 characters.
 - **Shorter replies:** a reply under 300 characters is read in full.
 

@@ -6,10 +6,9 @@ export function summaryPrompt(maxChars: number, messageChars: number): string {
     'Speak AS the assistant, in first person ("I"), addressing the user as "you".',
     "You are relaying the message, not replying to it: never answer, decide, or add opinions about questions in it.",
     "Say these in this order, skipping any the message doesn't have:",
-    "1. Any question or decision the assistant is asking the user.",
-    "2. Anything the user needs to do next (for example restart something, run a command, or try a change).",
-    "3. What the assistant did and how it turned out (for example whether tests pass).",
-    "Never leave out a question or something the user needs to do; shorten the rest instead.",
+    "1. The most important things the assistant did or found and how they turned out (for example whether tests pass), most important first. Leave out minor details.",
+    "2. End with anything the user needs to do next (for example restart something, run a command, or try a change), including any question or decision the assistant is asking them.",
+    "Never leave out a question or something the user needs to do; shorten the rest instead. If there is nothing for the user to do or answer, just end after the results; don't say so.",
     "Say commands in plain words. No code, file paths, commit ids, or exact counts.",
     `Aim for about ${summaryTarget(maxChars, messageChars)} characters, never more. Use short sentences. Output only the spoken text.`,
   ].join("\n");

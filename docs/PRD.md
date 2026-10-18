@@ -319,7 +319,10 @@ Stories are grouped by phase. Each should fit in one focused session.
   - Tools are disabled for the child, and the summarize prompt is passed on stdin
 - [ ] **Optional backend:** calls `claude-haiku-5-5` through `@anthropic-ai/sdk` with `effort: "low"`, used only when `summarizer.backend = "api"` and a key is configured
 - [ ] Both backends share one prompt. Updated 2026-10-17: the target is sized to the response, about 40% of its length, at least 200 characters and at most `summarizer.maxChars` (default 700, was 350).
-- [ ] The prompt puts **questions and decisions for the user** first, then **anything the user needs to do** (restart something, run a command, try a change), then what was done and how it turned out. It never drops a question or a to-do, and never reads code, file paths, commit ids or exact counts aloud.
+- [ ] The prompt leads with **the most important results** (what was done or found and how it turned out), leaving out minor details. It ends with **anything the user needs to do** (restart something, run a command, try a change), including any question or decision for them.
+  - Updated 2026-10-18 at the user's request. It was questions first, then to-dos, then results.
+  - It never drops a question or a to-do, and never reads code, file paths, commit ids or exact counts aloud.
+  - An over-long summary is trimmed from the middle, so the closing to-do always survives.
 - [ ] Responses already shorter than the summary threshold (~300 characters after cleaning) skip the LLM call
 - [ ] Falls back to the first ~2 sentences of the cleaned text on error or timeout. Defaults: 12 s for `claude -p` (measured 2–8 s, longer for complex replies; was 6 s), 2.5 s for the API.
 - [ ] Stores both the summary and the full cleaned text for each item, for replay
