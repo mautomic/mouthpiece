@@ -41,6 +41,9 @@ function harness() {
       status: unused,
       pause: unused,
       resume: unused,
+      inbox: unused,
+      reply: unused,
+      submitReply: unused,
     },
     startDaemon: unused,
     env: {

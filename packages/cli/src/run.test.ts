@@ -39,6 +39,9 @@ function harness(
       replay: async () => ({ id: null }),
       usage: async () => ({ from: "2026-10-01", to: "2026-11-01", rows: [], quotas: [] }),
       voices: async () => ({ providers: [] }),
+      inbox: async () => ({ enabled: false, entries: [] }),
+      reply: async () => ({ status: "submitted" }),
+      submitReply: async () => ({ status: "submitted" }),
       status: async () => ({
         version: "0.1.0",
         speaking: false,

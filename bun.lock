@@ -67,6 +67,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@mouthpiece/adapter-file-tail": "workspace:*",
+        "@mouthpiece/adapter-orca": "workspace:*",
         "@mouthpiece/adapter-tmux": "workspace:*",
         "@mouthpiece/client": "workspace:*",
         "@mouthpiece/core": "workspace:*",

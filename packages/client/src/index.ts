@@ -2,6 +2,7 @@ import {
   daemonUrl,
   type Env,
   type HealthResponse,
+  type InboxResponse,
   type InterruptRequest,
   type InterruptResult,
   type ModeRequest,
@@ -11,6 +12,9 @@ import {
   type PauseResponse,
   type ReplayRequest,
   type ReplayResponse,
+  type ReplyRequest,
+  type ReplyResponse,
+  type ReplySubmitRequest,
   readToken,
   type SettingsResponse,
   type SettingsUpdate,
@@ -35,6 +39,7 @@ export class MouthpieceError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    readonly reason?: string,
   ) {
     super(message);
   }
@@ -79,7 +84,12 @@ async function request<T>(
   }
   if (!response.ok) {
     const message = (data as { error?: string }).error ?? `HTTP ${response.status}`;
-    throw new MouthpieceError(message, response.status);
+    const reason = (data as { reason?: unknown }).reason;
+    throw new MouthpieceError(
+      message,
+      response.status,
+      typeof reason === "string" ? reason : undefined,
+    );
   }
   return data as T;
 }
@@ -126,3 +136,15 @@ export const getSettings = (opts: ClientOptions = {}) =>
   request<SettingsResponse>("GET", "/v1/settings", undefined, opts);
 export const updateSettings = (update: SettingsUpdate, opts: ClientOptions = {}) =>
   request<SettingsResponse>("POST", "/v1/settings", update, opts);
+
+/** A reply waits on the terminal (up to ~19 s in the daemon); keep the client above that. */
+export const REPLY_TIMEOUT_MS = 25_000;
+export const inbox = (opts: ClientOptions = {}) =>
+  request<InboxResponse>("GET", "/v1/inbox", undefined, opts);
+export const reply = (req: ReplyRequest, opts: ClientOptions = {}) =>
+  request<ReplyResponse>("POST", "/v1/reply", req, { timeoutMs: REPLY_TIMEOUT_MS, ...opts });
+export const submitReply = (req: ReplySubmitRequest, opts: ClientOptions = {}) =>
+  request<ReplyResponse>("POST", "/v1/reply/submit", req, {
+    timeoutMs: REPLY_TIMEOUT_MS,
+    ...opts,
+  });
