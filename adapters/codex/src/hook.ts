@@ -1,5 +1,5 @@
 import { isRecord } from "@mouthpiece/core";
-import { approvalText, type HookContext, labelFromCwd } from "@mouthpiece/hook-kit";
+import { approvalText, type HookContext, labelFromCwd, replyRoute } from "@mouthpiece/hook-kit";
 
 export const SOURCE = "codex";
 
@@ -11,6 +11,7 @@ export const SOURCE = "codex";
 export async function handleHook(event: string, input: unknown, ctx: HookContext): Promise<void> {
   if (ctx.env.MOUTHPIECE_CHILD === "1" || !isRecord(input)) return;
   const sessionId = typeof input.session_id === "string" ? input.session_id : undefined;
+  const route = replyRoute(ctx.env, "codex");
   switch (event) {
     case "stop": {
       const text = input.last_assistant_message;
@@ -22,6 +23,7 @@ export async function handleHook(event: string, input: unknown, ctx: HookContext
         label: labelFromCwd(input.cwd),
         kind: "response",
         format: "markdown",
+        ...(route && { reply: route }),
       });
       return;
     }
@@ -39,6 +41,7 @@ export async function handleHook(event: string, input: unknown, ctx: HookContext
         conversationId: sessionId,
         kind: "alert",
         format: "plain",
+        ...(route && { reply: route }),
       });
       return;
     }

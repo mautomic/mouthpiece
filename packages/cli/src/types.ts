@@ -23,11 +23,16 @@ export interface CliDeps {
     | "status"
     | "pause"
     | "resume"
+    | "inbox"
+    | "reply"
+    | "submitReply"
   >;
   startDaemon(): Promise<{ url: string }>;
   env: Env;
   exec: Exec;
   paths: { repoRoot: string; bun: string };
+  /** The clock, for ages in `mouthpiece inbox`. Default Date.now. */
+  now?: () => number;
 }
 
 /**

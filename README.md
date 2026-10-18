@@ -180,6 +180,27 @@ All settings and their defaults are in [`packages/core/src/config.ts`](packages/
 
   `mouthpiece mode off --source lambda-ai` mutes it. See [`docs/api.md`](docs/api.md) for every endpoint and field.
 
+## Replying to a session (Orca)
+
+Mouthpiece keeps the latest response of each session in an inbox. When a session runs in an Orca terminal, you can
+answer it without finding its tab: the reply is typed at its prompt and submitted.
+
+```toml
+[reply]
+enabled = true      # off by default
+```
+
+```sh
+mouthpiece inbox                      # the latest response of each session
+mouthpiece reply web "yes, run the migration"
+```
+
+Mouthpiece only types into a session that is waiting for you, is still the same agent, is idle, and has an empty
+prompt; anything it can't check is refused, never typed blind. A reply is joined into one line. "typed, not submitted"
+means Mouthpiece couldn't confirm the agent started; check the terminal, or run `mouthpiece reply --submit <id>`.
+Works with Claude Code and Codex sessions. `enabled` applies without a restart. The Orca CLI path is
+`[reply] orca`, by default Orca's bundled one; it is read when the daemon starts.
+
 ## Running the daemon
 
 The daemon is a launchd agent (`dev.mouthpiece.daemon`). It starts at login and is restarted if it crashes. Its log is `~/.mouthpiece/daemon.log`.

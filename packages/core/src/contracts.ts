@@ -39,6 +39,8 @@ export interface SpeakEvent {
   verbatim?: boolean;
   /** "always": speak the label before every item; "auto" (default): only when 2+ conversations are active. */
   announce?: Announce;
+  /** Where a reply to this event goes (PRD §13); a bad route is dropped, never refused. */
+  reply?: ReplyRoute;
 }
 
 /** A SpeakEvent after validation, with defaults applied. */
@@ -54,6 +56,7 @@ export interface NormalizedSpeakEvent {
   voice: string | undefined;
   verbatim: boolean;
   announce: Announce;
+  reply: ReplyRoute | undefined;
 }
 
 export type SpeakResponse = { id: string } | { id: null; skipped: string };
@@ -209,6 +212,96 @@ export interface Summarizer {
 export interface ConversationDriver {
   readonly source: string;
   send(conversationId: string, text: string): Promise<void>;
+}
+
+/** Terminal hosts a reply can be typed into (PRD §13). */
+export const REPLY_VIAS = ["orca"] as const;
+export type ReplyVia = (typeof REPLY_VIAS)[number];
+
+/** Where a reply goes: a terminal (`target`) on a host (`via`) running a program (`agent`, opaque). */
+export interface ReplyRoute {
+  via: ReplyVia;
+  target: string;
+  agent: string;
+}
+
+export const INBOX_STATES = ["waiting", "busy", "sending", "typed"] as const;
+export type InboxState = (typeof INBOX_STATES)[number];
+
+/** GET /v1/inbox: the latest response of one conversation. */
+export interface InboxEntry {
+  id: string;
+  source: string;
+  conversationId: string;
+  label?: string;
+  text: string;
+  /** The spoken text, once prepared. */
+  summary?: string;
+  at: number;
+  alert?: { text: string; at: number };
+  route?: ReplyRoute;
+  state: InboxState;
+  /** When a reply was last sent from here; its text is never returned. */
+  reply?: { at: number };
+}
+
+export interface InboxResponse {
+  /** `[reply] enabled`. */
+  enabled: boolean;
+  /** Newest first. */
+  entries: InboxEntry[];
+}
+
+export interface ReplyRequest {
+  id: string;
+  text: string;
+}
+
+export interface ReplySubmitRequest {
+  id: string;
+}
+
+/** 202 from POST /v1/reply and /v1/reply/submit. */
+export interface ReplyResponse {
+  /** `submitted`: a turn start was observed. `typed`: the text is at the prompt, not submitted. */
+  status: "submitted" | "typed";
+}
+
+export const REPLY_REFUSALS = [
+  "invalid",
+  "disabled",
+  "busy",
+  "newer",
+  "in-flight",
+  "not-typed",
+  "draft",
+  "not-idle",
+  "not-agent",
+  "unverified",
+  "gone",
+  "too-long",
+  "no-route",
+  "send-failed",
+] as const;
+export type ReplyRefusal = (typeof REPLY_REFUSALS)[number];
+
+/** A refused reply: 400, 403, 409, 410, 413, 422 or 502. */
+export interface ReplyRefusalResponse {
+  error: string;
+  reason: ReplyRefusal;
+}
+
+export type ReplyCheck =
+  | { ok: true }
+  | { ok: false; reason: "gone" | "not-agent" | "not-idle" | "draft" | "unverified" };
+
+/** Types replies into a terminal host (PRD §13). Implementations live in adapters. */
+export interface ReplyDriver {
+  readonly via: string;
+  /** Is the terminal still `route.agent`, idle, with an empty prompt (or one starting with `typed`)? */
+  check(route: ReplyRoute, typed?: string): Promise<ReplyCheck>;
+  /** Types `text` (empty: Enter alone), then Enter. `submitted` only when the host saw a turn start. */
+  send(route: ReplyRoute, text: string): Promise<{ submitted: boolean }>;
 }
 
 export type Logger = (record: Record<string, unknown>) => void;

@@ -57,6 +57,9 @@ function harness(response: VoicesResponse = RESPONSE) {
         timeouts.push(opts?.timeoutMs);
         return response;
       },
+      inbox: async () => ({ enabled: false, entries: [] }),
+      reply: async () => ({ status: "submitted" }),
+      submitReply: async () => ({ status: "submitted" }),
     },
     startDaemon: async () => ({ url: "http://127.0.0.1:7317" }),
     env: {},

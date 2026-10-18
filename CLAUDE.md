@@ -46,9 +46,10 @@ adapters/codex      Codex CLI hooks
 adapters/gemini     Gemini CLI hooks
 adapters/file-tail  session-log tailers for tools without hooks (`mouthpiece tail`, `[[follow]]`), including Margin review logs
 adapters/tmux       TmuxDriver (ConversationDriver over `tmux send-keys`; `mouthpiece send`)
+adapters/orca       OrcaReplyDriver: types replies into Orca terminals (`mouthpiece reply`), with per-agent screen rules
 ```
 
-Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client` ← `daemon` ← `cli`. `daemon` may depend on `providers`, `summarizers`, and `hotkeys`; `cli` may also depend on `providers`, `hotkeys`, `adapters/file-tail`, and `adapters/tmux`. `packages/listen` is a standalone prototype: it depends only on `core`, and nothing depends on it. `hook-kit` may depend only on `core` and `client`. `adapters/*` may depend only on `core`, `client`, and `hook-kit`.
+Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client` ← `daemon` ← `cli`. `daemon` may depend on `providers`, `summarizers`, and `hotkeys`; `cli` may also depend on `providers`, `hotkeys`, `adapters/file-tail`, `adapters/tmux`, and `adapters/orca`. `packages/listen` is a standalone prototype: it depends only on `core`, and nothing depends on it. `hook-kit` may depend only on `core` and `client`. `adapters/*` may depend only on `core`, `client`, and `hook-kit`.
 
 ## Conventions
 
@@ -90,5 +91,6 @@ Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client`
 6. **Never run these against the real system:**
    - `install.sh`, `uninstall.sh`, `launchctl` or `security`;
    - `mouthpiece install-*`, `uninstall-*`, `auth`, `daemon start|stop|restart`, `build-helper` or `kokoro install|uninstall`.
+   - `orca terminal send` against a real terminal. Tests inject `exec`; replies go only through `mouthpiece reply`, run by the user.
 
    Use `MOUTHPIECE_DRY_RUN=1` with a temp `HOME`, inject `exec` fakes, and build the helper only into a temp dir. When the user needs one of these run, give them the command (they can type `! <command>`).

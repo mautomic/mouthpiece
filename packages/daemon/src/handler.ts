@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import {
   type HealthResponse,
+  type InboxResponse,
   type InterruptRequest,
   type InterruptResult,
   type ModeRequest,
@@ -11,10 +12,14 @@ import {
   parseModeRequest,
   parsePauseRequest,
   parseReplayRequest,
+  parseReplyRequest,
+  parseReplySubmitRequest,
   parseSettingsUpdate,
   parseSpeakEvent,
   type ReplayRequest,
   type ReplayResponse,
+  type ReplyRequest,
+  type ReplySubmitRequest,
   type SettingsResponse,
   type SettingsUpdate,
   type ShutdownResponse,
@@ -23,6 +28,8 @@ import {
   type UsageReport,
   type VoicesResponse,
 } from "@mouthpiece/core";
+import type { InboxChange } from "./inbox.ts";
+import type { ReplyResult } from "./reply.ts";
 import type { SaveResult } from "./settings.ts";
 
 export const MAX_BODY_BYTES = 1_000_000;
@@ -58,6 +65,14 @@ export interface HandlerDeps {
   updateSettings(update: SettingsUpdate): Promise<SaveResult>;
   /** Stops the daemon after the reply is sent (the menubar's Quit). */
   shutdown(): ShutdownResponse;
+  /** GET /v1/inbox (US-025). */
+  inbox(): InboxResponse;
+  /** Inbox changes, for GET /v1/inbox/events; returns the unsubscribe. */
+  subscribeInbox(listener: (change: InboxChange) => void): () => void;
+  /** POST /v1/reply: delivers under the PRD §13 controls. */
+  reply(req: ReplyRequest): Promise<ReplyResult>;
+  /** POST /v1/reply/submit: Enter for a typed reply. */
+  submitReply(req: ReplySubmitRequest): Promise<ReplyResult>;
 }
 
 type Method = "GET" | "POST";
@@ -65,6 +80,49 @@ type Route = { auth: boolean; run: (body: unknown, url: URL) => Response | Promi
 
 function json(status: number, body: unknown, headers?: HeadersInit): Response {
   return Response.json(body, { status, headers });
+}
+
+/** Keeps the event stream open under the server's idleTimeout (30 s). */
+export const INBOX_KEEPALIVE_MS = 10_000;
+
+function replyResponse(result: ReplyResult): Response {
+  return result.ok
+    ? json(202, { status: result.status })
+    : json(result.http, { error: result.error, reason: result.reason });
+}
+
+/** GET /v1/inbox/events: a snapshot, then one server-sent event per change. */
+function inboxEvents(deps: HandlerDeps): Response {
+  const encoder = new TextEncoder();
+  let close = () => {};
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const write = (chunk: string) => {
+        try {
+          controller.enqueue(encoder.encode(chunk));
+        } catch {
+          close(); // the client went away
+        }
+      };
+      const send = (event: string, data: unknown) =>
+        write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      send("snapshot", deps.inbox());
+      const unsubscribe = deps.subscribeInbox((change) =>
+        change.type === "entry" ? send("entry", change.entry) : send("remove", { id: change.id }),
+      );
+      const timer = setInterval(() => write(": keepalive\n\n"), INBOX_KEEPALIVE_MS);
+      close = () => {
+        unsubscribe();
+        clearInterval(timer);
+      };
+    },
+    cancel() {
+      close();
+    },
+  });
+  return new Response(stream, {
+    headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
+  });
 }
 
 export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Response> {
@@ -164,6 +222,28 @@ export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Resp
     "/v1/pause": { POST: { auth: true, run: pauseRoute((reason) => deps.pause(reason)) } },
     "/v1/resume": { POST: { auth: true, run: pauseRoute((reason) => deps.resume(reason)) } },
     "/v1/shutdown": { POST: { auth: true, run: () => json(200, deps.shutdown()) } },
+    "/v1/inbox": { GET: { auth: true, run: () => json(200, deps.inbox()) } },
+    "/v1/inbox/events": { GET: { auth: true, run: () => inboxEvents(deps) } },
+    "/v1/reply": {
+      POST: {
+        auth: true,
+        run: async (body) => {
+          const parsed = parseReplyRequest(body);
+          if (!parsed.ok) return json(400, { error: parsed.error, reason: "invalid" });
+          return replyResponse(await deps.reply(parsed.value));
+        },
+      },
+    },
+    "/v1/reply/submit": {
+      POST: {
+        auth: true,
+        run: async (body) => {
+          const parsed = parseReplySubmitRequest(body);
+          if (!parsed.ok) return json(400, { error: parsed.error, reason: "invalid" });
+          return replyResponse(await deps.submitReply(parsed.value));
+        },
+      },
+    },
     "/v1/settings": {
       GET: { auth: true, run: () => json(200, deps.settings()) },
       POST: {

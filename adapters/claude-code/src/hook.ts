@@ -1,5 +1,5 @@
 import { isRecord } from "@mouthpiece/core";
-import { approvalText, type HookContext, labelFromCwd } from "@mouthpiece/hook-kit";
+import { approvalText, type HookContext, labelFromCwd, replyRoute } from "@mouthpiece/hook-kit";
 
 export const SOURCE = "claude-code";
 
@@ -9,6 +9,11 @@ export type HookDeps = HookContext;
 export async function handleHook(event: string, input: unknown, deps: HookContext): Promise<void> {
   if (deps.env.MOUTHPIECE_CHILD === "1" || !isRecord(input)) return;
   const sessionId = typeof input.session_id === "string" ? input.session_id : undefined;
+  // A headless `claude -p` run inside an Orca terminal inherits its handle; only the interactive
+  // session (entrypoint "cli") owns that terminal.
+  const entrypoint = deps.env.CLAUDE_CODE_ENTRYPOINT;
+  const route =
+    entrypoint === undefined || entrypoint === "cli" ? replyRoute(deps.env, "claude") : undefined;
   switch (event) {
     case "stop": {
       const text = await assistantText(input, deps);
@@ -20,6 +25,7 @@ export async function handleHook(event: string, input: unknown, deps: HookContex
         label: labelFromCwd(input.cwd),
         kind: "response",
         format: "markdown",
+        ...(route && { reply: route }),
       });
       return;
     }
@@ -36,6 +42,7 @@ export async function handleHook(event: string, input: unknown, deps: HookContex
         conversationId: sessionId,
         kind: "alert",
         format: "plain",
+        ...(route && { reply: route }),
       });
       return;
     }

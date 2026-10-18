@@ -9,7 +9,11 @@ import {
   type NormalizedSpeakEvent,
   type PauseRequest,
   PRIORITIES,
+  REPLY_VIAS,
   type ReplayRequest,
+  type ReplyRequest,
+  type ReplyRoute,
+  type ReplySubmitRequest,
   type SettingsUpdate,
 } from "./contracts.ts";
 import { isRecord } from "./guards.ts";
@@ -102,7 +106,44 @@ export function parseSpeakEvent(input: unknown): ParseResult<NormalizedSpeakEven
       voice: optionalString(input, "voice", MAX_VOICE_CHARS),
       verbatim: optionalBoolean(input, "verbatim") ?? false,
       announce: optionalEnum(input, "announce", ANNOUNCES) ?? "auto",
+      reply: parseReplyRoute(input.reply),
     };
+  });
+}
+
+const ORCA_TARGET = /^term_[A-Za-z0-9-]{1,128}$/;
+const AGENT_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+
+/** A reply route, or undefined when absent or invalid: a bad route never refuses the event. */
+export function parseReplyRoute(value: unknown): ReplyRoute | undefined {
+  if (!isRecord(value)) return undefined;
+  const { via, target, agent } = value;
+  if (typeof via !== "string" || !(REPLY_VIAS as readonly string[]).includes(via)) return undefined;
+  if (typeof target !== "string" || typeof agent !== "string") return undefined;
+  if (!AGENT_PATTERN.test(agent)) return undefined;
+  if (via === "orca" && !ORCA_TARGET.test(target)) return undefined;
+  return { via: via as ReplyRoute["via"], target, agent };
+}
+
+function requiredId(obj: Record<string, unknown>): string {
+  const id = obj.id;
+  if (typeof id !== "string" || id === "" || id.length > 64) fail("id must be a non-empty string");
+  return id;
+}
+
+export function parseReplyRequest(input: unknown): ParseResult<ReplyRequest> {
+  return parse(() => {
+    if (!isRecord(input)) fail("body must be a JSON object");
+    const text = input.text;
+    if (typeof text !== "string") fail("text must be a string");
+    return { id: requiredId(input), text };
+  });
+}
+
+export function parseReplySubmitRequest(input: unknown): ParseResult<ReplySubmitRequest> {
+  return parse(() => {
+    if (!isRecord(input)) fail("body must be a JSON object");
+    return { id: requiredId(input) };
   });
 }
 

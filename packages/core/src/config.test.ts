@@ -264,3 +264,18 @@ test("player backend: auto by default, afplay when set, anything else rejected",
   );
   expect(() => resolveConfig({ player: "afplay" })).toThrow("player must be a table");
 });
+
+test("[reply] defaults to off with a 5 s confirmation and no orca path", () => {
+  expect(resolveConfig({}).reply).toEqual({ enabled: false, confirmMs: 5000 });
+});
+
+test("[reply] reads enabled, confirmMs and orca", () => {
+  expect(
+    resolveConfig({ reply: { enabled: true, confirmMs: 2000, orca: "/opt/orca" } }).reply,
+  ).toEqual({ enabled: true, confirmMs: 2000, orca: "/opt/orca" });
+});
+
+test("[reply] rejects a bad value", () => {
+  expect(() => resolveConfig({ reply: { enabled: "yes" } })).toThrow("reply.enabled");
+  expect(() => resolveConfig({ reply: { confirmMs: 0 } })).toThrow("reply.confirmMs");
+});

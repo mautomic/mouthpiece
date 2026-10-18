@@ -126,3 +126,24 @@ test("MOUTHPIECE_CHILD=1 does nothing", async () => {
   expect(spoken).toEqual([]);
   expect(interrupts).toEqual([]);
 });
+
+const ORCA = { ORCA_TERMINAL_HANDLE: "term_148202cb-9a23-4308-8380-a4efd3957057" };
+const orcaRoute = { via: "orca", target: ORCA.ORCA_TERMINAL_HANDLE, agent: "codex" } as const;
+
+test("stop attaches the Orca reply route when Codex runs in Orca", async () => {
+  const { d, spoken } = deps(ORCA);
+  await handleHook("stop", { session_id: "s1", cwd: "/x/web", last_assistant_message: "Done." }, d);
+  expect(spoken[0]?.reply).toEqual(orcaRoute);
+});
+
+test("stop outside Orca has no reply field", async () => {
+  const { d, spoken } = deps();
+  await handleHook("stop", { session_id: "s1", cwd: "/x/web", last_assistant_message: "Done." }, d);
+  expect(spoken[0]).not.toHaveProperty("reply");
+});
+
+test("a permission alert attaches the route too", async () => {
+  const { d, spoken } = deps(ORCA);
+  await handleHook("permission", { session_id: "s1", cwd: "/x/web", tool_name: "Bash" }, d);
+  expect(spoken[0]?.reply).toEqual(orcaRoute);
+});

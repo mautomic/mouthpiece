@@ -2,12 +2,14 @@ import { MouthpieceError } from "@mouthpiece/client";
 import { authCommand } from "./commands/auth.ts";
 import { buildHotkeysCommand } from "./commands/build-hotkeys.ts";
 import { daemonCommand } from "./commands/daemon.ts";
+import { inboxCommand } from "./commands/inbox.ts";
 import { installAgentCommand } from "./commands/install-agent.ts";
 import { installHooksCommand } from "./commands/install-hooks.ts";
 import { kokoroCommand } from "./commands/kokoro.ts";
 import { modeCommand } from "./commands/mode.ts";
 import { pauseCommand } from "./commands/pause.ts";
 import { replayCommand } from "./commands/replay.ts";
+import { replyCommand } from "./commands/reply.ts";
 import { resumeCommand } from "./commands/resume.ts";
 import { sayCommand } from "./commands/say.ts";
 import { sendCommand } from "./commands/send.ts";
@@ -42,6 +44,9 @@ const USAGE = `usage: mouthpiece <command>
   auth <provider> [--delete]              read the API key from stdin
   kokoro install | status | uninstall     manage the free local Kokoro voice
   send --tmux <target> <text…>            type text into a tmux pane (conversation spike)
+  inbox                                   the latest response of each session
+  reply <id|label> [text…] | --submit <id|label>
+                                          type a reply into that session's terminal ([reply] enabled)
   build-hotkeys | build-helper            build the helper app (hotkeys, menubar, mic pause)`;
 
 export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<number> {
@@ -101,6 +106,10 @@ export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<num
         return await kokoroCommand(rest, io, deps);
       case "send":
         return await sendCommand(rest, io, deps);
+      case "inbox":
+        return await inboxCommand(rest, io, deps);
+      case "reply":
+        return await replyCommand(rest, io, deps);
       case "build-hotkeys":
       case "build-helper":
         return await buildHotkeysCommand(rest, io, deps);

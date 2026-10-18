@@ -33,6 +33,7 @@ function item(text: string, extra: Partial<NormalizedSpeakEvent> = {}): QueueIte
       voice: undefined,
       verbatim: false,
       announce: "auto",
+      reply: undefined,
       ...extra,
     },
   };

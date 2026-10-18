@@ -9,7 +9,9 @@ import {
   interrupt,
   MouthpieceError,
   pause,
+  REPLY_TIMEOUT_MS,
   replay,
+  reply,
   resume,
   setMode,
   shutdown,
@@ -171,4 +173,25 @@ test("settings are GET and POST /v1/settings", async () => {
 test("shutdown is POST /v1/shutdown", async () => {
   await shutdown({ url, token: "t" });
   expect(seen.at(-1)).toMatchObject({ method: "POST", path: "/v1/shutdown", auth: "Bearer t" });
+});
+
+test("a refused reply raises MouthpieceError with the status and reason", async () => {
+  const fetchFake = (async () =>
+    new Response(JSON.stringify({ error: "the prompt is not empty", reason: "draft" }), {
+      status: 409,
+    })) as unknown as typeof fetch;
+  const error = await reply(
+    { id: "e1", text: "go" },
+    { url: "http://x", token: "t", fetch: fetchFake },
+  ).catch((e) => e);
+  expect(error).toBeInstanceOf(MouthpieceError);
+  expect([error.status, error.reason, error.message]).toEqual([
+    409,
+    "draft",
+    "the prompt is not empty",
+  ]);
+});
+
+test("reply waits up to REPLY_TIMEOUT_MS by default", () => {
+  expect(REPLY_TIMEOUT_MS).toBe(25_000);
 });

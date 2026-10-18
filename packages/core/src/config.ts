@@ -75,6 +75,8 @@ export interface Config {
    * when it is built, else afplay. `afplay`: always afplay. Read when the daemon starts.
    */
   player: { backend: PlayerBackend };
+  /** `[reply]`: typing replies back into sessions (PRD §13). `orca` is read at start. */
+  reply: { enabled: boolean; confirmMs: number; orca?: string };
 }
 
 /** The largest `micPause.maxPauseMs`: 24 hours. */
@@ -122,6 +124,7 @@ export const DEFAULT_CONFIG: Config = {
   menubar: { enabled: true },
   micPause: { enabled: true, ignoreBundleIds: [], resumeDelayMs: 800, maxPauseMs: 600_000 },
   player: { backend: "auto" },
+  reply: { enabled: false, confirmMs: 5000 },
 };
 
 export class ConfigError extends Error {}
@@ -179,6 +182,7 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
   const menubar = table(root.menubar, "menubar");
   const micPause = table(root.micPause, "micPause");
   const player = table(root.player, "player");
+  const reply = table(root.reply, "reply");
   return structuredClone({
     provider: {
       chain: optional(provider.chain, "provider.chain", nonEmptyStringList) ?? base.provider.chain,
@@ -314,6 +318,14 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
     player: {
       backend:
         optional(player.backend, "player.backend", oneOf(PLAYER_BACKENDS)) ?? base.player.backend,
+    },
+    reply: {
+      enabled: optional(reply.enabled, "reply.enabled", bool) ?? base.reply.enabled,
+      confirmMs: optional(reply.confirmMs, "reply.confirmMs", positiveInt) ?? base.reply.confirmMs,
+      ...optionalField(
+        "orca",
+        optional(reply.orca, "reply.orca", nonEmptyString) ?? base.reply.orca,
+      ),
     },
   });
 }

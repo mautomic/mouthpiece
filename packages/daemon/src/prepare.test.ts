@@ -16,6 +16,7 @@ const ev = (text: string, extra: Partial<NormalizedSpeakEvent> = {}): Normalized
   voice: undefined,
   verbatim: false,
   announce: "auto",
+  reply: undefined,
   ...extra,
 });
 
