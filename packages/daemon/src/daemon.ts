@@ -381,7 +381,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
   /** US-019: load Kokoro in the background so the first item doesn't pay for it. */
   const warmUp = (list: TtsProvider[]) => {
     for (const p of list) {
-      if (p.name === "kokoro" && p instanceof KokoroProvider) void p.warmUp();
+      if (p instanceof KokoroProvider) void p.warmUp();
     }
   };
   warmUp(providers);

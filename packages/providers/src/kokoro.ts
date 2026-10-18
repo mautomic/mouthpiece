@@ -20,7 +20,7 @@ export type KokoroLoader = () => Promise<KokoroEngine>;
 export const KOKORO_MODEL = "onnx-community/Kokoro-82M-v1.0-ONNX";
 export const KOKORO_DTYPE = "q8";
 
-/** The English voices kokoro-js 1.2.1 accepts, in its own order, with display name and language. */
+/** The English voices kokoro-js 1.2.1 accepts, in its own order, with display names. */
 const VOICES: readonly (readonly [id: string, name: string])[] = [
   ["af_heart", "Heart"],
   ["af_alloy", "Alloy"],
@@ -52,6 +52,7 @@ const VOICES: readonly (readonly [id: string, name: string])[] = [
   ["bm_fable", "Fable"],
 ];
 
+/** An `a*` voice id is American English; a `b*` one is British. */
 export const KOKORO_VOICES: readonly VoiceInfo[] = VOICES.map(([id, name]) => ({
   id,
   name,

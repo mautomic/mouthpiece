@@ -116,8 +116,7 @@ export class SpeechQueue {
 
   /** True while any pause reason is active. Expires stale reasons (and resumes) first. */
   get paused(): boolean {
-    this.#expireReasons();
-    return this.#reasons.size > 0;
+    return this.pauseReasons().length > 0;
   }
 
   /** Active pause reasons. Expires stale reasons (and resumes) first. */
@@ -236,7 +235,7 @@ export class SpeechQueue {
     if (this.#reasons.size === 0) this.#pump();
   }
 
-  /** Dropping the held item or the queue while paused can leave nothing to wait for. */
+  /** Resolves `idle()` waiters once nothing is playing, held or queued. */
   #settleIfIdle(): void {
     if (this.#isIdle()) for (const resolve of this.#idleWaiters.splice(0)) resolve();
   }
@@ -250,7 +249,7 @@ export class SpeechQueue {
     this.#held = null;
     const item = held?.item ?? this.#pending.shift();
     if (!item) {
-      for (const resolve of this.#idleWaiters.splice(0)) resolve();
+      this.#settleIfIdle();
       return;
     }
     const controller = new AbortController();

@@ -138,7 +138,7 @@ func callDaemon(
   }.resume()
 }
 
-func post(_ path: String, _ body: String = "{}", done: ((Data?) -> Void)? = nil) {
+func post(_ path: String, _ body: String, done: ((Data?) -> Void)? = nil) {
   callDaemon("POST", path, body: body, done: done)
 }
 
@@ -216,9 +216,7 @@ final class Menubar: NSObject {
     let modeMenu = NSMenu()
     modeMenu.autoenablesItems = false
     for (title, mode) in [("Summary", "summary"), ("Full", "full"), ("Off", "off")] {
-      let entry = NSMenuItem(title: title, action: #selector(menuAction(_:)), keyEquivalent: "")
-      entry.target = self
-      entry.representedObject = ["/v1/mode", "{\"mode\":\"\(mode)\"}"]
+      let entry = routeItem(title, "/v1/mode", "{\"mode\":\"\(mode)\"}")
       modeMenu.addItem(entry)
       modeItems[mode] = entry
     }
@@ -242,10 +240,16 @@ final class Menubar: NSObject {
     poll()
   }
 
-  func addAction(_ title: String, _ path: String, _ body: String) {
+  /// A menu item that posts `body` to `path` when chosen.
+  func routeItem(_ title: String, _ path: String, _ body: String) -> NSMenuItem {
     let entry = NSMenuItem(title: title, action: #selector(menuAction(_:)), keyEquivalent: "")
     entry.target = self
     entry.representedObject = [path, body]
+    return entry
+  }
+
+  func addAction(_ title: String, _ path: String, _ body: String) {
+    let entry = routeItem(title, path, body)
     menu.addItem(entry)
     actionItems.append(entry)
   }
@@ -256,11 +260,11 @@ final class Menubar: NSObject {
   }
 
   @objc func togglePause(_ sender: NSMenuItem) {
-    let userPaused = status?.pauseReasons.contains("user") ?? false
     post(userPaused ? "/v1/resume" : "/v1/pause", "{\"reason\":\"user\"}") { [weak self] _ in self?.pollSoon() }
   }
 
   var reachable: Bool { status != nil }
+  var userPaused: Bool { status?.pauseReasons.contains("user") ?? false }
 
   func poll() {
     guard !inFlight else { return }
@@ -324,7 +328,6 @@ final class Menubar: NSObject {
       entry.isEnabled = reachable
       entry.state = status?.mode == mode ? .on : .off
     }
-    let userPaused = status?.pauseReasons.contains("user") ?? false
     pauseItem.title = userPaused ? "Resume speech" : "Pause speech"
     if let s = status {
       infoItem.title = "Mouthpiece \(s.version) · \(s.provider)"

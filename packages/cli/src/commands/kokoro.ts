@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { mouthpieceHome } from "@mouthpiece/core";
 import { isKokoroInstalled, kokoroHome } from "@mouthpiece/providers";
-import type { CliIO, CommandFn } from "../types.ts";
+import type { CliDeps, CliIO, CommandFn } from "../types.ts";
 
 export const KOKORO_PACKAGE = "kokoro-js@1.2.1";
 const USAGE = "usage: mouthpiece kokoro install | status | uninstall";
@@ -33,12 +33,7 @@ export const kokoroCommand: CommandFn = async (args, io, deps) => {
   }
 };
 
-async function install(
-  io: CliIO,
-  deps: Parameters<CommandFn>[2],
-  home: string,
-  dir: string,
-): Promise<number> {
+async function install(io: CliIO, deps: CliDeps, home: string, dir: string): Promise<number> {
   await mkdir(dir, { recursive: true });
   const pkg = join(dir, "package.json");
   if (!existsSync(pkg)) {
