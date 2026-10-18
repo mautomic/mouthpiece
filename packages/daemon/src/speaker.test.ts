@@ -1,8 +1,12 @@
 import { expect, test } from "bun:test";
 import {
+  type AudioClip,
+  type ChunkHint,
   collectChunks,
   type NormalizedSpeakEvent,
   type Player,
+  type SynthesizeOptions,
+  singleChunk,
   type TtsProvider,
 } from "@mouthpiece/core";
 import { FakeProvider } from "@mouthpiece/providers";
@@ -448,4 +452,94 @@ test("a frozen chunk longer than the new provider's limit is re-split from that 
   expect(player.played).toEqual(["Short one.", ...SENTENCES]);
   // After the two first-play calls (chunk 0, and chunk 1 prefetched), every chunk fits.
   expect(calls.slice(2).every((c) => c.length <= 40)).toBe(true);
+});
+
+/**
+ * A local-model stand-in: renders `renderMsPerChar` per character, then returns a silent 1 kHz
+ * float WAV of `audioMsPerChar` per character. Records when each chunk finished rendering.
+ */
+class TimedWavProvider {
+  readonly name = "local";
+  readonly maxCharsPerRequest = 400;
+  readonly pricePerMillionChars = 0;
+  readonly chunking: ChunkHint = {
+    withBreaks: { firstChars: 400, targetChars: 400 },
+    gapless: { targetChars: 30 },
+  };
+  readonly rendered = new Map<string, number>();
+  constructor(
+    private readonly renderMsPerChar: number,
+    private readonly audioMsPerChar: number,
+  ) {}
+  async synthesize(text: string, opts: SynthesizeOptions = {}): Promise<AudioClip> {
+    await Bun.sleep(text.length * this.renderMsPerChar);
+    opts.signal?.throwIfAborted();
+    this.rendered.set(text, performance.now());
+    const frames = text.length * this.audioMsPerChar; // 1 kHz: one frame per millisecond
+    const view = new DataView(new ArrayBuffer(44 + frames * 4));
+    const ascii = (o: number, t: string) =>
+      [...t].forEach((c, i) => {
+        view.setUint8(o + i, c.charCodeAt(0));
+      });
+    ascii(0, "RIFF");
+    view.setUint32(4, 36 + frames * 4, true);
+    ascii(8, "WAVE");
+    ascii(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 3, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, 1_000, true);
+    view.setUint32(28, 4_000, true);
+    view.setUint16(32, 4, true);
+    view.setUint16(34, 32, true);
+    ascii(36, "data");
+    view.setUint32(40, frames * 4, true);
+    return { format: "wav", chunks: singleChunk(new Uint8Array(view.buffer)) };
+  }
+}
+
+/** A gap-free player that records when each clip starts, and returns at once. */
+class StartTimes {
+  readonly gapless = true;
+  readonly starts: number[] = [];
+  async play(): Promise<void> {
+    this.starts.push(performance.now());
+  }
+}
+
+test("a short opener waits so the next chunk is ready in time", async () => {
+  // 4 ms of rendering and 20 ms of audio per character: "Hi." plays 60 ms; the next takes ~250 ms to render.
+  const opener = "Hi.";
+  const next = "This second sentence takes a good while to render, really.";
+  const provider = new TimedWavProvider(4, 20);
+  const player = new StartTimes();
+  await createSpeaker({ provider, player, log: () => {}, prepare, now: () => performance.now() })(
+    item(`${opener} ${next}`, { format: "plain" }),
+    ctx(),
+  );
+  const openerStart = player.starts[0] ?? 0;
+  // Playback reaches the second chunk 60 ms after the opener starts; it must be rendered by then.
+  expect(provider.rendered.get(next) ?? Infinity).toBeLessThanOrEqual(openerStart + 60 + 10);
+});
+
+test("a long first sentence starts as soon as it is rendered", async () => {
+  const first = "This first sentence is long enough to cover the next render.";
+  const second = "And this second one is about the same length as the first.";
+  const provider = new TimedWavProvider(4, 20);
+  const player = new StartTimes();
+  await createSpeaker({ provider, player, log: () => {}, prepare, now: () => performance.now() })(
+    item(`${first} ${second}`, { format: "plain" }),
+    ctx(),
+  );
+  expect(player.starts[0] ?? Infinity).toBeLessThan(provider.rendered.get(second) ?? 0);
+});
+
+test("without a gap-free player the speaker keeps its one-chunk prefetch and no gate", async () => {
+  const provider = new TimedWavProvider(4, 20);
+  const player = new FakePlayer();
+  await createSpeaker({ provider, player, log: () => {}, prepare })(
+    item("Hi. This one is the second sentence of the item.", { format: "plain" }),
+    ctx(),
+  );
+  expect(player.played).toHaveLength(1); // withBreaks packs the whole item into one clip
 });

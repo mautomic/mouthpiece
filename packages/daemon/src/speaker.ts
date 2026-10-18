@@ -3,14 +3,18 @@ import {
   type ChunkPacking,
   type Config,
   chunkText,
+  collectChunks,
+  delay,
   type Logger,
   type NormalizedSpeakEvent,
   type Player,
   shouldSpeak,
+  singleChunk,
   type TtsProvider,
 } from "@mouthpiece/core";
 import { speakable } from "./prepare.ts";
 import type { PlayFn, QueueItem } from "./queue.ts";
+import { type ChunkTiming, startDelayMs, wavAudioMs } from "./start-gate.ts";
 import type { Prepared, SpokenRecord } from "./types.ts";
 
 export interface SpeakerDeps {
@@ -25,10 +29,73 @@ export interface SpeakerDeps {
 
 type Synthesis = { ok: true; clip: AudioClip } | { ok: false; error: unknown };
 
+type Rendered = { result: Synthesis; timing: ChunkTiming };
+
+/**
+ * Renders `texts` one after another, each starting when the one before is done, as fast as the
+ * provider goes; records each one's render time and audio length.
+ */
+function renderInOrder(
+  texts: string[],
+  synthesize: (text: string) => Promise<Synthesis>,
+  now: () => number,
+): Promise<Rendered>[] {
+  const out: Promise<Rendered>[] = [];
+  let previous: Promise<unknown> = Promise.resolve();
+  for (const text of texts) {
+    const rendered = previous.then(async (): Promise<Rendered> => {
+      const started = now();
+      const result = await synthesize(text);
+      if (!result.ok) return { result, timing: { renderMs: now() - started, audioMs: 0 } };
+      const bytes = await collectChunks(result.clip.chunks);
+      const clip = { format: result.clip.format, chunks: singleChunk(bytes) };
+      const audioMs = clip.format === "wav" ? wavAudioMs(bytes) : undefined;
+      return { result: { ok: true, clip }, timing: { renderMs: now() - started, audioMs } };
+    });
+    out.push(rendered);
+    previous = rendered;
+  }
+  return out;
+}
+
+/**
+ * Waits until playback can start and never wait for a render (startDelayMs), re-estimating as each
+ * render finishes. Returns false if `signal` aborts.
+ */
+async function waitForStart(
+  chars: number[],
+  renders: Promise<Rendered>[],
+  startedAt: number,
+  now: () => number,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const first = renders[0];
+  if (!first) return true;
+  const done: ChunkTiming[] = [(await first).timing];
+  for (;;) {
+    if (signal.aborted) return false;
+    const wait = startDelayMs(chars, done) - (now() - startedAt);
+    const next = renders[done.length];
+    if (wait <= 0 || !next) return true;
+    const winner = await Promise.race([
+      delay(wait, signal).then(
+        () => "time" as const,
+        () => "aborted" as const,
+      ),
+      next.then(() => "render" as const),
+    ]);
+    if (winner === "aborted") return false;
+    if (winner === "time") return true;
+    done.push((await next).timing);
+  }
+}
+
 /**
  * prepare → label → chunk → synthesize (next chunk prefetched while the current one plays) → play.
  * A resumed item (US-022) starts at ctx.startChunk of the chunk list frozen on its first play, so a
  * chain change while paused (a new maxCharsPerRequest) can't shift or drop chunks.
+ * With a gap-free player and a provider that renders before it plays (a chunking hint), every chunk
+ * is rendered ahead and playback starts only once the rest can keep up (startDelayMs).
  */
 export function createSpeaker(deps: SpeakerDeps): PlayFn {
   const now = deps.now ?? Date.now;
@@ -75,6 +142,33 @@ export function createSpeaker(deps: SpeakerDeps): PlayFn {
     const firstChunk = chunks[startChunk];
     if (firstChunk === undefined && startChunk > 0) {
       deps.log({ level: "warn", msg: "resume_past_end", id: item.id, chunk: startChunk });
+    }
+    // A gap-free player with a local provider: render everything ahead, and start only when the rest
+    // can keep up, so speech never pauses once it starts (a longer start is fine).
+    if (deps.player.gapless && deps.provider.chunking && firstChunk !== undefined) {
+      const rest = chunks.slice(startChunk);
+      const startedAt = now();
+      const renders = renderInOrder(rest, synthesize, now);
+      const chars = rest.map((c) => c.length);
+      if (!(await waitForStart(chars, renders, startedAt, now, signal))) return;
+      for (const [offset, render] of renders.entries()) {
+        const i = startChunk + offset;
+        onChunk(i);
+        const { result } = await render;
+        if (signal.aborted) return;
+        if (!result.ok) {
+          logChunkFailure(i, result.error);
+          continue;
+        }
+        if (offset === 0 && !resumed)
+          deps.log({ msg: "first_audio", id: item.id, latencyMs: now() - item.enqueuedAt });
+        try {
+          await deps.player.play(result.clip, signal);
+        } catch (error) {
+          if (!signal.aborted) logChunkFailure(i, error);
+        }
+      }
+      return;
     }
     let next = firstChunk === undefined ? undefined : synthesize(firstChunk);
     for (let i = startChunk; next && !signal.aborted; i++) {
