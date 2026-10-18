@@ -59,3 +59,51 @@ test("stop kills the helper and prevents restarts", async () => {
   s.stop();
   expect(f.killed()).toBe(1);
 });
+
+test("onExit reports every exit, including the one it gives up after (US-022 stuck pause)", async () => {
+  const f = fakeSpawn([1, 1]);
+  const exits: number[] = [];
+  superviseHotkeys({
+    binary: "/b",
+    args: [],
+    log: () => {},
+    maxRestarts: 1,
+    backoffMs: 1,
+    spawn: f.spawn,
+    onExit: (code) => exits.push(code),
+  });
+  await Bun.sleep(50);
+  expect(f.started).toHaveLength(2);
+  expect(exits).toEqual([1, 1]);
+});
+
+test("onExit reports a fatal exit", async () => {
+  const f = fakeSpawn([2]);
+  const exits: number[] = [];
+  superviseHotkeys({
+    binary: "/b",
+    args: [],
+    log: () => {},
+    backoffMs: 1,
+    spawn: f.spawn,
+    onExit: (code) => exits.push(code),
+  });
+  await Bun.sleep(20);
+  expect(exits).toEqual([2]);
+});
+
+test("onExit is not called for the exit stop() causes", async () => {
+  let exit: (code: number) => void = () => {};
+  const exits: number[] = [];
+  const s = superviseHotkeys({
+    binary: "/b",
+    args: [],
+    log: () => {},
+    backoffMs: 1,
+    spawn: () => ({ exited: new Promise<number>((r) => (exit = r)), kill: () => exit(143) }),
+    onExit: (code) => exits.push(code),
+  });
+  s.stop();
+  await Bun.sleep(10);
+  expect(exits).toEqual([]);
+});

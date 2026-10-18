@@ -65,6 +65,7 @@
         "@mouthpiece/core": "workspace:*",
         "@mouthpiece/daemon": "workspace:*",
         "@mouthpiece/hotkeys": "workspace:*",
+        "@mouthpiece/providers": "workspace:*",
       },
     },
     "packages/client": {

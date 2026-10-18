@@ -42,7 +42,8 @@ test("install.sh dry run plans every step and writes nothing", async () => {
   expect(r.code).toBe(0);
   for (const step of [
     "install",
-    "build-hotkeys",
+    "Building helper (hotkeys, menubar, mic pause)",
+    "build-helper",
     "install-hooks",
     "install-agent",
     "Mouthpiece is ready",
@@ -134,10 +135,41 @@ test("uninstall.sh dry run removes hooks for all three targets", async () => {
   expect(await readdir(home)).toEqual([]);
 });
 
-test("install.sh treats a failed hotkey build as non-fatal", async () => {
+test("install.sh treats a failed helper build as non-fatal", async () => {
   const script = await Bun.file(join(REPO, "install.sh")).text();
-  const line = script.split("\n").find((l) => l.includes("build-hotkeys") && l.includes("run "));
-  expect(line).toMatch(/build-hotkeys \|\| /);
+  const line = script.split("\n").find((l) => l.includes("build-helper") && l.includes("run "));
+  expect(line).toMatch(/build-helper \|\| /);
+});
+
+test("install.sh dry run plans the optional Kokoro install without prompting (US-019)", async () => {
+  const r = await dryRun("install.sh");
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("Local Kokoro voice (optional)");
+  const plan = r.out.split("\n").find((l) => l.includes("kokoro install"));
+  expect(plan).toBe(`+ (skipped prompt) ${home}/.local/bin/mouthpiece kokoro install`);
+  expect(r.out).not.toContain("[y/N]");
+  expect(await readdir(home)).toEqual([]);
+});
+
+test("install.sh asks before installing Kokoro, and only on a terminal outside a dry run", async () => {
+  const script = await Bun.file(join(REPO, "install.sh")).text();
+  expect(script).toContain('if [ -t 0 ] && [ "$DRY_RUN" != 1 ]; then');
+  expect(script).toContain("Install the free local Kokoro voice (~500 MB)? [y/N]");
+  const line = script.split("\n").find((l) => l.includes("kokoro install") && l.includes("run "));
+  // A failed Kokoro install leaves the rest of the install (and macOS say) working.
+  expect(line).toMatch(/kokoro install \|\| /);
+});
+
+test("uninstall.sh dry run removes the helper app and asks before removing Kokoro", async () => {
+  const r = await dryRun("uninstall.sh");
+  expect(r.code).toBe(0);
+  const lines = r.out.split("\n");
+  expect(lines).toContain(`+ rm -rf '${home}/.mouthpiece/MouthpieceHelper.app'`);
+  const ask = lines.findIndex((l) => l.startsWith("? Delete the Kokoro voice"));
+  expect(ask).toBeGreaterThanOrEqual(0);
+  expect(lines[ask]).toContain("(dry run: planning yes)");
+  expect(lines[ask + 1]).toBe(`+ rm -rf '${home}/.mouthpiece/kokoro'`);
+  expect(await readdir(home)).toEqual([]);
 });
 
 /** The exact `bash -c` command install.sh runs to write the CLI wrapper, from its dry-run plan. */

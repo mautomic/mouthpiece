@@ -31,20 +31,22 @@ Mouthpiece is a local, source-agnostic voice layer. A loopback daemon accepts te
 
 ```
 packages/core       contracts (types), envelope validation, cleaning, chunking, config, home/token
-packages/providers  TtsProvider implementations (say, inworld, elevenlabs, deepgram, openai), voice map, fallback chain
-packages/daemon     HTTP server, speech queue, speaker pipeline, player, usage metering, quota gate
+packages/providers  TtsProvider implementations (say, kokoro, inworld, elevenlabs, deepgram, openai), voice map, fallback chain
+packages/daemon     HTTP server, speech queue (pause/resume by reason), speaker pipeline, player, usage metering, quota gate, status
 packages/summarizers  Summarizer backends (claude -p) + first-sentence fallback
-packages/hotkeys    global hotkeys: Swift helper + TypeScript supervisor
-packages/client     @mouthpiece/client: speak/interrupt/stop/skip/health/mode/replay/usage over HTTP
+packages/hotkeys    helper app (MouthpieceHelper.app: global hotkeys, menubar, mic watcher): Swift source + TypeScript build/args/supervisor
+packages/client     @mouthpiece/client: speak/interrupt/stop/skip/health/mode/replay/usage/voices/status/pause/resume over HTTP
 packages/hook-kit   @mouthpiece/hook-kit: silent hook runtime (runHook, HookContext, labelFromCwd, approvalText) shared by hook adapters
 packages/cli        `mouthpiece` CLI
+packages/listen     on-device speech-to-text prototype (conversation-mode spike; standalone, not wired in)
 adapters/claude-code  Claude Code hooks
 adapters/codex      Codex CLI hooks
 adapters/gemini     Gemini CLI hooks
 adapters/file-tail  session-log tailers for tools without hooks (`mouthpiece tail`)
+adapters/tmux       TmuxDriver (ConversationDriver over `tmux send-keys`; `mouthpiece send`)
 ```
 
-Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client` ← `daemon` ← `cli`. `daemon` may depend on `providers`, `summarizers`, and `hotkeys`; `cli` may also depend on `hotkeys` and `adapters/file-tail`. `hook-kit` may depend only on `core` and `client`. `adapters/*` may depend only on `core`, `client`, and `hook-kit`.
+Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client` ← `daemon` ← `cli`. `daemon` may depend on `providers`, `summarizers`, and `hotkeys`; `cli` may also depend on `providers`, `hotkeys`, `adapters/file-tail`, and `adapters/tmux`. `packages/listen` is a standalone prototype: it depends only on `core`, and nothing depends on it. `hook-kit` may depend only on `core` and `client`. `adapters/*` may depend only on `core`, `client`, and `hook-kit`.
 
 ## Conventions
 

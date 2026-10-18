@@ -12,6 +12,7 @@
     "@mouthpiece/core": "workspace:*",
     "@mouthpiece/client": "workspace:*",
     "@mouthpiece/daemon": "workspace:*",
-    "@mouthpiece/hotkeys": "workspace:*"
+    "@mouthpiece/hotkeys": "workspace:*",
+    "@mouthpiece/providers": "workspace:*"
   }
 }

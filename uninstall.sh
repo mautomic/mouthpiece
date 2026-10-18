@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# uninstall.sh: remove Mouthpiece's agent, hooks, CLI link, and hotkey helper. Asks before deleting data and keys.
+# uninstall.sh: remove Mouthpiece's agent, hooks, CLI link, and helper app. Asks before deleting data and keys.
 set -euo pipefail
 
 DRY_RUN="${MOUTHPIECE_DRY_RUN:-0}"
@@ -24,6 +24,10 @@ run "$MP uninstall-hooks --target gemini || echo 'Could not update Gemini hooks;
 # Before the CLI link is removed: $MP may be that link.
 if ask "Delete the Inworld key from Keychain?"; then run "$MP auth inworld --delete"; fi
 run "rm -f '$HOME/.local/bin/mouthpiece' '$HOME/.mouthpiece/bin/mouthpiece-hotkeys'"
+run "rm -rf '$HOME/.mouthpiece/MouthpieceHelper.app'"
+if ask "Delete the Kokoro voice (~/.mouthpiece/kokoro, about 500 MB)?"; then
+  run "rm -rf '$HOME/.mouthpiece/kokoro'"
+fi
 if ask "Delete ~/.mouthpiece (token, cache, usage history) and ~/.config/mouthpiece?"; then
   run "rm -rf '$HOME/.mouthpiece' '$HOME/.config/mouthpiece'"
 fi

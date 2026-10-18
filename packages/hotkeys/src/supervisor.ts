@@ -9,6 +9,12 @@ export interface SupervisorOptions {
   maxRestarts?: number;
   backoffMs?: number;
   spawn?: SpawnFn;
+  /**
+   * Called each time the helper exits on its own (a crash it restarts after, or the exit it gives
+   * up after), before any restart; not for the exit `stop()` causes. The daemon clears the helper's
+   * `mic` pause here, so a dead helper cannot keep speech paused (US-022).
+   */
+  onExit?: (code: number) => void;
 }
 
 /** Exit code 2 from the helper means bad arguments or a hotkey already taken: restarting cannot help. */
@@ -27,6 +33,7 @@ export function superviseHotkeys(opts: SupervisorOptions): { stop(): void } {
     opts.log({ msg: "hotkeys_started" });
     void current.exited.then((code) => {
       if (stopped) return;
+      opts.onExit?.(code);
       if (code === FATAL_EXIT || restarts >= maxRestarts) {
         opts.log({ level: "error", msg: "hotkeys_gave_up", code });
         return;

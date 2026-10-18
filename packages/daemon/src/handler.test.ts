@@ -262,13 +262,6 @@ test.each([
   expect(pauseCalls).toEqual([]);
 });
 
-test("status, pause and resume are 404 when the daemon does not provide them", async () => {
-  const { handle } = setup({ status: undefined, pause: undefined, resume: undefined });
-  expect((await handle(req("GET", "/v1/status"))).status).toBe(404);
-  expect((await handle(req("POST", "/v1/pause", { reason: "mic" }))).status).toBe(404);
-  expect((await handle(req("POST", "/v1/resume", { reason: "mic" }))).status).toBe(404);
-});
-
 test("status and pause reject the wrong method", async () => {
   const { handle } = setup();
   const res = await handle(req("POST", "/v1/status"));

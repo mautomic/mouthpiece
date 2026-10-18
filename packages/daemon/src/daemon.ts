@@ -17,14 +17,27 @@ import {
   readOrCreateToken,
   resolveSecret,
   type SpeakResponse,
+  type StatusResponse,
   type Summarizer,
   type SynthesizeOptions,
   type TtsProvider,
   tokenPath,
   type VoicesResponse,
 } from "@mouthpiece/core";
-import { helperArgs, hotkeysBinary, superviseHotkeys } from "@mouthpiece/hotkeys";
-import { chainProviders, createProviders, PAID_PROVIDERS } from "@mouthpiece/providers";
+import {
+  helperArgs,
+  helperBinary,
+  helperWanted,
+  type SpawnFn,
+  superviseHotkeys,
+} from "@mouthpiece/hotkeys";
+import {
+  chainProviders,
+  createProviders,
+  type KokoroLoader,
+  KokoroProvider,
+  PAID_PROVIDERS,
+} from "@mouthpiece/providers";
 import { createSummarizer, FirstSentencesSummarizer } from "@mouthpiece/summarizers";
 import { CachingProvider } from "./cache.ts";
 import { AlertDeduper } from "./dedupe.ts";
@@ -40,7 +53,7 @@ import { createSpeaker, skipReason } from "./speaker.ts";
 import { billingCycle, MeteredProvider, monthRange, UsageStore } from "./usage.ts";
 import { watchConfig } from "./watch.ts";
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.4.0";
 
 /** How long `GET /v1/voices` waits for one provider's voice list. The CLI's SLOW_REQUEST_TIMEOUT_MS must exceed it. */
 export const VOICES_TIMEOUT_MS = 5_000;
@@ -65,8 +78,12 @@ export interface DaemonOptions {
   exec?: Exec;
   /** Hot-reload the config file (FR-11). Default true. */
   watch?: boolean;
-  /** Supervise the global hotkey helper (US-017). Default true. */
+  /** Supervise the helper app: hotkeys, menubar, mic pause (US-017, US-018, US-022). Default true. */
   hotkeys?: boolean;
+  /** Test seam: how the helper supervisor starts the helper process. */
+  helperSpawn?: SpawnFn;
+  /** Test seam: replaces `defaultKokoroLoader(home)` when Kokoro is installed under the home. */
+  kokoroLoader?: KokoroLoader;
 }
 
 export interface RunningDaemon {
@@ -124,7 +141,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     for (const name of PAID_PROVIDERS) {
       if (c.provider.chain.includes(name)) secrets[name] = await resolveSecret(name, { env, exec });
     }
-    return createProviders(c, { env, tmpDir, log, secrets });
+    return createProviders(c, { env, tmpDir, log, secrets, home, kokoroLoader: opts.kokoroLoader });
   };
   /** Outermost first: voice map (applied by the chain), quota gate, metering, cache for priced providers. */
   const buildProvider = (c: Config, list: TtsProvider[]): TtsProvider => {
@@ -178,6 +195,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     }),
     expireAfterMs: config.queue.expireAfterMs,
     labelWindowMs: config.queue.labelWindowMs,
+    maxPauseMs: config.micPause.maxPauseMs,
     onError: (error, item) =>
       log({ level: "error", msg: "play_failed", id: item.id, error: String(error) }),
   });
@@ -257,6 +275,27 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     return out;
   };
 
+  const status = (): StatusResponse => {
+    // Read the pause state first: it expires stale reasons, which can resume playback.
+    const pauseReasons = queue.pauseReasons();
+    const item = queue.current ?? queue.held;
+    return {
+      version: VERSION,
+      speaking: queue.speaking,
+      paused: pauseReasons.length > 0,
+      pauseReasons,
+      mode: modes.state().default,
+      queueDepth: queue.depth,
+      provider: providers[0]?.name ?? provider.name,
+      current: item
+        ? {
+            source: item.event.source,
+            ...(item.event.label !== undefined && { label: item.event.label }),
+          }
+        : null,
+    };
+  };
+
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: opts.port ?? Number(env.MOUTHPIECE_PORT || DEFAULT_PORT),
@@ -301,31 +340,51 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
         });
       },
       voices,
+      status,
+      pause: (reason) => queue.pause(reason),
+      resume: (reason) => queue.resume(reason),
     }),
   });
   const url = `http://127.0.0.1:${server.port}`;
 
-  let hotkeys: { stop(): void } | undefined;
-  const startHotkeys = (c: Config) => {
-    hotkeys?.stop();
-    hotkeys = undefined;
-    if (opts.hotkeys === false || !c.hotkeys.enabled) return;
-    const binary = hotkeysBinary(home);
+  // The helper app (hotkeys, menubar, mic watcher) is one supervised process (US-017/018/022).
+  let helper: { stop(): void } | undefined;
+  /** A helper that is gone can no longer resume the `mic` pause it reported (US-022). */
+  const stopHelper = () => {
+    if (!helper) return;
+    helper.stop();
+    helper = undefined;
+    queue.resume("mic");
+  };
+  const startHelper = (c: Config) => {
+    stopHelper();
+    if (opts.hotkeys === false || !helperWanted(c)) return;
+    const binary = helperBinary(home);
     if (!existsSync(binary)) {
-      log({ msg: "hotkeys_unavailable", hint: "run `mouthpiece build-hotkeys`" });
+      log({ msg: "helper_unavailable", hint: "run `mouthpiece build-helper`" });
       return;
     }
     try {
-      hotkeys = superviseHotkeys({
+      helper = superviseHotkeys({
         binary,
-        args: helperArgs(c.hotkeys, { url, tokenPath: tokenPath(home) }),
+        args: helperArgs(c, { url, tokenPath: tokenPath(home) }),
         log,
+        spawn: opts.helperSpawn,
+        onExit: () => queue.resume("mic"),
       });
     } catch (error) {
-      log({ level: "error", msg: "hotkeys_config_invalid", error: String(error) });
+      log({ level: "error", msg: "helper_config_invalid", error: String(error) });
     }
   };
-  startHotkeys(config);
+  startHelper(config);
+
+  /** US-019: load Kokoro in the background so the first item doesn't pay for it. */
+  const warmUp = (list: TtsProvider[]) => {
+    for (const p of list) {
+      if (p.name === "kokoro" && p instanceof KokoroProvider) void p.warmUp();
+    }
+  };
+  warmUp(providers);
 
   const unwatch =
     opts.watch === false
@@ -342,8 +401,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
             modes.configure(next.modes.default, next.profiles);
             history.configure(next.history);
             deduper.windowMs = next.alerts.dedupeWindowMs;
-            queue.configure(next.queue);
-            startHotkeys(next);
+            queue.configure({ ...next.queue, maxPauseMs: next.micPause.maxPauseMs });
+            startHelper(next);
+            warmUp(nextProviders);
             log({ msg: "config_reloaded", provider: provider.name });
           },
           onError: (error) =>
@@ -359,7 +419,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     usage,
     stop: async () => {
       unwatch();
-      hotkeys?.stop();
+      stopHelper();
       queue.stopAll();
       server.stop(true);
       usage.close();

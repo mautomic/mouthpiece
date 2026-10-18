@@ -5,6 +5,7 @@ export * from "./fake.ts";
 export * from "./fallback.ts";
 export * from "./http.ts";
 export * from "./inworld.ts";
+export * from "./kokoro.ts";
 export * from "./openai.ts";
 export * from "./say.ts";
 export * from "./voice-map.ts";

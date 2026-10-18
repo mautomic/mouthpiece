@@ -41,15 +41,12 @@ export interface HandlerDeps {
    * `error` entry, not a rejection.
    */
   voices(provider: string | undefined): Promise<VoicesResponse>;
-  /**
-   * What the daemon is doing right now (US-018). Optional until the daemon wires it (Phase 4
-   * integration): without it `GET /v1/status` is 404, as on an older daemon.
-   */
-  status?(): StatusResponse;
-  /** Adds a pause reason (US-022). Optional like `status`; without it the route is 404. */
-  pause?(reason: string): PauseResponse;
-  /** Removes a pause reason (US-022). Optional like `status`; without it the route is 404. */
-  resume?(reason: string): PauseResponse;
+  /** What the daemon is doing right now (US-018). */
+  status(): StatusResponse;
+  /** Adds a pause reason (US-022). */
+  pause(reason: string): PauseResponse;
+  /** Removes a pause reason (US-022). */
+  resume(reason: string): PauseResponse;
 }
 
 type Method = "GET" | "POST";
@@ -60,6 +57,12 @@ function json(status: number, body: unknown, headers?: HeadersInit): Response {
 }
 
 export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Response> {
+  const pauseRoute =
+    (apply: (reason: string) => PauseResponse): Route["run"] =>
+    (body) => {
+      const parsed = parsePauseRequest(body);
+      return parsed.ok ? json(200, apply(parsed.value.reason)) : json(400, { error: parsed.error });
+    };
   const routes: Record<string, Partial<Record<Method, Route>>> = {
     "/v1/health": {
       GET: {
@@ -146,17 +149,10 @@ export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Resp
         },
       },
     },
+    "/v1/status": { GET: { auth: true, run: () => json(200, deps.status()) } },
+    "/v1/pause": { POST: { auth: true, run: pauseRoute((reason) => deps.pause(reason)) } },
+    "/v1/resume": { POST: { auth: true, run: pauseRoute((reason) => deps.resume(reason)) } },
   };
-  const { status, pause, resume } = deps;
-  if (status) routes["/v1/status"] = { GET: { auth: true, run: () => json(200, status()) } };
-  const pauseRoute =
-    (apply: (reason: string) => PauseResponse): Route["run"] =>
-    (body) => {
-      const parsed = parsePauseRequest(body);
-      return parsed.ok ? json(200, apply(parsed.value.reason)) : json(400, { error: parsed.error });
-    };
-  if (pause) routes["/v1/pause"] = { POST: { auth: true, run: pauseRoute(pause) } };
-  if (resume) routes["/v1/resume"] = { POST: { auth: true, run: pauseRoute(resume) } };
 
   return async (req) => {
     const url = new URL(req.url);

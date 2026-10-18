@@ -13,9 +13,6 @@ import { OpenAIProvider } from "./openai.ts";
 import { SayProvider } from "./say.ts";
 import { VoiceMapProvider } from "./voice-map.ts";
 
-// The package barrel (index.ts) is outside Track A; re-export Kokoro through the chain module.
-export * from "./kokoro.ts";
-
 /** Providers that need an API key (env `<NAME>_API_KEY` or the Keychain account `<name>`). */
 export const PAID_PROVIDERS = ["inworld", "elevenlabs", "deepgram", "openai"] as const;
 export type PaidProviderName = (typeof PAID_PROVIDERS)[number];

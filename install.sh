@@ -34,11 +34,11 @@ run mkdir -p "$BIN_DIR"
 run bash -c "printf '#!/usr/bin/env bash\nexec \"%s\" --config=\"%s\" --no-env-file \"%s\" \"\$@\"\n' '$BUN' '$REPO/bunfig.toml' '$REPO/packages/cli/src/main.ts' > '$MP' && chmod +x '$MP'"
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "Note: add $BIN_DIR to your PATH." ;; esac
 
-say_step "Building global hotkeys"
+say_step "Building helper (hotkeys, menubar, mic pause)"
 if command -v swiftc >/dev/null 2>&1; then
-  run "$MP" build-hotkeys || echo "Hotkey build failed; continuing without hotkeys."
+  run "$MP" build-helper || echo "Helper build failed; continuing without hotkeys, menubar or mic pause."
 else
-  echo "swiftc not found; skipping build-hotkeys (install Xcode Command Line Tools to enable)."
+  echo "swiftc not found; skipping build-helper (install Xcode Command Line Tools to enable)."
 fi
 
 say_step "TTS provider key (optional)"
@@ -47,6 +47,16 @@ if [ "$DRY_RUN" != 1 ] && [ -t 0 ]; then
   if [ -n "$key" ]; then printf '%s' "$key" | "$MP" auth inworld; fi
 else
   echo "+ (skipped prompt) printf <key> | $MP auth inworld"
+fi
+
+say_step "Local Kokoro voice (optional)"
+if [ -t 0 ] && [ "$DRY_RUN" != 1 ]; then
+  read -rp "Install the free local Kokoro voice (~500 MB)? [y/N] " a
+  if [ "$a" = y ] || [ "$a" = Y ]; then
+    run "$MP" kokoro install || echo "Kokoro install failed; continuing with macOS say."
+  fi
+else
+  echo "+ (skipped prompt) $MP kokoro install"
 fi
 
 say_step "Claude Code hooks"
@@ -76,7 +86,8 @@ cat <<EOF
 
 Done. Next steps:
   • New Claude Code sessions will speak; type your next prompt to interrupt.
-  • Hotkeys: ⌃⌥S stop · ⌃⌥N skip · ⌃⌥R replay · ⌃⌥M summary/full.
+  • Hotkeys: ⌃⌥S stop · ⌃⌥N skip · ⌃⌥R replay · ⌃⌥M summary/full. The menubar icon shows what is playing.
+  • Speech pauses while another app uses the microphone (e.g. dictation) and resumes where it stopped.
   • mouthpiece status | mode | usage — config: ~/.config/mouthpiece/config.toml
   • Update: git pull && ./install.sh — Remove: ./uninstall.sh
 EOF
