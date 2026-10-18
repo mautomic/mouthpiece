@@ -162,3 +162,25 @@ test.skipIf(!hasSwift)(
   },
   120_000,
 );
+
+test.skipIf(!hasSwift)(
+  "the Swift player stops its engine when idle, under dispatchMain (offline self-test, no sound)",
+  async () => {
+    const out = await mkdtemp(join(tmpdir(), "mp-player-idle-"));
+    try {
+      const binary = join(out, "mouthpiece-player");
+      const compile = Bun.spawn(
+        ["swiftc", "-O", "-swift-version", "5", "-o", binary, PLAYER_SOURCE],
+        { stderr: "pipe" },
+      );
+      if ((await compile.exited) !== 0) throw new Error(await new Response(compile.stderr).text());
+      const run = Bun.spawn([binary, "--self-test-idle"], { stdout: "pipe", stderr: "pipe" });
+      const [code, stdout] = await Promise.all([run.exited, new Response(run.stdout).text()]);
+      expect(stdout).toContain("engine running after 1 s idle = false");
+      expect(code).toBe(0);
+    } finally {
+      await rm(out, { recursive: true, force: true });
+    }
+  },
+  120_000,
+);

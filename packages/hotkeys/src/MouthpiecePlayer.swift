@@ -13,8 +13,9 @@
 //        {"event":"reset"}                   the output device changed; clips not yet done were dropped
 //        {"event":"error","message":"…"}     fatal; the process exits 1
 //
-// Usage: mouthpiece-player               play (exits when stdin closes)
-//        mouthpiece-player --self-test   render three clips offline (no sound) and check the joins
+// Usage: mouthpiece-player                    play (exits when stdin closes)
+//        mouthpiece-player --self-test        render three clips offline (no sound) and check the joins
+//        mouthpiece-player --self-test-idle   check that an idle engine stops (offline, no sound)
 import AVFoundation
 import Foundation
 
@@ -59,7 +60,9 @@ final class StreamPlayer {
   var playing = 0
   /// Bumped by flush and reset; callbacks from before carry a stale value and are ignored.
   var generation = 0
-  var idleTimer: Timer?
+  /// A DispatchWorkItem, not a Timer: the live player runs under dispatchMain(), which serves the
+  /// main queue but never runs the run loop that timers need.
+  var idleStop: DispatchWorkItem?
 
   init(
     engine: AVAudioEngine, doneCallback: AVAudioPlayerNodeCompletionCallbackType, idleStopSeconds: Double?,
@@ -164,7 +167,7 @@ final class StreamPlayer {
         exit(1)
       }
     }
-    idleTimer?.invalidate()
+    idleStop?.cancel()
     let tailFrames = min(AVAudioFrameCount(leadSeconds * outputFormat.sampleRate), whole.frameLength)
     let bodyFrames = whole.frameLength - tailFrames
     let current = generation
@@ -210,12 +213,14 @@ final class StreamPlayer {
 
   func stopWhenIdle() {
     guard let seconds = idleStopSeconds, playing == 0 else { return }
-    idleTimer?.invalidate()
-    idleTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+    idleStop?.cancel()
+    let work = DispatchWorkItem { [weak self] in
       guard let self, self.playing == 0 else { return }
       self.node.stop()
       self.engine.stop()
     }
+    idleStop = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
   }
 }
 
@@ -328,9 +333,32 @@ func selfTest() -> Bool {
   return abs(seconds - 1.1) < 0.02 && quietest > 0.2 && events == expected
 }
 
+/// The live player runs under dispatchMain(), not a run loop; checks that the idle stop still fires
+/// there (offline engine, no sound).
+func idleSelfTest() -> Never {
+  let engine = AVAudioEngine()
+  let player = StreamPlayer(
+    engine: engine, doneCallback: .dataConsumed, idleStopSeconds: 0.2,
+    deliver: { DispatchQueue.main.async(execute: $0) }, emit: { _ in })
+  do {
+    try engine.enableManualRenderingMode(.offline, format: outputFormat, maximumFrameCount: 480)
+    try engine.start()
+  } catch {
+    print("idle self-test: could not start offline rendering: \(error)")
+    exit(1)
+  }
+  player.stopWhenIdle()
+  DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+    print("idle self-test: engine running after 1 s idle = \(engine.isRunning)")
+    exit(engine.isRunning ? 1 : 0)
+  }
+  dispatchMain()
+}
+
 // MARK: - Main
 
 if CommandLine.arguments.contains("--self-test") { exit(selfTest() ? 0 : 1) }
+if CommandLine.arguments.contains("--self-test-idle") { idleSelfTest() }
 
 let engine = AVAudioEngine()
 let player = StreamPlayer(
