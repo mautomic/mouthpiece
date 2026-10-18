@@ -62,6 +62,7 @@ function setup(overrides: Partial<HandlerDeps> = {}) {
     subscribeInbox: () => () => {},
     reply: async () => ({ ok: true, status: "submitted" }),
     submitReply: async () => ({ ok: true, status: "typed" }),
+    dismissInbox: (r) => (r.id === "busy" ? "in-flight" : r.id === "nope" ? "gone" : 1),
     ...overrides,
   };
   return { handle: createHandler(deps), enqueued, voiceCalls, pauseCalls };
@@ -407,4 +408,16 @@ test("GET /v1/inbox/events sends a snapshot, then each change, and unsubscribes 
   await reader.cancel();
   expect(unsubscribed).toBe(true);
   expect(() => listener?.({ type: "remove", id: "e10" })).not.toThrow();
+});
+
+test("POST /v1/inbox/dismiss: 200 with the count, 404 gone, 409 in flight, 400 bad body", async () => {
+  const { handle } = setup();
+  const ok = await handle(req("POST", "/v1/inbox/dismiss", { id: "e1" }));
+  expect([ok.status, await ok.json()]).toEqual([200, { dismissed: 1 }]);
+  const gone = await handle(req("POST", "/v1/inbox/dismiss", { id: "nope" }));
+  expect([gone.status, (await gone.json()).reason]).toEqual([404, "gone"]);
+  const busy = await handle(req("POST", "/v1/inbox/dismiss", { id: "busy" }));
+  expect([busy.status, (await busy.json()).reason]).toEqual([409, "in-flight"]);
+  expect((await handle(req("POST", "/v1/inbox/dismiss", {}))).status).toBe(400);
+  expect((await handle(req("POST", "/v1/inbox/dismiss", { all: true }, null))).status).toBe(401);
 });

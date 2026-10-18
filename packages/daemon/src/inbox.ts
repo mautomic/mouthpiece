@@ -108,6 +108,30 @@ export class Inbox {
     return undefined;
   }
 
+  /**
+   * Removes an entry (the panel's ×). The session's next response makes a new one. An entry with a
+   * reply in flight stays, so the reply's result isn't lost.
+   */
+  dismiss(id: string): "dismissed" | "gone" | "in-flight" {
+    for (const [key, entry] of this.#entries) {
+      if (entry.id !== id) continue;
+      if (entry.state === "sending") return "in-flight";
+      this.#entries.delete(key);
+      for (const l of this.#listeners) l({ type: "remove", id });
+      return "dismissed";
+    }
+    return "gone";
+  }
+
+  /** Removes every entry without a reply in flight; returns how many. */
+  dismissAll(): number {
+    let count = 0;
+    for (const entry of [...this.#entries.values()]) {
+      if (this.dismiss(entry.id) === "dismissed") count++;
+    }
+    return count;
+  }
+
   /** True when `id` was an entry that a newer response replaced. */
   replaced(id: string): boolean {
     return this.#replaced.has(id);

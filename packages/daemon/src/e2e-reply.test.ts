@@ -117,3 +117,15 @@ test("a muted response is still in the inbox", async () => {
   });
   expect(await entries()).toHaveLength(1);
 });
+
+test("dismissing an entry removes it from the inbox", async () => {
+  await boot(new FakeDriver());
+  await speak(
+    { text: "Shall I continue?", source: "agent", conversationId: "c1", reply: route },
+    o(),
+  );
+  const [entry] = await entries();
+  const res = await call("POST", "/v1/inbox/dismiss", { id: entry.id });
+  expect([res.status, await res.json()]).toEqual([200, { dismissed: 1 }]);
+  expect(await entries()).toEqual([]);
+});

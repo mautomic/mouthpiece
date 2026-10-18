@@ -136,6 +136,12 @@ Pause semantics (US-022):
 `text/event-stream`. First `event: snapshot` with the `InboxResponse`, then `event: entry` (an `InboxEntry`) or
 `event: remove` (`{ "id" }`) per change; a `: keepalive` comment every 10 s.
 
+## POST /v1/inbox/dismiss
+Body `{ "id": "<entry id>" }` or `{ "all": true }`. Removes the entry (or every entry without a reply in flight) and
+sends a `remove` event. The session's next response makes a new entry. 200 `{ "dismissed": 1 }`; 404
+`reason: "gone"` for an unknown id; 409 `reason: "in-flight"` while a reply to it is being sent; 400 unless exactly
+one of `id` or `all: true` is given.
+
 ## POST /v1/reply
 Body `{ "id": "<entry id>", "text": "…" }`. Types the text, joined into one line, into the entry's terminal and presses
 Enter, under the delivery controls (PRD §13): only into a `waiting` entry whose terminal still runs the same agent, is

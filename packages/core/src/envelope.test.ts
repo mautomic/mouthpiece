@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ModeRequest } from "./contracts.ts";
 import {
   MAX_TEXT_CHARS,
+  parseInboxDismissRequest,
   parseInterruptRequest,
   parseModeRequest,
   parsePauseRequest,
@@ -312,4 +313,12 @@ test("parseReplyRequest needs an id and a string text", () => {
 test("parseReplySubmitRequest needs an id", () => {
   expect(parseReplySubmitRequest({ id: "e1" })).toEqual({ ok: true, value: { id: "e1" } });
   expect(parseReplySubmitRequest({}).ok).toBe(false);
+});
+
+test("parseInboxDismissRequest takes an id or all: true, not both", () => {
+  expect(parseInboxDismissRequest({ id: "e1" })).toEqual({ ok: true, value: { id: "e1" } });
+  expect(parseInboxDismissRequest({ all: true })).toEqual({ ok: true, value: { all: true } });
+  expect(parseInboxDismissRequest({}).ok).toBe(false);
+  expect(parseInboxDismissRequest({ id: "e1", all: true }).ok).toBe(false);
+  expect(parseInboxDismissRequest({ all: false }).ok).toBe(false);
 });

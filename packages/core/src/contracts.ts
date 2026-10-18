@@ -252,6 +252,16 @@ export interface InboxResponse {
   entries: InboxEntry[];
 }
 
+/** POST /v1/inbox/dismiss: one entry by id, or `all: true` (every entry without a reply in flight). */
+export interface InboxDismissRequest {
+  id?: string;
+  all?: true;
+}
+
+export interface InboxDismissResponse {
+  dismissed: number;
+}
+
 export interface ReplyRequest {
   id: string;
   text: string;
