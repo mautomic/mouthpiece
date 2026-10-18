@@ -51,7 +51,7 @@ echo "I need your call on interrupts. I fixed the race. Everything passes now."`
     "--setting-sources",
     "",
     "--system-prompt",
-    ...summaryPrompt(60).split("\n"), // the prompt states the configured maxChars
+    ...summaryPrompt(60, "Full text here.".length).split("\n"),
     "",
   ]);
   expect(await readFile(join(dir, "child"), "utf8")).toBe("1");

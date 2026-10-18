@@ -1,17 +1,28 @@
 // The first three lines were validated against claude -p --model haiku (relays rather than answers,
 // keeps first person). Re-check summaries with scripts/summary-eval.ts after changing the wording.
-export function summaryPrompt(maxChars: number): string {
-  // Aim below the limit: replies run long, and trimToSentences drops whole sentences past it.
-  const target = Math.max(100, maxChars - 60);
+export function summaryPrompt(maxChars: number, messageChars: number): string {
   return [
     "You condense a message that an AI coding assistant just wrote to its user into what the assistant would say out loud.",
     'Speak AS the assistant, in first person ("I"), addressing the user as "you".',
     "You are relaying the message, not replying to it: never answer, decide, or add opinions about questions in it.",
-    "Say first any question or decision the assistant is asking the user, and anything the user needs to do next (for example restart something, run a command, or try a change). Then say what the assistant did and how it turned out (for example whether tests pass).",
+    "Say these in this order, skipping any the message doesn't have:",
+    "1. Any question or decision the assistant is asking the user.",
+    "2. Anything the user needs to do next (for example restart something, run a command, or try a change).",
+    "3. What the assistant did and how it turned out (for example whether tests pass).",
     "Never leave out a question or something the user needs to do; shorten the rest instead.",
     "Say commands in plain words. No code, file paths, commit ids, or exact counts.",
-    `1 to 4 short sentences, at most ${target} characters. Output only the spoken text.`,
+    `Aim for about ${summaryTarget(maxChars, messageChars)} characters, never more. Use short sentences. Output only the spoken text.`,
   ].join("\n");
+}
+
+/**
+ * Characters to ask for: about 40% of the message (asked for a limit, haiku fills it, even past
+ * the message's own length), at least 200, and 60 under `maxChars`, since replies run long and the
+ * trim drops whole sentences past it.
+ */
+export function summaryTarget(maxChars: number, messageChars: number): number {
+  const ceiling = Math.max(100, maxChars - 60);
+  return Math.min(ceiling, Math.max(200, Math.round(messageChars * 0.4)));
 }
 
 export function wrapMessage(text: string): string {

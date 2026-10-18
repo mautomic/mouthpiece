@@ -133,8 +133,9 @@ export class KokoroProvider implements TtsProvider {
   readonly pricePerMillionChars = 0;
   /**
    * Every chunk is its own clip, and each break between clips costs about a second (afplay start-up
-   * plus the clip's silence), so chunks are as long as Kokoro takes: a summary is one clip, spoken
-   * without breaks, at the cost of a later start (~15 ms of rendering a character on an M4 Pro).
+   * plus the clip's silence), so chunks are as long as Kokoro takes (it cuts off somewhere past ~450
+   * characters): a summary up to 400 characters is one clip, and a longer one breaks once, between
+   * sentences. The cost is a later start (~15 ms of rendering a character on an M4 Pro).
    */
   readonly chunking = { firstChars: 400, targetChars: 400 };
   readonly cacheKey: string;

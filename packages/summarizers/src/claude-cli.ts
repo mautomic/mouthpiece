@@ -38,7 +38,7 @@ export class ClaudeCliSummarizer implements Summarizer {
       "--setting-sources",
       "",
       "--system-prompt",
-      summaryPrompt(this.opts.maxChars),
+      summaryPrompt(this.opts.maxChars, text.length),
     ];
     const proc = Bun.spawn(args, {
       cwd: this.opts.cwd,

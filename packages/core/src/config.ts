@@ -84,11 +84,12 @@ export const DEFAULT_CONFIG: Config = {
     backend: "claude-cli",
     command: "claude",
     model: "haiku",
-    // Measured: haiku takes 2-6 s for a summary (US-009).
-    timeoutMs: 8000,
+    // Measured: haiku takes 2-8 s for a summary, longer ones for complex replies (US-009).
+    timeoutMs: 12_000,
     thresholdChars: 300,
-    // Room for a question, what the user must do, and the outcome, while fitting one Kokoro clip.
-    maxChars: 400,
+    // Room for a question, what the user must do, and the outcome of a complex reply. Past ~400
+    // characters Kokoro speaks it as two clips, split between sentences.
+    maxChars: 700,
   },
   history: { maxItems: 100, maxAgeMs: 24 * 60 * 60_000 },
   cache: { maxBytes: 200 * 1024 * 1024 },
