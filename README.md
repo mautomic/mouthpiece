@@ -144,7 +144,7 @@ All settings and their defaults are in [`packages/core/src/config.ts`](packages/
 - **Codex:** `mouthpiece install-hooks --target codex`, then run `/hooks` in Codex to trust them.
 - **Gemini CLI:** `mouthpiece install-hooks --target gemini`.
 - **Tools without hooks:** `mouthpiece tail --format codex|gemini|lines` speaks new messages from a session log as they're written.
-- **Margin:** `mouthpiece tail --format margin` speaks an agent's replies in [Margin](https://github.com/ariboren/margin) reviews, named by document ("PRD: Agreed, …"). It follows every document Margin has recently opened, or one with `--path <doc.md>`, and never speaks your own comments. To run it with the daemon, add to your config and run `mouthpiece daemon restart`:
+- **Margin:** `mouthpiece tail --format margin` speaks an agent's replies in [Margin](https://github.com/ariboren/margin) reviews, named by document ("PRD: Agreed, …"). It follows each document while a Margin tab shows it (asking Margin's local server every 2 s), or one document with `--path <doc.md>`, and never speaks your own comments. To run it with the daemon, add to your config and run `mouthpiece daemon restart`:
 
   ```toml
   [[follow]]

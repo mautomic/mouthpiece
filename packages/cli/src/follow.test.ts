@@ -39,7 +39,7 @@ test("an unknown format or a lines follower without a path is an error, not a fo
   });
 });
 
-test("margin speaks agent replies with the doc's name, always announced", async () => {
+test("margin speaks agent replies in docs a Margin tab shows, always announced", async () => {
   const state = join(dir, "state");
   const docs = join(dir, "docs");
   await mkdir(state);
@@ -47,28 +47,57 @@ test("margin speaks agent replies with the doc's name, always announced", async 
   const doc = join(docs, "PRD.md");
   const log = join(docs, ".margin", "PRD.md.jsonl");
   await writeFile(log, "");
-  await writeFile(join(state, "recent-docs.json"), JSON.stringify([doc]));
-  const h = deps({ MARGIN_STATE_DIR: state });
-  const f = createFollower({ format: "margin" }, h.deps);
-  if ("error" in f) throw new Error(f.error);
-  await f.poll();
-  await appendFile(
-    log,
-    `${JSON.stringify({ seq: 1, type: "reply", by: "agent", id: "c4", text: "Done: see **US-014**." })}\n`,
-  );
-  await f.poll();
-  await f.stop();
-  expect(h.spoken).toEqual([
-    {
-      text: "Done: see **US-014**.",
-      source: "margin",
-      conversationId: `${doc}#c4`,
-      label: "PRD",
-      kind: "response",
-      format: "markdown",
-      announce: "always",
+  // A stand-in for Margin's server, with its own host and token checks.
+  let tabs = 1;
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch(req) {
+      const url = new URL(req.url);
+      if (req.headers.get("host") !== `127.0.0.1:${server.port}`)
+        return new Response("", { status: 403 });
+      if (req.headers.get("authorization") !== "Bearer tok-9")
+        return new Response("", { status: 403 });
+      if (url.pathname !== "/api/status") return new Response("", { status: 404 });
+      return Response.json({ docs: [{ docId: "a1", path: doc, clients: tabs, missing: false }] });
     },
-  ]);
+  });
+  const unfollowed: string[] = [];
+  try {
+    await writeFile(
+      join(state, "daemon.json"),
+      JSON.stringify({ pid: 1, port: server.port, token: "tok-9", protocol: 2, startedAt: "x" }),
+    );
+    const h = deps({ MARGIN_STATE_DIR: state });
+    const f = createFollower(
+      { format: "margin" },
+      { ...h.deps, onUnfollow: (file) => unfollowed.push(file), rescanMs: 0 },
+    );
+    if ("error" in f) throw new Error(f.error);
+    await f.poll();
+    await appendFile(
+      log,
+      `${JSON.stringify({ seq: 1, type: "reply", by: "agent", id: "c4", text: "Done: see **US-014**." })}\n`,
+    );
+    await f.poll();
+    tabs = 0; // the tab closes
+    await f.poll();
+    await f.stop();
+    expect(unfollowed).toEqual([log]);
+    expect(h.spoken).toEqual([
+      {
+        text: "Done: see **US-014**.",
+        source: "margin",
+        conversationId: `${doc}#c4`,
+        label: "PRD",
+        kind: "response",
+        format: "markdown",
+        announce: "always",
+      },
+    ]);
+  } finally {
+    server.stop(true);
+  }
 });
 
 test("a margin path is the one doc to follow", async () => {

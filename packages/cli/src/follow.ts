@@ -34,7 +34,11 @@ export interface FollowDeps {
   env: Env;
   warn: (message: string) => void;
   onFollow?: (file: string) => void;
+  /** Margin: a doc's last tab closed (or Margin stopped), so its log is no longer followed. */
+  onUnfollow?: (file: string) => void;
   pollMs?: number;
+  /** Margin: how often its server is asked which docs are open (default 2 s). */
+  rescanMs?: number;
 }
 
 const PATTERNS: Partial<Record<TailFormat, RegExp>> = {
@@ -88,7 +92,9 @@ export function createFollower(spec: FollowSpec, deps: FollowDeps): Follower | {
       env: deps.env,
       onMessage,
       onFollow: deps.onFollow,
+      onUnfollow: deps.onUnfollow,
       pollMs: deps.pollMs,
+      rescanMs: deps.rescanMs,
     });
     return { start: () => reader.start(), poll: () => reader.poll(), stop: stopAfter(reader) };
   }
@@ -146,5 +152,6 @@ export async function startConfiguredFollowers(
     env: deps.env,
     warn: io.err,
     onFollow: (file) => io.err(`following ${file}\n`),
+    onUnfollow: (file) => io.err(`stopped following ${file}\n`),
   });
 }

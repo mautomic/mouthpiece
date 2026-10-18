@@ -1,28 +1,34 @@
-// margin-follower.ts: follow the logs of the docs Margin has recently opened (US-014). The list is
-// Margin's `recent-docs.json`; anything unreadable leaves the followed set as it is.
+// margin-follower.ts: follow the logs of the docs a Margin tab shows right now (US-014). The list
+// comes from the running Margin server (`GET /api/status`, with the token from its daemon.json).
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import type { Env } from "@mouthpiece/core";
+import { type Env, isRecord } from "@mouthpiece/core";
 import { createMarginParser, lastMarginSeq, marginLog } from "./margin.ts";
 import { FileTailer, nodeTailFs, type TailFs, type TailMessage } from "./tailer.ts";
 
-const DEFAULT_RESCAN_MS = 5000;
+const DEFAULT_RESCAN_MS = 2000;
+/** Margin's server answers its status from memory; a slower answer is "can't tell". */
+const STATUS_TIMEOUT_MS = 1000;
 /** How much of a log's end is read to find where it stands when following begins. */
 const PRIME_BYTES = 64 * 1024;
 
 export interface MarginFollowerOptions {
-  /** Follow just this doc; by default, every doc in Margin's recent list. */
+  /** Follow just this doc; by default, every doc a Margin tab shows right now. */
   doc?: string;
   /** Where Margin's state dir is found (MARGIN_STATE_DIR, XDG_RUNTIME_DIR, HOME). */
   env?: Env;
   onMessage: (m: TailMessage) => void;
   onFollow?: (log: string) => void;
+  /** Called when a doc's last tab closes (or Margin stops) and its log stops being followed. */
+  onUnfollow?: (log: string) => void;
   onError?: (error: unknown) => void;
   pollMs?: number;
-  /** How often the recent list is re-read (default 5 s). */
+  /** How often Margin's server is asked which docs are open (default 2 s). */
   rescanMs?: number;
   now?: () => number;
   fs?: TailFs;
+  /** Test seam for the request to Margin's server. */
+  fetch?: (url: string, init: RequestInit) => Promise<Response>;
 }
 
 /** Margin's state dir, in Margin's own order. */
@@ -33,8 +39,9 @@ export function marginStateDir(env: Env): string {
 }
 
 /**
- * Follows each recent doc's log with its own FileTailer: an existing log from its end, a new one
- * from its start. A doc stays followed once found, even if it drops off the list.
+ * Follows the log of each doc a Margin tab shows, with its own FileTailer: an existing log from
+ * its end, a new one from its start. A doc stops being followed when its last tab closes or Margin
+ * stops, and is followed again (from its end) when a tab shows it again.
  */
 export class MarginFollower {
   private readonly fs: TailFs;
@@ -95,9 +102,16 @@ export class MarginFollower {
       return;
     }
     this.lastScanAt = now;
-    const docs = this.opts.doc ? [this.opts.doc] : await this.recentDocs();
-    for (const doc of docs) {
-      const log = marginLog(doc);
+    const docs = this.opts.doc ? [this.opts.doc] : await this.activeDocs();
+    if (docs === undefined) return; // Margin couldn't say: keep what is followed
+    const logs = new Set(docs.map(marginLog));
+    for (const [log, tailer] of this.tailers) {
+      if (logs.has(log)) continue;
+      tailer.stop();
+      this.tailers.delete(log);
+      this.opts.onUnfollow?.(log);
+    }
+    for (const log of logs) {
       if (this.tailers.has(log)) continue;
       await this.prime(log);
       this.tailers.set(
@@ -129,20 +143,49 @@ export class MarginFollower {
     if (seq !== undefined) this.parser.prime(log, seq);
   }
 
-  /** Margin's recent docs; [] when the list is missing or unreadable (e.g. caught mid-write). */
-  private async recentDocs(): Promise<string[]> {
-    const file = join(marginStateDir(this.opts.env ?? process.env), "recent-docs.json");
-    const stat = await this.fs.stat(file);
-    if (!stat || stat.isDirectory) return [];
-    try {
-      const list: unknown = JSON.parse(
-        new TextDecoder().decode(await this.fs.readRange(file, 0, stat.size)),
-      );
-      return Array.isArray(list)
-        ? list.filter((p): p is string => typeof p === "string" && isAbsolute(p))
-        : [];
-    } catch {
+  /**
+   * The docs a Margin tab shows right now: [] when Margin isn't running (no daemon.json, or
+   * nothing listening on its port), undefined when its server can't say (an error, a slow or
+   * garbled answer), so a passing hiccup never drops a doc.
+   */
+  private async activeDocs(): Promise<string[] | undefined> {
+    const info = await this.readJson(
+      join(marginStateDir(this.opts.env ?? process.env), "daemon.json"),
+    );
+    if (!isRecord(info) || typeof info.port !== "number" || typeof info.token !== "string")
       return [];
+    let response: Response;
+    try {
+      response = await (this.opts.fetch ?? fetch)(`http://127.0.0.1:${info.port}/api/status`, {
+        headers: { authorization: `Bearer ${info.token}` },
+        signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
+      });
+    } catch (error) {
+      return isRecord(error) && error.code === "ConnectionRefused" ? [] : undefined;
+    }
+    if (!response.ok) return undefined;
+    const status: unknown = await response.json().catch(() => undefined);
+    if (!isRecord(status) || !Array.isArray(status.docs)) return undefined;
+    return status.docs
+      .filter(
+        (d): d is { path: string } =>
+          isRecord(d) &&
+          typeof d.path === "string" &&
+          isAbsolute(d.path) &&
+          typeof d.clients === "number" &&
+          d.clients > 0,
+      )
+      .map((d) => d.path);
+  }
+
+  /** A small JSON file's value; undefined when it is missing or unreadable. */
+  private async readJson(file: string): Promise<unknown> {
+    const stat = await this.fs.stat(file);
+    if (!stat || stat.isDirectory) return undefined;
+    try {
+      return JSON.parse(new TextDecoder().decode(await this.fs.readRange(file, 0, stat.size)));
+    } catch {
+      return undefined;
     }
   }
 }
