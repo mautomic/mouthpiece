@@ -59,7 +59,7 @@ When Claude needs your approval to use a tool, you hear an alert that names the 
 | ⌃⌥R | Replay the last response |
 | ⌃⌥M | Switch between summary and full |
 
-The menubar icon shows whether Mouthpiece is idle, speaking, or paused, and how many items are queued. Its menu has the same controls, plus mode and pause, and a **Settings** submenu for the Kokoro voice and speed. A change there is saved to your config file and you hear the new voice right away.
+The menubar icon shows whether Mouthpiece is idle, speaking, or paused, and how many items are queued. Its menu has the same controls, plus mode and pause, and a **Settings** submenu for the Kokoro voice and speed. A change there is saved to your config file and you hear the new voice right away. **Quit Mouthpiece** (⌘Q while the menu is open) stops the daemon until your next login or `mouthpiece daemon start`.
 
 **Pause while dictating:** speech pauses whenever another app is using the microphone (for example Wispr Flow or macOS Dictation), and resumes about 0.8 s after it stops, from the sentence it was on.
 
@@ -160,7 +160,7 @@ The daemon is a launchd agent (`dev.mouthpiece.daemon`). It starts at login and 
 
 ```sh
 mouthpiece daemon stop       # stop until next login (hooks stay silent meanwhile)
-mouthpiece daemon start
+mouthpiece daemon start      # also after the menubar's Quit
 mouthpiece daemon restart    # e.g. after pulling new code
 ```
 

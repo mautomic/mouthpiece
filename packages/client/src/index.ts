@@ -14,6 +14,7 @@ import {
   readToken,
   type SettingsResponse,
   type SettingsUpdate,
+  type ShutdownResponse,
   type SpeakEvent,
   type SpeakResponse,
   type StatusResponse,
@@ -119,6 +120,8 @@ export const pause = (reason = "user", opts: ClientOptions = {}) =>
   request<PauseResponse>("POST", "/v1/pause", { reason } satisfies PauseRequest, opts);
 export const resume = (reason = "user", opts: ClientOptions = {}) =>
   request<PauseResponse>("POST", "/v1/resume", { reason } satisfies PauseRequest, opts);
+export const shutdown = (opts: ClientOptions = {}) =>
+  request<ShutdownResponse>("POST", "/v1/shutdown", undefined, opts);
 export const getSettings = (opts: ClientOptions = {}) =>
   request<SettingsResponse>("GET", "/v1/settings", undefined, opts);
 export const updateSettings = (update: SettingsUpdate, opts: ClientOptions = {}) =>

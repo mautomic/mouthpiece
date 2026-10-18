@@ -20,9 +20,14 @@ export const daemonCommand: CommandFn = async (args, io, deps) => {
     io.err("mouthpiece: the daemon is not installed; run `mouthpiece install-agent`\n");
     return 1;
   }
-  const loaded = (await deps.exec(["launchctl", "print", service])).code === 0;
+  const print = await deps.exec(["launchctl", "print", service]);
+  const loaded = print.code === 0;
+  // Loaded but not running: it exited cleanly (the menubar's Quit) and launchd left it stopped.
+  // If print's wording ever changes, start falls back to kickstart, which is harmless when running.
+  const running = loaded && /^\s*state = running$/m.test(print.stdout);
 
   if (sub === "stop") {
+    // Unload whenever it's loaded, running or not; this doesn't depend on print's wording.
     if (!loaded) {
       io.out("Daemon is not running.\n");
       return 0;
@@ -36,8 +41,13 @@ export const daemonCommand: CommandFn = async (args, io, deps) => {
     io.out("Daemon restarted.\n");
     return 0;
   }
-  if (loaded) {
+  if (running) {
     io.out("Daemon is already running.\n");
+    return 0;
+  }
+  if (loaded) {
+    if (!(await launchctl(deps, io, ["kickstart", service]))) return 1;
+    io.out("Daemon started.\n");
     return 0;
   }
   if (!(await launchctl(deps, io, ["bootstrap", guiDomain(), plistPath]))) return 1;

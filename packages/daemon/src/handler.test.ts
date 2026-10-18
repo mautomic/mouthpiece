@@ -52,6 +52,10 @@ function setup(overrides: Partial<HandlerDeps> = {}) {
       return { paused: false, pauseReasons: [] };
     },
     settings: () => SETTINGS,
+    shutdown: () => {
+      pauseCalls.push("shutdown");
+      return { stopping: true };
+    },
     updateSettings: async () => ({ ok: true, config: resolveConfig({}) }),
     ...overrides,
   };
@@ -324,4 +328,20 @@ test("POST /v1/settings validates the body, saves, and maps a refused save to it
   const conflict = await refused.handle(post({ kokoro: { voice: "af_sky" } }));
   expect(conflict.status).toBe(409);
   expect(await conflict.json()).toEqual({ error: "edit it by hand" });
+});
+
+test("POST /v1/shutdown needs the token, then asks the daemon to stop", async () => {
+  const { handle, pauseCalls } = setup();
+  const unauthorized = await handle(new Request("http://x/v1/shutdown", { method: "POST" }));
+  expect(unauthorized.status).toBe(401);
+  expect(pauseCalls).toEqual([]);
+  const res = await handle(
+    new Request("http://x/v1/shutdown", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    }),
+  );
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ stopping: true });
+  expect(pauseCalls).toEqual(["shutdown"]);
 });

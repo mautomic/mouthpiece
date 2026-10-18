@@ -1,7 +1,7 @@
 // MouthpieceHelper.swift: the Mouthpiece helper app (MouthpieceHelper.app, LSUIElement).
 //   --bind        global hotkeys via Carbon RegisterEventHotKey (no Accessibility permission)
 //   --menubar     NSStatusItem that polls GET /v1/status (US-018); its Settings submenu reads and
-//                 writes GET/POST /v1/settings (the Kokoro voice and speed)
+//                 writes GET/POST /v1/settings (the Kokoro voice and speed); Quit posts /v1/shutdown
 //   --mic-pause   CoreAudio mic-in-use watcher that posts /v1/pause and /v1/resume, reason "mic" (US-022)
 // Usage: mouthpiece-helper --url http://127.0.0.1:7317 --token-file ~/.mouthpiece/token
 //          [--bind stop=ctrl+alt+s ...] [--menubar]
@@ -283,6 +283,10 @@ final class Menubar: NSObject, NSMenuDelegate {
     menu.addItem(NSMenuItem.separator())
     infoItem.isEnabled = false
     menu.addItem(infoItem)
+    // Always enabled: with the daemon unreachable it still quits this helper.
+    let quitItem = NSMenuItem(title: "Quit Mouthpiece", action: #selector(quit(_:)), keyEquivalent: "q")
+    quitItem.target = self
+    menu.addItem(quitItem)
 
     item.menu = menu
     item.button?.imagePosition = .imageLeading
@@ -307,6 +311,14 @@ final class Menubar: NSObject, NSMenuDelegate {
   @objc func menuAction(_ sender: NSMenuItem) {
     guard let route = sender.representedObject as? [String], route.count == 2 else { return }
     post(route[0], route[1]) { [weak self] _ in self?.pollSoon() }
+  }
+
+  /// Stops the daemon (POST /v1/shutdown), which stops this helper with it. It stays stopped until
+  /// the next login or `mouthpiece daemon start`. If the daemon can't be reached, quits the helper.
+  @objc func quit(_ sender: NSMenuItem) {
+    post("/v1/shutdown", "{}") { data in
+      if data == nil { NSApp.terminate(nil) }
+    }
   }
 
   @objc func togglePause(_ sender: NSMenuItem) {
