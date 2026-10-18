@@ -31,7 +31,7 @@ export class SayProvider implements TtsProvider {
     await mkdir(this.opts.tmpDir, { recursive: true });
     const id = crypto.randomUUID();
     const inPath = join(this.opts.tmpDir, `${id}.txt`);
-    const outPath = join(this.opts.tmpDir, `${id}.aiff`);
+    const outPath = join(this.opts.tmpDir, `${id}.wav`);
     // Text goes through a file so it can never be parsed as a CLI flag.
     await Bun.write(inPath, text);
     try {
@@ -50,7 +50,7 @@ export class SayProvider implements TtsProvider {
       }
       if (result.code !== 0) throw new Error(`say exited with ${result.code}: ${result.stderr}`);
       const bytes = new Uint8Array(await Bun.file(outPath).arrayBuffer());
-      return { format: "aiff", chunks: singleChunk(bytes) };
+      return { format: "wav", chunks: singleChunk(bytes) };
     } finally {
       await rm(inPath, { force: true });
       await rm(outPath, { force: true });
@@ -64,7 +64,16 @@ export class SayProvider implements TtsProvider {
     voice: string | undefined,
     signal: AbortSignal | undefined,
   ): Promise<{ code: number; stderr: string }> {
-    const args = [this.opts.command ?? "say", "-f", inPath, "-o", outPath];
+    // 16-bit WAV (not say's default AIFF) so the gap-free player can take it (US-005).
+    const args = [
+      this.opts.command ?? "say",
+      "-f",
+      inPath,
+      "-o",
+      outPath,
+      "--file-format=WAVE",
+      "--data-format=LEI16@24000",
+    ];
     if (voice) args.push("-v", voice);
     signal?.throwIfAborted();
     const proc = Bun.spawn(args, { stdout: "ignore", stderr: "pipe" });
