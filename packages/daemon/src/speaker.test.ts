@@ -344,3 +344,79 @@ test("a pause while the next chunk is still synthesizing resumes from that chunk
   expect(player.played).toEqual(["Alpha one."]);
   expect(reported.at(-1)).toBe(1);
 });
+
+/** A provider whose chunk limit can change between plays, like a config reload swapping chains. */
+function switchableProvider(maxCharsPerRequest: number) {
+  const fake = new FakeProvider({ maxCharsPerRequest: 100_000 });
+  const provider = {
+    name: "switch",
+    maxCharsPerRequest,
+    pricePerMillionChars: 0,
+    synthesize: (text: string, options?: Parameters<TtsProvider["synthesize"]>[1]) =>
+      fake.synthesize(text, options),
+  } satisfies TtsProvider;
+  return { provider, calls: fake.calls };
+}
+
+const SENTENCES = [
+  "Sentence number zero is here.",
+  "Sentence number one is here.",
+  "Sentence number two is here.",
+  "Sentence number three is here.",
+  "Sentence number four is here.",
+  "Sentence number five is here.",
+  "Sentence number six is here.",
+];
+
+/** Plays `it` from `startChunk` until chunk `pauseAt` is reached, then aborts (a pause). */
+async function playUntilPause(
+  speak: ReturnType<typeof createSpeaker>,
+  it: QueueItem,
+  { startChunk = 0, pauseAt }: { startChunk?: number; pauseAt: number },
+) {
+  const pause = new AbortController();
+  await speak(
+    it,
+    ctx(false, pause.signal, {
+      startChunk,
+      onChunk: (i) => {
+        if (i === pauseAt) pause.abort();
+      },
+    }),
+  );
+}
+
+test("a chain change while paused resumes from the same chunk list, not a re-chunked one", async () => {
+  const { provider } = switchableProvider(40);
+  const player = new FakePlayer();
+  const speak = createSpeaker({ provider, player, log: () => {}, prepare });
+  const it = item(SENTENCES.join(" "), { format: "plain" });
+  await playUntilPause(speak, it, { pauseAt: 4 });
+  expect(player.played).toEqual(SENTENCES.slice(0, 4));
+
+  provider.maxCharsPerRequest = 4000; // re-chunked, the whole text would be one chunk
+  await speak(it, ctx(false, undefined, { startChunk: 4 }));
+  expect(player.played).toEqual(SENTENCES);
+});
+
+test("a frozen chunk longer than the new provider's limit is re-split from that chunk on", async () => {
+  const { provider, calls } = switchableProvider(4000);
+  const player = new FakePlayer();
+  const speak = createSpeaker({ provider, player, log: () => {}, prepare });
+  // Chunk 0 is the first sentence alone; chunk 1 packs the rest (~200 chars).
+  const it = item(`Short one. ${SENTENCES.join(" ")}`, { format: "plain" });
+  await playUntilPause(speak, it, { pauseAt: 1 });
+  expect(player.played).toEqual(["Short one."]);
+
+  provider.maxCharsPerRequest = 40;
+  // Resumed at chunk 1, which is now re-split into one chunk per sentence; pause again at
+  // the third of those (index 3).
+  await playUntilPause(speak, it, { startChunk: 1, pauseAt: 3 });
+  expect(player.played).toEqual(["Short one.", ...SENTENCES.slice(0, 2)]);
+
+  // The second resume uses the re-split list, so index 3 is the same chunk as before.
+  await speak(it, ctx(false, undefined, { startChunk: 3 }));
+  expect(player.played).toEqual(["Short one.", ...SENTENCES]);
+  // After the two first-play calls (chunk 0, and chunk 1 prefetched), every chunk fits.
+  expect(calls.slice(2).every((c) => c.length <= 40)).toBe(true);
+});

@@ -26,13 +26,15 @@ type Synthesis = { ok: true; clip: AudioClip } | { ok: false; error: unknown };
 
 /**
  * prepare → label → chunk → synthesize (next chunk prefetched while the current one plays) → play.
- * A resumed item (US-022) starts at ctx.startChunk; the preparer memoizes per event, so the chunks
- * match the interrupted play's.
+ * A resumed item (US-022) starts at ctx.startChunk of the chunk list frozen on its first play, so a
+ * chain change while paused (a new maxCharsPerRequest) can't shift or drop chunks.
  */
 export function createSpeaker(deps: SpeakerDeps): PlayFn {
   const now = deps.now ?? Date.now;
   // Items already recorded, so one resumed from chunk 0 (paused before its first chunk) is recorded once.
   const recorded = new WeakSet<QueueItem>();
+  // Each item's chunk list, frozen on first play; a resume indexes into it.
+  const frozen = new WeakMap<QueueItem, string[]>();
   return async (item, { announceLabel, signal, startChunk, onChunk }) => {
     const prepared = await deps.prepare(item.event);
     if (signal.aborted) return;
@@ -50,7 +52,8 @@ export function createSpeaker(deps: SpeakerDeps): PlayFn {
     }
     const body = prepared.spoken;
     const text = announceLabel && item.event.label ? `${item.event.label}: ${body}` : body;
-    const chunks = chunkText(text, { maxChars: deps.provider.maxCharsPerRequest });
+    const chunks = chunksFor(frozen.get(item), text, startChunk, deps.provider.maxCharsPerRequest);
+    frozen.set(item, chunks);
     const synthesize = (chunk: string): Promise<Synthesis> =>
       deps.provider
         .synthesize(chunk, {
@@ -66,6 +69,9 @@ export function createSpeaker(deps: SpeakerDeps): PlayFn {
     const logChunkFailure = (chunk: number, error: unknown) =>
       deps.log({ level: "error", msg: "chunk_failed", id: item.id, chunk, error: String(error) });
     const firstChunk = chunks[startChunk];
+    if (firstChunk === undefined && startChunk > 0) {
+      deps.log({ level: "warn", msg: "resume_past_end", id: item.id, chunk: startChunk });
+    }
     let next = firstChunk === undefined ? undefined : synthesize(firstChunk);
     for (let i = startChunk; next && !signal.aborted; i++) {
       // Chunk i is now the one in progress (synthesizing, then playing), so a pause resumes here.
@@ -87,6 +93,22 @@ export function createSpeaker(deps: SpeakerDeps): PlayFn {
       }
     }
   };
+}
+
+/**
+ * The frozen list when there is one; a chunk from startChunk on that the provider can no longer
+ * take is re-split together with everything after it (earlier indices stay put).
+ */
+function chunksFor(
+  frozen: string[] | undefined,
+  text: string,
+  startChunk: number,
+  maxChars: number,
+): string[] {
+  if (!frozen) return chunkText(text, { maxChars });
+  const tooLong = frozen.findIndex((c, i) => i >= startChunk && c.length > maxChars);
+  if (tooLong === -1) return frozen;
+  return [...frozen.slice(0, tooLong), ...chunkText(frozen.slice(tooLong).join(" "), { maxChars })];
 }
 
 export function skipReason(event: NormalizedSpeakEvent, filter: Config["filter"]): string | null {
