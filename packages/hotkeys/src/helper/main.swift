@@ -1,4 +1,4 @@
-// MouthpieceHelper.swift: the Mouthpiece helper app (MouthpieceHelper.app, LSUIElement).
+// helper/main.swift: the Mouthpiece helper app (MouthpieceHelper.app, LSUIElement); the other helper/*.swift files are part of it.
 //   --bind        global hotkeys via Carbon RegisterEventHotKey (no Accessibility permission)
 //   --menubar     NSStatusItem that polls GET /v1/status (US-018); its Settings submenu reads and
 //                 writes GET/POST /v1/settings (the Kokoro voice and speed); Quit posts /v1/shutdown

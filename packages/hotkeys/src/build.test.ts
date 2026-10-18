@@ -8,6 +8,7 @@ import {
   buildHelper,
   HELPER_BUNDLE_ID,
   HELPER_SOURCE,
+  HELPER_SOURCES,
   HOTKEYS_SOURCE,
   helperAppPath,
   helperBinary,
@@ -44,8 +45,9 @@ test("paths: the helper is an app bundle in the home dir", () => {
   expect(helperBinary("/h")).toBe("/h/MouthpieceHelper.app/Contents/MacOS/mouthpiece-helper");
   expect(hotkeysBinary("/h")).toBe(helperBinary("/h"));
   expect(HOTKEYS_SOURCE).toBe(HELPER_SOURCE);
-  expect(HELPER_SOURCE.endsWith("MouthpieceHelper.swift")).toBe(true);
-  expect(existsSync(HELPER_SOURCE)).toBe(true);
+  expect(HELPER_SOURCE.endsWith("helper/main.swift")).toBe(true);
+  expect(HELPER_SOURCES[0]).toBe(HELPER_SOURCE);
+  for (const source of HELPER_SOURCES) expect(existsSync(source)).toBe(true);
 });
 
 test("infoPlist is an LSUIElement app with the helper's identity", () => {
@@ -68,7 +70,7 @@ test("buildHelper writes the plist, compiles, then ad-hoc signs with the bundle 
   expect(await readFile(join(app, "Contents", "Info.plist"), "utf8")).toBe(infoPlist());
   expect((await stat(join(app, "Contents", "MacOS"))).isDirectory()).toBe(true);
   expect(calls).toEqual([
-    ["swiftc", "-O", "-swift-version", "5", "-o", helperBinary(home), HELPER_SOURCE],
+    ["swiftc", "-O", "-swift-version", "5", "-o", helperBinary(home), ...HELPER_SOURCES],
     ["swiftc", "-O", "-swift-version", "5", "-o", playerBinary(home), PLAYER_SOURCE],
     ["codesign", "-f", "-s", "-", "--identifier", "dev.mouthpiece.player", playerBinary(home)],
     ["codesign", "-f", "-s", "-", "--identifier", "dev.mouthpiece.helper", app],
@@ -95,7 +97,7 @@ test("codesign failure surfaces stderr", async () => {
 test.skipIf(!hasSwift)(
   "Swift helper typechecks",
   async () => {
-    const proc = Bun.spawn(["swiftc", "-typecheck", "-swift-version", "5", HELPER_SOURCE], {
+    const proc = Bun.spawn(["swiftc", "-typecheck", "-swift-version", "5", ...HELPER_SOURCES], {
       stderr: "pipe",
     });
     const code = await proc.exited;

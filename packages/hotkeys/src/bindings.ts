@@ -5,7 +5,7 @@ export type HotkeyAction = (typeof HOTKEY_ACTIONS)[number];
 const MODIFIERS = ["ctrl", "alt", "shift", "cmd"] as const;
 type Modifier = (typeof MODIFIERS)[number];
 
-/** macOS virtual key codes (ANSI layout); must match the table in MouthpieceHelper.swift. */
+/** macOS virtual key codes (ANSI layout); must match the table in helper/main.swift. */
 export const KEY_CODES: Record<string, number> = {
   a: 0,
   s: 1,
