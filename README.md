@@ -206,8 +206,9 @@ Works with Claude Code and Codex sessions. `enabled` applies without a restart. 
 
 ### The inbox panel
 
-With `[reply] enabled`, the helper app shows an inbox panel: each session's latest response, with a reply box.
-⌃⌥I (or the menubar's **Inbox**) opens it with the cursor in the newest waiting reply; ⌘↩ sends, Esc closes.
+With `[reply] enabled`, the helper app shows an inbox panel in the native macOS look (translucent, light or dark with
+the system): a tab per session, the selected response in full, and a reply box. ⌃⌥I (or the menubar's **Inbox**)
+opens it on the newest session waiting for you. ⌘↩ sends (↩ adds a line), ⌘1–⌘9 or ⌃⇥ switch tabs, Esc closes.
 
 ```toml
 [reply]
@@ -217,7 +218,7 @@ popup = "away"      # pop up on a new response unless the session's terminal app
 inbox = "ctrl+alt+i"
 ```
 
-Each row's **×** (or ⌘⌫ in an empty reply field) removes it, and **Clear all** empties the inbox (from the CLI: `mouthpiece inbox --dismiss <label>`
+A tab's **×** (or ⌘⌫ in an empty reply box) removes it, and **Clear all** (in the panel's ··· menu) empties the inbox (from the CLI: `mouthpiece inbox --dismiss <label>`
 or `--clear`). A session's next response brings it back.
 
 A pop-up never takes your keystrokes, and hides after 20 seconds if you don't touch it. Orca can't say which tab
