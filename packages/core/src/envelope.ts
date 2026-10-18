@@ -1,5 +1,6 @@
 import { isKokoroSpeed, KOKORO_SPEED_MAX, KOKORO_SPEED_MIN } from "./config.ts";
 import {
+  ANNOUNCES,
   FORMATS,
   type InterruptRequest,
   KINDS,
@@ -99,6 +100,8 @@ export function parseSpeakEvent(input: unknown): ParseResult<NormalizedSpeakEven
       mode: optionalEnum(input, "mode", MODES),
       format: optionalEnum(input, "format", FORMATS) ?? "markdown",
       voice: optionalString(input, "voice", MAX_VOICE_CHARS),
+      verbatim: optionalBoolean(input, "verbatim") ?? false,
+      announce: optionalEnum(input, "announce", ANNOUNCES) ?? "auto",
     };
   });
 }

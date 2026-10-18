@@ -1,4 +1,5 @@
 import {
+  type AnnounceSetting,
   DEFAULT_CONFIG,
   type InterruptResult,
   type NormalizedSpeakEvent,
@@ -51,6 +52,8 @@ export interface SpeechQueueOptions {
   play: PlayFn;
   expireAfterMs: number;
   labelWindowMs: number;
+  /** The user's per-source announce override (`[profiles.<source>] announce`), read as each item starts. */
+  announceFor?: (source: string) => AnnounceSetting | undefined;
   /** A pause reason older than this expires, so a lost resume cannot mute speech forever. */
   maxPauseMs?: number;
   now?: () => number;
@@ -307,9 +310,7 @@ export class SpeechQueue {
     const playing: Playing = {
       item,
       controller,
-      announceLabel:
-        held?.announceLabel ??
-        (item.event.label !== undefined && this.#activeConversations(now) > 1),
+      announceLabel: held?.announceLabel ?? this.#announces(item.event, now),
       chunk: held?.chunk ?? 0,
       pausing: false,
     };
@@ -342,6 +343,15 @@ export class SpeechQueue {
         this.#pump();
         this.#settleIfIdle();
       });
+  }
+
+  /** Whether to speak the label: the source profile's rule if set, else the event's. */
+  #announces(event: NormalizedSpeakEvent, now: number): boolean {
+    if (event.label === undefined) return false;
+    const rule = this.opts.announceFor?.(event.source) ?? event.announce;
+    if (rule === "never") return false;
+    if (rule === "always") return true;
+    return this.#activeConversations(now) > 1;
   }
 
   #activeConversations(now: number): number {

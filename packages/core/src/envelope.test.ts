@@ -24,6 +24,8 @@ describe("parseSpeakEvent", () => {
         mode: undefined,
         format: "markdown",
         voice: undefined,
+        verbatim: false,
+        announce: "auto",
       },
     });
   });
@@ -62,6 +64,18 @@ describe("parseSpeakEvent", () => {
     });
   });
 
+  test("verbatim and announce are read when given", () => {
+    const r = parseSpeakEvent({ text: "x", source: "cli", verbatim: true, announce: "always" });
+    expect(r.ok && r.value.verbatim).toBe(true);
+    expect(r.ok && r.value.announce).toBe("always");
+  });
+
+  test("null verbatim and announce mean the defaults", () => {
+    const r = parseSpeakEvent({ text: "x", source: "cli", verbatim: null, announce: null });
+    expect(r.ok && r.value.verbatim).toBe(false);
+    expect(r.ok && r.value.announce).toBe("auto");
+  });
+
   test("ignores unknown fields (forward compatibility)", () => {
     expect(parseSpeakEvent({ text: "x", source: "cli", futureField: 1 }).ok).toBe(true);
   });
@@ -92,6 +106,8 @@ describe("parseSpeakEvent", () => {
     ],
     [{ text: "x", source: "cli", voice: "v".repeat(101) }, "voice must be at most 100 characters"],
     [{ text: "x", source: "cli", voice: 3 }, "voice must be a string"],
+    [{ text: "x", source: "cli", verbatim: "yes" }, "verbatim must be a boolean"],
+    [{ text: "x", source: "cli", announce: "never" }, "announce must be one of: always, auto"],
   ])("rejects %p", (input, message) => {
     const r = parseSpeakEvent(input);
     expect(r.ok).toBe(false);

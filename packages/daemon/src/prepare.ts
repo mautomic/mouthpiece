@@ -57,7 +57,12 @@ export function createPreparer(deps: PreparerDeps): Preparer {
     const mode = deps.resolveMode(event);
     const full = speakable(event);
     const { summarizer, fallback, thresholdChars } = deps.settings();
-    if (mode !== "summary" || event.kind !== "response" || full.length <= thresholdChars) {
+    if (
+      event.verbatim ||
+      mode !== "summary" ||
+      event.kind !== "response" ||
+      full.length <= thresholdChars
+    ) {
       return { mode, full, summary: undefined, spoken: full };
     }
     let summary: string | undefined;

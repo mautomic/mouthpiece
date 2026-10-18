@@ -129,9 +129,18 @@ test("profiles and quotas are open-keyed tables", () => {
   expect(c.usage).toEqual({ resetDay: 15, quotas: { inworld: { chars: 275000 } }, warnAt: 0.8 });
 });
 
+test("profiles take an announce setting", () => {
+  const c = resolveConfig({
+    profiles: { "some-bot": { announce: "never" }, web: { mode: "full", announce: "always" } },
+  });
+  expect(c.profiles["some-bot"]?.announce).toBe("never");
+  expect(c.profiles.web).toEqual({ mode: "full", announce: "always" });
+});
+
 test.each([
   [{ modes: { default: "loud" } }, "modes.default"],
   [{ profiles: { x: { mode: "loud" } } }, "profiles.x.mode"],
+  [{ profiles: { x: { announce: "sometimes" } } }, "profiles.x.announce"],
   [{ summarizer: { backend: "gpt" } }, "summarizer.backend"],
   [{ usage: { resetDay: 31 } }, "usage.resetDay"],
   [{ usage: { quotas: { inworld: { chars: 0 } } } }, "usage.quotas.inworld.chars"],

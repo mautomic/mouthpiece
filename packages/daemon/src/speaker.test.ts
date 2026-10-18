@@ -31,6 +31,8 @@ function item(text: string, extra: Partial<NormalizedSpeakEvent> = {}): QueueIte
       mode: undefined,
       format: "markdown",
       voice: undefined,
+      verbatim: false,
+      announce: "auto",
       ...extra,
     },
   };
@@ -171,6 +173,13 @@ test("skipReason filters trivial responses but never alerts", () => {
   expect(skipReason(item("Done.").event, filter)).toBe("trivial");
   expect(skipReason(item("Done.", { kind: "alert" }).event, filter)).toBeNull();
   expect(skipReason(item("A meaningful response with detail.").event, filter)).toBeNull();
+});
+
+test("a verbatim response is never trivial, unless nothing speakable is left", () => {
+  const filter = { minChars: 20, trivial: ["done"] };
+  expect(skipReason(item("Done.", { verbatim: true }).event, filter)).toBeNull();
+  expect(skipReason(item("No open positions.", { verbatim: true }).event, filter)).toBeNull();
+  expect(skipReason(item("   ", { verbatim: true }).event, filter)).toBe("trivial");
 });
 
 test("speaks the prepared summary, records history, and tags synthesis with the source", async () => {

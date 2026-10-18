@@ -17,12 +17,14 @@ Body (generic event envelope, PRD §8.3):
 | `text` | string, required | | ≤ 100,000 chars; markdown unless `format: "plain"` |
 | `source` | string, required | | `^[a-z0-9][a-z0-9._-]{0,63}$`, e.g. `claude-code`, `discord`, `cli` |
 | `conversationId` | string | `"default"` | unit of coalescing and interrupts (≤ 256) |
-| `label` | string | none | spoken prefix when several conversations are active (≤ 100) |
+| `label` | string | none | spoken prefix (see `announce`) (≤ 100) |
 | `kind` | `response` \| `alert` \| `info` | `response` | `response` items are subject to the trivial-text filter |
 | `priority` | `high` \| `normal` \| `low` | `high` for alerts, else `normal` | higher priority jumps the queue, never interrupts |
 | `mode` | `summary` \| `full` \| `off` | runtime override, then source profile, then `modes.default` | see `POST /v1/mode` for precedence |
 | `format` | `markdown` \| `plain` | `markdown` | `plain` skips markdown cleaning |
 | `voice` | string | none | provider voice for this event (≤ 100); see voice selection below |
+| `verbatim` | boolean | `false` | speak `text` as given: never summarized and never dropped as trivial, whatever the mode or length. Mode `off` still mutes it; markdown is still cleaned unless `format: "plain"` |
+| `announce` | `always` \| `auto` | `auto` | `always`: speak `label` before every item (when there is one); `auto`: only when 2+ conversations spoke within `queue.labelWindowMs`. A source profile can override it (see below) |
 
 202 `{ "id": "<item id>" }`, or 202 `{ "id": null, "skipped": "trivial" }` when filtered.
 A new event replaces any not-yet-playing item from the same `source` + `conversationId`.
@@ -36,6 +38,13 @@ Voice ids are provider-specific (`mouthpiece voices` lists them). The event's `v
 synthesizes it, so pin it only when the chain's providers share voice ids; the per-label map is looked up per provider.
 When `say` is given a voice it does not have (e.g. another provider's id after a fallback), it speaks in the system voice
 instead of failing.
+
+Label announcement, decided when an item starts playing (a resumed item keeps its decision):
+1. `[profiles."<source>"] announce = "never" | "auto" | "always"` in the config, when set;
+2. else the event's `announce` (default `auto`).
+
+`never` speaks no label. `always` speaks `"<label>: "` first whenever the event has a `label`. `auto` speaks it only when 2+
+conversations spoke within `queue.labelWindowMs`.
 
 ## POST /v1/interrupt
 Body `{ "source": "claude-code", "conversationId": "abc" }` (omit `conversationId` for the whole source).

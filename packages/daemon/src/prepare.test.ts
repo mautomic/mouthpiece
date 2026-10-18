@@ -14,6 +14,8 @@ const ev = (text: string, extra: Partial<NormalizedSpeakEvent> = {}): Normalized
   mode: undefined,
   format: "plain",
   voice: undefined,
+  verbatim: false,
+  announce: "auto",
   ...extra,
 });
 
@@ -129,4 +131,28 @@ test("onSummary is not called when no summarizer runs", async () => {
   await preparer.prepare(ev(long));
   await preparer.prepare(ev("short"));
   expect(records).toEqual([]);
+});
+
+test("a verbatim response is never summarized, however long", async () => {
+  const { s, calls } = fake("Short summary.");
+  const p = await setup("summary", s).preparer.prepare(ev(long, { verbatim: true }));
+  expect(p).toEqual({
+    mode: "summary",
+    full: long.trim(),
+    summary: undefined,
+    spoken: long.trim(),
+  });
+  expect(calls).toEqual([]);
+});
+
+test("a verbatim markdown response is still cleaned", async () => {
+  const { s } = fake("Short summary.");
+  const text = "**Bold** move, see [the post](https://example.com/p). ".repeat(20);
+  const p = await setup("summary", s).preparer.prepare(
+    ev(text, { verbatim: true, format: "markdown" }),
+  );
+  expect(p.spoken).toContain("Bold move");
+  expect(p.spoken).not.toContain("**");
+  expect(p.spoken).not.toContain("https://");
+  expect(p.summary).toBeUndefined();
 });

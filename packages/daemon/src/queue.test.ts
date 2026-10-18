@@ -6,6 +6,7 @@ import {
   type QueueItem,
   type QueueTimers,
   SpeechQueue,
+  type SpeechQueueOptions,
 } from "./queue.ts";
 
 function event(text: string, extra: Partial<NormalizedSpeakEvent> = {}): NormalizedSpeakEvent {
@@ -19,6 +20,8 @@ function event(text: string, extra: Partial<NormalizedSpeakEvent> = {}): Normali
     mode: undefined,
     format: "plain",
     voice: undefined,
+    verbatim: false,
+    announce: "auto",
     ...extra,
   };
 }
@@ -34,7 +37,7 @@ function controllablePlay() {
   return { play, started, texts: () => started.map((s) => s.item.event.text) };
 }
 
-function setup(nowRef = { t: 0 }) {
+function setup(nowRef = { t: 0 }, announceFor?: SpeechQueueOptions["announceFor"]) {
   const p = controllablePlay();
   const errors: unknown[] = [];
   const queue = new SpeechQueue({
@@ -43,6 +46,7 @@ function setup(nowRef = { t: 0 }) {
     labelWindowMs: 10 * 60_000,
     now: () => nowRef.t,
     onError: (e) => errors.push(e),
+    announceFor,
   });
   return { queue, p, errors, nowRef };
 }
@@ -177,6 +181,54 @@ describe("SpeechQueue", () => {
     expect(p.started[1]?.ctx.announceLabel).toBe(false);
     p.started[1]?.release();
     await queue.idle();
+  });
+
+  test("announce always speaks the label for a lone conversation", () => {
+    const { queue, p } = setup();
+    queue.enqueue(event("solo", { conversationId: "1", label: "bot", announce: "always" }));
+    expect(p.started[0]?.ctx.announceLabel).toBe(true);
+  });
+
+  test("announce always without a label announces nothing", () => {
+    const { queue, p } = setup();
+    queue.enqueue(event("solo", { conversationId: "1", announce: "always" }));
+    expect(p.started[0]?.ctx.announceLabel).toBe(false);
+  });
+
+  test("a profile's never wins over the event and over several active conversations", async () => {
+    const { queue, p } = setup({ t: 0 }, (source) => (source === "quiet" ? "never" : undefined));
+    queue.enqueue(event("other", { conversationId: "2", label: "api" }));
+    p.started[0]?.release();
+    await tick();
+    queue.enqueue(
+      event("q", { source: "quiet", conversationId: "1", label: "q", announce: "always" }),
+    );
+    expect(p.started[1]?.ctx.announceLabel).toBe(false);
+  });
+
+  test("a profile's always announces even when the event says auto", () => {
+    const { queue, p } = setup({ t: 0 }, () => "always");
+    queue.enqueue(event("solo", { conversationId: "1", label: "web" }));
+    expect(p.started[0]?.ctx.announceLabel).toBe(true);
+  });
+
+  test("a profile's auto overrides an event's always", () => {
+    const { queue, p } = setup({ t: 0 }, () => "auto");
+    queue.enqueue(event("solo", { conversationId: "1", label: "bot", announce: "always" }));
+    expect(p.started[0]?.ctx.announceLabel).toBe(false);
+  });
+
+  test("the profile is read as each item starts, so a config change applies to the next item", async () => {
+    let setting: "never" | "always" = "never";
+    const { queue, p } = setup({ t: 0 }, () => setting);
+    queue.enqueue(event("first", { conversationId: "1", label: "bot" }));
+    expect(p.started[0]?.ctx.announceLabel).toBe(false);
+    setting = "always";
+    p.started[0]?.release();
+    await tick();
+    // The same conversation, so only one is active: just the setting can make it announce.
+    queue.enqueue(event("second", { conversationId: "1", label: "bot" }));
+    expect(p.started[1]?.ctx.announceLabel).toBe(true);
   });
 
   test("an unlabeled alert from another session makes a labeled response announce its label", async () => {

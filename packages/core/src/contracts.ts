@@ -12,6 +12,14 @@ export type Mode = (typeof MODES)[number];
 export const FORMATS = ["markdown", "plain"] as const;
 export type Format = (typeof FORMATS)[number];
 
+/** What an event asks for its label: "always" speaks it every time, "auto" only when 2+ conversations are active. */
+export const ANNOUNCES = ["always", "auto"] as const;
+export type Announce = (typeof ANNOUNCES)[number];
+
+/** A source profile's override of the event's announce request. */
+export const ANNOUNCE_SETTINGS = ["never", "auto", "always"] as const;
+export type AnnounceSetting = (typeof ANNOUNCE_SETTINGS)[number];
+
 export const PRIORITIES = ["high", "normal", "low"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
@@ -27,6 +35,10 @@ export interface SpeakEvent {
   format?: Format;
   /** Provider voice for this event; overrides the per-label map and the provider default (≤ 100 chars). */
   voice?: string;
+  /** Speak `text` as given: never summarized, whatever the mode or length. Mute and cleaning still apply. */
+  verbatim?: boolean;
+  /** "always": speak the label before every item; "auto" (default): only when 2+ conversations are active. */
+  announce?: Announce;
 }
 
 /** A SpeakEvent after validation, with defaults applied. */
@@ -40,6 +52,8 @@ export interface NormalizedSpeakEvent {
   mode: Mode | undefined;
   format: Format;
   voice: string | undefined;
+  verbatim: boolean;
+  announce: Announce;
 }
 
 export type SpeakResponse = { id: string } | { id: null; skipped: string };

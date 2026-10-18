@@ -152,7 +152,24 @@ All settings and their defaults are in [`packages/core/src/config.ts`](packages/
     -d '{"text": "Deploy finished.", "source": "deploy-script"}'
   ```
 
-  See [`docs/api.md`](docs/api.md) for every endpoint and field.
+  To add your own source, send:
+  - `source`: a fixed name for your tool, e.g. `lambda-ai`;
+  - `label`: what's spoken first, e.g. `"lambda"` → "lambda: …";
+  - `conversationId`: a new message replaces an unplayed one with the same id, so use a unique id per message you don't want replaced;
+  - `verbatim: true`: speak your text exactly, never summarized (for text you've already written to be heard);
+  - `announce: "always"`: say the label every time, not only when several sessions are talking.
+
+  Override a source's announce in your config, and give its label its own voice:
+
+  ```toml
+  [profiles."lambda-ai"]
+  announce = "never"   # "never" | "auto" | "always"
+
+  [voices.kokoro]
+  lambda = "am_michael"
+  ```
+
+  `mouthpiece mode off --source lambda-ai` mutes it. See [`docs/api.md`](docs/api.md) for every endpoint and field.
 
 ## Running the daemon
 
