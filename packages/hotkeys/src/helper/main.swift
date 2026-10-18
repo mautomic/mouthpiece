@@ -55,7 +55,13 @@ func fail(_ message: String) -> Never {
 }
 
 // Offline check of the inbox logic (InboxCore.swift); needs no daemon and opens no window.
-if CommandLine.arguments.dropFirst().first == "--self-test-inbox" { exit(runInboxSelfTest()) }
+if CommandLine.arguments.dropFirst().first == "--self-test-inbox" {
+  // The Edit menu is AppKit, so it's checked here; the rest is InboxCore's (prints "ok").
+  let menuFailures = editMenuFailures(makeMainMenu())
+  for failure in menuFailures { print("FAIL \(failure)") }
+  let code = runInboxSelfTest()
+  exit(menuFailures.isEmpty ? code : 1)
+}
 
 var baseURL = ""
 var tokenFile = ""
@@ -782,11 +788,50 @@ final class MicWatcher {
   }
 }
 
+/// The app's main menu, never shown (an accessory app has no menu bar). Text views get ⌘V, ⌘C, ⌘X,
+/// ⌘A, ⌘Z and ⇧⌘Z only through menu key equivalents, and dictation tools insert text by pasting.
+func makeMainMenu() -> NSMenu {
+  let main = NSMenu()
+  let edit = NSMenu(title: "Edit")
+  edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+  let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+  redo.keyEquivalentModifierMask = [.command, .shift]
+  edit.addItem(NSMenuItem.separator())
+  edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+  edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+  edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+  edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+  let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+  editItem.submenu = edit
+  main.addItem(editItem)
+  return main
+}
+
+/// What the Edit menu must give text views: key → action (with ⇧ for Redo).
+func editMenuFailures(_ menu: NSMenu) -> [String] {
+  guard let edit = menu.items.first(where: { $0.title == "Edit" })?.submenu else { return ["menu: no Edit menu"] }
+  let wanted: [(key: String, shift: Bool, action: String)] = [
+    ("z", false, "undo:"), ("z", true, "redo:"), ("x", false, "cut:"), ("c", false, "copy:"),
+    ("v", false, "paste:"), ("a", false, "selectAll:"),
+  ]
+  var failures: [String] = []
+  for w in wanted {
+    let found = edit.items.contains { item in
+      item.keyEquivalent == w.key && item.action.map(NSStringFromSelector) == w.action
+        && item.keyEquivalentModifierMask.contains(.command)
+        && item.keyEquivalentModifierMask.contains(.shift) == w.shift
+    }
+    if !found { failures.append("menu: \(w.shift ? "⇧" : "")⌘\(w.key.uppercased()) → \(w.action)") }
+  }
+  return failures
+}
+
 // MARK: - Run
 
 let app = NSApplication.shared
 // .accessory, not .prohibited: a status item needs a window server connection. LSUIElement hides the Dock icon.
 app.setActivationPolicy(.accessory)
+app.mainMenu = makeMainMenu()  // ⌘V and friends in the inbox reply box
 let menubar = menubarEnabled ? Menubar() : nil
 let micWatcher = micPauseEnabled ? MicWatcher(ignore: micIgnore, resumeDelayMs: micResumeDelayMs, refreshMs: micRefreshMs) : nil
 if inboxEnabled {
