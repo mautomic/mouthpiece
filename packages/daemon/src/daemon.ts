@@ -265,7 +265,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     // Start summarizing now; it overlaps whatever is playing.
     const prepared = preparer.prepare(event);
     if (entryId !== undefined) {
-      prepared.then((p) => inbox.summarized(entryId, p.spoken)).catch(() => {});
+      // Only a real summary: a reply spoken in full has none, so the panel shows it in full.
+      prepared
+        .then((p) => {
+          if (p.summary !== undefined) inbox.summarized(entryId, p.summary);
+        })
+        .catch(() => {});
     }
     return { id: queue.enqueue(event).id };
   };

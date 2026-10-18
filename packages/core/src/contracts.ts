@@ -235,7 +235,7 @@ export interface InboxEntry {
   conversationId: string;
   label?: string;
   text: string;
-  /** The spoken text, once prepared. */
+  /** The spoken summary, once ready; absent when the response is spoken in full (short, or mode full). */
   summary?: string;
   at: number;
   alert?: { text: string; at: number };

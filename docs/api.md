@@ -126,7 +126,7 @@ Pause semantics (US-022):
 |---|---|
 | `id` | the entry's id; a new response replaces the entry with a new id |
 | `source`, `conversationId`, `label`, `text`, `at` | from the response (`at` in ms) |
-| `summary` | the spoken text, once prepared |
+| `summary` | the spoken summary, once ready; absent when the response is spoken in full (short, or mode `full`) |
 | `alert` | `{ text, at }`: the latest alert on this conversation; it never blocks replies |
 | `route` | the reply route (`POST /v1/speak` `reply`), if any |
 | `state` | `waiting` (replyable), `busy` (a prompt was submitted), `sending`, `typed` (typed, not submitted) |
