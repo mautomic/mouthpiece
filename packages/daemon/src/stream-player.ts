@@ -33,6 +33,10 @@ export interface StreamPlayerOptions {
   now?: () => number;
 }
 
+/** This many exits within EXIT_WINDOW_MS and the player is given up on until the daemon restarts. */
+const MAX_EXITS = 3;
+const EXIT_WINDOW_MS = 5 * 60_000;
+
 interface Sent {
   /** play() resolves: the clip is about to end ("ending"), or is over. */
   handOff(): void;
@@ -44,6 +48,10 @@ interface Sent {
  * Plays clips back to back with no break through mouthpiece-player (US-005, US-019). play()
  * resolves when the player reports "ending", with 0.3 s of the clip left, so the speaker sends the
  * next clip while this one finishes.
+ *
+ * Clips that aren't PCM WAV play through `fallback` once the player's queue has played out, and
+ * everything does after MAX_EXITS player exits within EXIT_WINDOW_MS. A clip whose events don't
+ * come within its length plus `watchdogSlackMs` restarts the player.
  */
 export class StreamPlayer implements Player {
   #proc: PlayerProcess | undefined;
@@ -52,12 +60,14 @@ export class StreamPlayer implements Player {
   readonly #sent = new Map<number, Sent>();
   #drainWaiters: (() => void)[] = [];
   #stopped = false;
+  #exits: number[] = [];
+  #disabled = false;
 
   constructor(private readonly opts: StreamPlayerOptions) {}
 
   /** True while clips go through the player; the speaker then chunks text by sentence. */
   get gapless(): boolean {
-    return !this.#stopped;
+    return !this.#stopped && !this.#disabled;
   }
 
   async play(clip: AudioClip, signal: AbortSignal): Promise<void> {
@@ -156,11 +166,13 @@ export class StreamPlayer implements Player {
       settle(false);
       proc.kill();
     }, timeoutMs);
-    void this.#read(proc, () => {
+    const reading = this.#read(proc, () => {
       clearTimeout(timer);
       settle(true);
     });
-    void proc.exited.then((code) => {
+    void proc.exited.then(async (code) => {
+      // Read what it wrote before it died (an "error" saying why) before handling the exit.
+      await Promise.race([reading, Bun.sleep(500)]);
       clearTimeout(timer);
       settle(false);
       if (this.#proc === proc) {
@@ -168,9 +180,23 @@ export class StreamPlayer implements Player {
         this.#ready = undefined;
       }
       for (const sent of [...this.#sent.values()]) sent.finish();
-      if (!this.#stopped) this.opts.log({ level: "warn", msg: "player_exited", code });
+      if (!this.#stopped) this.#exited(code);
     });
     return ready;
+  }
+
+  #exited(code: number): void {
+    const now = (this.opts.now ?? Date.now)();
+    this.#exits = [...this.#exits.filter((t) => now - t < EXIT_WINDOW_MS), now];
+    this.opts.log({ level: "warn", msg: "player_exited", code });
+    if (this.#exits.length >= MAX_EXITS && !this.#disabled) {
+      this.#disabled = true;
+      this.opts.log({
+        level: "error",
+        msg: "player_disabled",
+        hint: "speech plays through afplay until the daemon restarts",
+      });
+    }
   }
 
   async #read(proc: PlayerProcess, onReady: () => void): Promise<void> {
@@ -186,6 +212,13 @@ export class StreamPlayer implements Player {
         if (event.event === "ready") onReady();
         else if (event.event === "ending") sent?.handOff();
         else if (event.event === "done") sent?.finish();
+        else if (event.event === "reset") {
+          // The output device changed and the player dropped what it had queued.
+          this.opts.log({ level: "warn", msg: "player_reset" });
+          for (const s of [...this.#sent.values()]) s.finish();
+        } else if (event.event === "error") {
+          this.opts.log({ level: "error", msg: "player_error", error: String(event.message) });
+        }
       }
     } catch {
       // The pipe broke: the exit handler ends the clips.

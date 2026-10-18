@@ -180,3 +180,125 @@ test("spawnPlayer speaks the line protocol over real pipes, including a 10 s cli
     await player.stop();
   }
 });
+
+test("a clip that isn't PCM WAV waits for the player's queue to play out, then goes to the fallback", async () => {
+  const h = harness();
+  const signal = new AbortController().signal;
+  const first = h.player.play(wavClip(), signal);
+  await until(() => h.sentEnd(1));
+  h.proc().emit({ event: "ending", id: 1 });
+  await first;
+  const second = h.player.play(mp3Clip(), signal);
+  await Bun.sleep(5);
+  expect(h.fallback.played).toEqual([]); // clip 1's tail is still playing
+  h.proc().emit({ event: "done", id: 1 });
+  await second;
+  expect(h.fallback.played).toEqual(["mp3"]);
+});
+
+test("a player that doesn't report ready in time is killed, and the clip goes to the fallback", async () => {
+  const h = harness({ ready: false, readyTimeoutMs: 20 });
+  await h.player.play(wavClip(), new AbortController().signal);
+  expect(h.fallback.played).toEqual(["wav"]);
+  expect(h.proc().killed).toBe(true);
+  expect(h.logs).toContainEqual(
+    expect.objectContaining({ level: "warn", msg: "player_not_ready" }),
+  );
+});
+
+test("a player that exits mid-clip ends that clip, and the next clip starts a new player", async () => {
+  const h = harness();
+  const signal = new AbortController().signal;
+  const first = h.player.play(wavClip(), signal);
+  await until(() => h.sentEnd(1));
+  h.proc().exit(1);
+  await first;
+  expect(h.logs).toContainEqual(
+    expect.objectContaining({ level: "warn", msg: "player_exited", code: 1 }),
+  );
+  const second = h.player.play(wavClip(), signal);
+  await until(() => h.procs.length === 2 && h.sentEnd(2));
+  h.proc().emit({ event: "ending", id: 2 });
+  await second;
+  expect(h.player.gapless).toBe(true);
+});
+
+test("3 exits within 5 minutes turn the player off: the fallback plays everything", async () => {
+  const clock = { t: 0 };
+  const h = harness({ now: () => clock.t });
+  const signal = new AbortController().signal;
+  for (let i = 1; i <= 3; i++) {
+    clock.t += 60_000;
+    const playing = h.player.play(wavClip(), signal);
+    await until(() => h.procs.length === i && h.sentEnd(i));
+    h.proc().exit(1);
+    await playing;
+  }
+  expect(h.player.gapless).toBe(false);
+  expect(h.logs.filter((l) => l.msg === "player_disabled")).toEqual([
+    expect.objectContaining({ level: "error", msg: "player_disabled" }),
+  ]);
+  await h.player.play(wavClip(), signal);
+  expect(h.procs).toHaveLength(3);
+  expect(h.fallback.played).toEqual(["wav"]);
+});
+
+test("exits spread over more than 5 minutes don't turn the player off", async () => {
+  const clock = { t: 0 };
+  const h = harness({ now: () => clock.t });
+  const signal = new AbortController().signal;
+  for (let i = 1; i <= 3; i++) {
+    clock.t += 3 * 60_000;
+    const playing = h.player.play(wavClip(), signal);
+    await until(() => h.procs.length === i && h.sentEnd(i));
+    h.proc().exit(1);
+    await playing;
+  }
+  expect(h.player.gapless).toBe(true);
+});
+
+test("a reset from the player ends the clips it dropped", async () => {
+  const h = harness();
+  const playing = h.player.play(wavClip(), new AbortController().signal);
+  await until(() => h.sentEnd(1));
+  h.proc().emit({ event: "reset" });
+  await playing;
+  expect(h.logs).toContainEqual(expect.objectContaining({ level: "warn", msg: "player_reset" }));
+});
+
+test("an error event is logged", async () => {
+  const h = harness();
+  const playing = h.player.play(wavClip(), new AbortController().signal);
+  await until(() => h.sentEnd(1));
+  h.proc().emit({ event: "error", message: "could not start audio" });
+  h.proc().exit(1);
+  await playing;
+  expect(h.logs).toContainEqual(
+    expect.objectContaining({
+      level: "error",
+      msg: "player_error",
+      error: "could not start audio",
+    }),
+  );
+});
+
+test("a clip whose events never come is given up on after its length plus the slack, and the player restarted", async () => {
+  const h = harness({ watchdogSlackMs: 20 });
+  await h.player.play(wavClip(10), new AbortController().signal);
+  expect(h.proc().killed).toBe(true);
+  expect(h.logs).toContainEqual(
+    expect.objectContaining({ level: "warn", msg: "player_unresponsive", id: 1 }),
+  );
+});
+
+test("stop() kills the player, and later clips go to the fallback", async () => {
+  const h = harness();
+  const playing = h.player.play(wavClip(), new AbortController().signal);
+  await until(() => h.sentEnd(1));
+  await h.player.stop();
+  await playing;
+  expect(h.proc().killed).toBe(true);
+  expect(h.logs.some((l) => l.msg === "player_exited")).toBe(false);
+  await h.player.play(wavClip(), new AbortController().signal);
+  expect(h.fallback.played).toEqual(["wav"]);
+});
