@@ -599,6 +599,23 @@ describe("SpeechQueue pause/resume (US-022)", () => {
     expect(clock.delays()).toEqual([]);
   });
 
+  test("a maxPauseMs past setTimeout's limit arms a clamped timer that re-arms for the rest", async () => {
+    const max = 2_147_483_647;
+    const { queue, p, nowRef, clock } = pausable({ maxPauseMs: 3_000_000_000 });
+    queue.enqueue(event("a"));
+    queue.pause("mic");
+    await tick();
+    expect(clock.delays()).toEqual([max]); // never above 2^31-1 (Bun would fire it at once)
+    nowRef.t = max;
+    clock.fireAll();
+    expect(queue.pauseReasons()).toEqual(["mic"]);
+    expect(clock.delays()).toEqual([3_000_000_001 - max]);
+    nowRef.t = 3_000_000_001;
+    clock.fireAll();
+    expect(p.started).toHaveLength(2);
+    expect(clock.delays()).toEqual([]);
+  });
+
   test("the expiry timer follows the earliest reason and is cleared when none remain", async () => {
     const { queue, nowRef, clock } = pausable({ maxPauseMs: 1000 });
     queue.pause("mic");

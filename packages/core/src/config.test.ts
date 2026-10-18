@@ -224,6 +224,7 @@ test.each([
   [{ micPause: { resumeDelayMs: 1.5 } }, "micPause.resumeDelayMs"],
   [{ micPause: { maxPauseMs: 0 } }, "micPause.maxPauseMs"],
   [{ micPause: { maxPauseMs: "600000" } }, "micPause.maxPauseMs"],
+  [{ micPause: { maxPauseMs: 86_400_001 } }, "micPause.maxPauseMs must be at most 86400000"],
 ])("rejects phase 4 %p", (raw, message) => {
   expect(() => resolveConfig(raw)).toThrow(ConfigError);
   expect(() => resolveConfig(raw)).toThrow(message);

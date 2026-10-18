@@ -77,7 +77,7 @@ Pause semantics (US-022):
   interrupted (not from the beginning). While paused nothing plays; new items still queue, and coalescing and expiry apply.
   The held item does not expire while paused.
 - `POST /v1/interrupt`, `/v1/stop` and `/v1/skip` still work while paused; an item they drop never resumes.
-- Safety: a reason expires after `micPause.maxPauseMs` (default 600000 ms), and the daemon clears `mic` as soon as the helper
+- Safety: a reason expires after `micPause.maxPauseMs` (default 600000 ms, at most 86400000), and the daemon clears `mic` as soon as the helper
   that reported it exits.
 
 ## GET /v1/mode

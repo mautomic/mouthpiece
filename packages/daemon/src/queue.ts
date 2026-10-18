@@ -35,6 +35,9 @@ export interface QueueTimers {
   clear(handle: unknown): void;
 }
 
+/** setTimeout's largest delay (2^31 - 1 ms); anything above it fires immediately. */
+const MAX_TIMER_MS = 2_147_483_647;
+
 const DEFAULT_TIMERS: QueueTimers = {
   set: (fn, ms) => {
     const timer = setTimeout(fn, ms);
@@ -270,8 +273,12 @@ export class SpeechQueue {
     this.#expiryTimer = undefined;
     if (this.#reasons.size === 0) return;
     const earliest = Math.min(...this.#reasons.values());
-    // A reason expires once it is *older* than maxPauseMs, hence the + 1.
-    const delay = Math.max(0, earliest + this.#maxPauseMs + 1 - this.#now());
+    // A reason expires once it is *older* than maxPauseMs, hence the + 1. Clamped to setTimeout's
+    // limit (a longer delay fires at once, in a loop); an early firing just re-arms for the rest.
+    const delay = Math.min(
+      MAX_TIMER_MS,
+      Math.max(0, earliest + this.#maxPauseMs + 1 - this.#now()),
+    );
     this.#expiryTimer = timers.set(() => {
       this.#expiryTimer = undefined;
       this.#expireReasons();

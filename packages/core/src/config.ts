@@ -53,10 +53,13 @@ export interface Config {
     ignoreBundleIds: string[];
     /** How long the mic must stay idle before speech resumes. */
     resumeDelayMs: number;
-    /** Safety: a pause reason expires after this long. */
+    /** Safety: a pause reason expires after this long (at most MAX_PAUSE_MS). */
     maxPauseMs: number;
   };
 }
+
+/** The largest `micPause.maxPauseMs`: 24 hours. */
+export const MAX_PAUSE_MS = 86_400_000;
 
 export const DEFAULT_CONFIG: Config = {
   provider: {
@@ -270,8 +273,9 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
         optional(micPause.resumeDelayMs, "micPause.resumeDelayMs", positiveInt) ??
         base.micPause.resumeDelayMs,
       maxPauseMs:
-        optional(micPause.maxPauseMs, "micPause.maxPauseMs", positiveInt) ??
-        base.micPause.maxPauseMs,
+        optional(micPause.maxPauseMs, "micPause.maxPauseMs", (v, n) =>
+          atMost(positiveInt(v, n), MAX_PAUSE_MS, n),
+        ) ?? base.micPause.maxPauseMs,
     },
   });
 }
@@ -328,6 +332,11 @@ function positiveInt(value: unknown, name: string): number {
   const n = nonNegativeInt(value, name);
   if (n === 0) throw new ConfigError(`${name} must be a positive integer`);
   return n;
+}
+
+function atMost(value: number, max: number, name: string): number {
+  if (value > max) throw new ConfigError(`${name} must be at most ${max}`);
+  return value;
 }
 
 function positiveNumber(value: unknown, name: string): number {
