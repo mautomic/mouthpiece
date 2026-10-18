@@ -51,6 +51,7 @@ function harness(exec?: Exec) {
       inbox: unused,
       reply: unused,
       submitReply: unused,
+      dismissInbox: unused,
     },
     startDaemon: unused,
     env: { MOUTHPIECE_HOME: home, PATH: "/usr/bin" },

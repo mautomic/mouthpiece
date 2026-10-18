@@ -43,7 +43,7 @@ export const replyCommand: CommandFn = async (args, io, deps) => {
 };
 
 /** The one entry `target` names by id prefix or label; otherwise every candidate (none or several). */
-function pick(entries: InboxEntry[], target: string): InboxEntry | InboxEntry[] {
+export function pick(entries: InboxEntry[], target: string): InboxEntry | InboxEntry[] {
   const byId = entries.filter((e) => e.id.startsWith(target));
   const byLabel = entries.filter((e) => (e.label ?? e.source) === target);
   const candidates = [...new Set([...byId, ...byLabel])];

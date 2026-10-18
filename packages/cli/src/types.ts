@@ -26,6 +26,7 @@ export interface CliDeps {
     | "inbox"
     | "reply"
     | "submitReply"
+    | "dismissInbox"
   >;
   startDaemon(): Promise<{ url: string }>;
   env: Env;

@@ -45,6 +45,7 @@ function harness() {
       inbox: unused,
       reply: unused,
       submitReply: unused,
+      dismissInbox: unused,
     },
     startDaemon: unused,
     env: {

@@ -45,6 +45,7 @@ function harness() {
       inbox: async () => ({ enabled: false, entries: [] }),
       reply: async () => ({ status: "submitted" }),
       submitReply: async () => ({ status: "submitted" }),
+      dismissInbox: async () => ({ dismissed: 0 }),
     },
     startDaemon: async () => ({ url: "http://127.0.0.1:7317" }),
     env: {},

@@ -42,6 +42,7 @@ function harness(
       inbox: async () => ({ enabled: false, entries: [] }),
       reply: async () => ({ status: "submitted" }),
       submitReply: async () => ({ status: "submitted" }),
+      dismissInbox: async () => ({ dismissed: 0 }),
       status: async () => ({
         version: "0.1.0",
         speaking: false,
