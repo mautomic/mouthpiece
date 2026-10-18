@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { MouthpieceError } from "@mouthpiece/client";
 import type { InboxEntry, ReplyRequest, ReplySubmitRequest } from "@mouthpiece/core";
 import { run } from "../run.ts";
 import type { CliDeps, CliIO } from "../types.ts";

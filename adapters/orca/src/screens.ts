@@ -7,8 +7,13 @@ export interface ScreenState {
 }
 
 const RULE = /^─{8,}/;
-/** `✽ Lollygagging… (23s · …)`: a status glyph, one word, an ellipsis, then the elapsed time. */
-const CLAUDE_BUSY = /^\S\s+\S+…\s+\(/;
+/**
+ * A working line: a status glyph, any words, an ellipsis, then the elapsed time in parentheses
+ * (`✽ Lollygagging… (23s`, `✶ Running the test suite… (1m 3s`). Prose that happens to match only
+ * refuses a reply, the safe direction.
+ */
+const CLAUDE_BUSY = /^\S\s.*…\s*\(/;
+const ESC_TO_INTERRUPT = /esc to interrupt/i;
 const CLAUDE_MENU = /^❯\s*\d+\./;
 const CODEX_PLACEHOLDER = "Ask Codex to do anything";
 
@@ -34,7 +39,8 @@ function claude(lines: string[]): ScreenState | undefined {
     .map((l, i) => (i === 0 ? l.slice(1) : l).trim())
     .filter(Boolean)
     .join(" ");
-  return { idle: !lines.slice(0, top).some((l) => CLAUDE_BUSY.test(l)), prompt };
+  const above = lines.slice(0, top);
+  return { idle: !above.some((l) => CLAUDE_BUSY.test(l) || ESC_TO_INTERRUPT.test(l)), prompt };
 }
 
 function codex(lines: string[]): ScreenState | undefined {
@@ -42,7 +48,7 @@ function codex(lines: string[]): ScreenState | undefined {
   if (i < 0) return undefined;
   const text = (lines[i] as string).slice(1).trim();
   return {
-    idle: !lines.some((l) => l.includes("esc to interrupt")),
+    idle: !lines.some((l) => ESC_TO_INTERRUPT.test(l)),
     prompt: text === CODEX_PLACEHOLDER ? "" : text,
   };
 }

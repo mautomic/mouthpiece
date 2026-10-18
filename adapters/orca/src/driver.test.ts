@@ -64,7 +64,7 @@ test("check passes for the same agent, idle, with an empty prompt", async () => 
         "term_abc",
         "--screen",
         "--limit",
-        "15",
+        "60",
         "--json",
       ],
       timeoutMs: 3000,
@@ -126,9 +126,15 @@ test("check with typed text accepts a prompt that starts with it", async () => {
   expect(await driver.check(route, "go ahead with the plan")).toEqual({ ok: true });
 });
 
-test("send types the text, presses Enter and waits for submission", async () => {
-  const { driver, calls } = fake({ send: ok({}) });
-  expect(await driver.send(route, "-- go ahead; rm nothing")).toEqual({ submitted: false });
+function sent(send: Record<string, unknown>, code = 0): ExecResult {
+  return { code, stdout: JSON.stringify({ ok: true, result: { send } }), stderr: "" };
+}
+const accepted = (prompt?: Record<string, unknown>) =>
+  sent({ handle: "term_abc", accepted: true, ...(prompt && { prompt }) });
+
+test("send types the text with --text=, presses Enter and waits for submission", async () => {
+  const { driver, calls } = fake({ send: accepted() });
+  expect(await driver.send(route, "--force is fine; rm nothing")).toEqual({ submitted: false });
   expect(calls).toEqual([
     {
       cmd: [
@@ -137,8 +143,7 @@ test("send types the text, presses Enter and waits for submission", async () => 
         "send",
         "--terminal",
         "term_abc",
-        "--text",
-        "-- go ahead; rm nothing",
+        "--text=--force is fine; rm nothing",
         "--enter",
         "--wait-submit",
         "5",
@@ -149,8 +154,8 @@ test("send types the text, presses Enter and waits for submission", async () => 
   ]);
 });
 
-test("send with empty text presses Enter alone", async () => {
-  const { driver, calls } = fake({ send: ok({}) });
+test("send with empty text presses Enter alone, without --wait-submit (Orca refuses it)", async () => {
+  const { driver, calls } = fake({ send: accepted() });
   await driver.send(route, "");
   expect(calls[0]?.cmd).toEqual([
     "/bin/orca",
@@ -159,10 +164,43 @@ test("send with empty text presses Enter alone", async () => {
     "--terminal",
     "term_abc",
     "--enter",
-    "--wait-submit",
-    "5",
     "--json",
   ]);
+});
+
+test("send is submitted only when Orca saw the turn start", async () => {
+  const started = {
+    requestId: "r1",
+    provider: "claude",
+    observation: "observed",
+    stages: ["accepted", "submitted", "turn_started"],
+  };
+  expect(await fake({ send: accepted(started) }).driver.send(route, "go")).toEqual({
+    submitted: true,
+  });
+  const swallowed = { ...started, stages: ["accepted"] };
+  expect(await fake({ send: accepted(swallowed) }).driver.send(route, "go")).toEqual({
+    submitted: false,
+  });
+  const replaced = { ...started, observation: "incarnation_replaced" };
+  expect(await fake({ send: accepted(replaced) }).driver.send(route, "go")).toEqual({
+    submitted: false,
+  });
+});
+
+test("send throws when Orca refused the input or exited non-zero", async () => {
+  const refused = sent({ handle: "term_abc", accepted: false, refusedReason: "not writable" }, 1);
+  expect(
+    await fake({ send: refused })
+      .driver.send(route, "go")
+      .catch((e: Error) => e.message),
+  ).toContain("not accepted");
+  const exit = { ...accepted(), code: 1 };
+  expect(
+    await fake({ send: exit })
+      .driver.send(route, "go")
+      .catch((e: Error) => e.message),
+  ).toContain("exit 1");
 });
 
 test("send throws on failure, without the text in the message", async () => {

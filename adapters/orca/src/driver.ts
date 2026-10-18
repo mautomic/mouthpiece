@@ -13,7 +13,8 @@ export const ORCA_BIN = "/Applications/Orca.app/Contents/Resources/bin/orca";
 
 const QUERY_TIMEOUT_MS = 3_000;
 const SEND_TIMEOUT_MS = 8_000;
-const SCREEN_LINES = "15";
+/** The whole visible screen, so a spinner above a long todo list is still seen. */
+const SCREEN_LINES = "60";
 
 export interface OrcaReplyDriverOptions {
   exec?: Exec;
@@ -55,28 +56,44 @@ export class OrcaReplyDriver implements ReplyDriver {
   }
 
   async send(route: ReplyRoute, text: string): Promise<{ submitted: boolean }> {
+    // `--text=` is Orca's form for a value that starts with `--`. Orca accepts --wait-submit only
+    // with text, so Enter alone (submitting a typed reply) goes without it.
     const args = ["send", "--terminal", route.target];
-    if (text !== "") args.push("--text", text);
-    args.push("--enter", "--wait-submit", "5", "--json");
-    const result = await this.#run(args, SEND_TIMEOUT_MS);
-    if (!isRecord(result) || result.ok !== true) {
-      const code = isRecord(result) && isRecord(result.error) ? result.error.code : "no result";
-      throw new Error(`orca terminal send failed: ${String(code)}`);
+    if (text !== "") args.push(`--text=${text}`, "--enter", "--wait-submit", "5");
+    else args.push("--enter");
+    args.push("--json");
+    const { code, json } = await this.#call(args, SEND_TIMEOUT_MS);
+    if (!isRecord(json) || json.ok !== true || !isRecord(json.result)) {
+      const error = isRecord(json) && isRecord(json.error) ? json.error.code : "no result";
+      throw new Error(`orca terminal send failed: ${String(error)}`);
     }
-    // Per the spec, `submitted` waits on the field names from a real run of this command. Until
-    // they are recorded, the session's prompt-submit hook confirms.
-    return { submitted: false };
+    const send = json.result.send;
+    if (!isRecord(send) || send.accepted !== true) {
+      throw new Error("orca terminal send failed: input not accepted");
+    }
+    if (code !== 0) throw new Error(`orca terminal send failed: exit ${code}`);
+    return { submitted: turnStarted(send.prompt) };
   }
 
   /** Runs `orca terminal <args>`: its JSON, or undefined when it printed none. */
   async #run(args: string[], timeoutMs: number): Promise<unknown> {
+    return (await this.#call(args, timeoutMs)).json;
+  }
+
+  async #call(args: string[], timeoutMs: number): Promise<{ code: number; json: unknown }> {
     const r = await this.#exec([this.#orca, "terminal", ...args], { timeoutMs });
     try {
-      return JSON.parse(r.stdout);
+      return { code: r.code, json: JSON.parse(r.stdout) };
     } catch {
-      return undefined;
+      return { code: r.code, json: undefined };
     }
   }
+}
+
+/** Orca's prompt receipt: submitted only once it saw the agent start a turn in the same process. */
+function turnStarted(prompt: unknown): boolean {
+  if (!isRecord(prompt) || prompt.observation === "incarnation_replaced") return false;
+  return Array.isArray(prompt.stages) && prompt.stages.includes("turn_started");
 }
 
 function terminalOf(result: unknown): Record<string, unknown> | undefined {

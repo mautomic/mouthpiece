@@ -11,9 +11,16 @@ import type { Inbox, StoredEntry } from "./inbox.ts";
 
 export const MAX_REPLY_CHARS = 4000;
 
-/** Delivery control 2 (PRD §13): one line, exactly as it will be typed. */
+/** C0 and C1 controls, DEL, and the Unicode line and paragraph separators. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point.
+const CONTROLS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g;
+
+/**
+ * Delivery control 2 (PRD §13): one line of plain text, exactly as it will be typed. Control
+ * characters become spaces, so a pasted ESC or Ctrl-C never reaches the agent as a keystroke.
+ */
 export function oneLine(text: string): string {
-  return text.replace(/\s*[\r\n]+\s*/g, " ").trim();
+  return text.replace(CONTROLS, " ").replace(/ {2,}/g, " ").trim();
 }
 
 type RefusalStatus = 400 | 403 | 409 | 410 | 413 | 422 | 502;
@@ -135,6 +142,8 @@ export class ReplyController {
       try {
         ({ submitted } = await driver.send(route, text));
       } catch (error) {
+        // The prompt-submit hook already confirmed: the text went in, whatever the CLI reports.
+        if (confirmed) return this.#finish(entry, true, typed ?? text);
         this.#restore(entry.id, restore);
         this.#opts.log({ level: "warn", msg: "reply_send_failed", error: String(error) });
         return this.#refused(entry, "send-failed");
@@ -142,14 +151,17 @@ export class ReplyController {
       if (!submitted && !confirmed) {
         await Promise.race([confirmation, this.#sleep(this.#opts.config().confirmMs)]);
       }
-      const done = submitted || confirmed;
-      inbox.setState(entry.id, done ? "busy" : "typed", { text: typed ?? text, at: this.#now() });
-      const status = done ? "submitted" : "typed";
-      this.#log(entry, { result: status });
-      return { ok: true, status };
+      return this.#finish(entry, submitted || confirmed, typed ?? text);
     } finally {
       this.#pending.delete(key);
     }
+  }
+
+  #finish(entry: StoredEntry, done: boolean, text: string): ReplyResult {
+    this.#opts.inbox.setState(entry.id, done ? "busy" : "typed", { text, at: this.#now() });
+    const status = done ? "submitted" : "typed";
+    this.#log(entry, { result: status });
+    return { ok: true, status };
   }
 
   #restore(id: string, state: "waiting" | "typed"): void {

@@ -262,3 +262,18 @@ test("logs say what happened, never the reply text", async () => {
   ]);
   expect(JSON.stringify(logs)).not.toContain("secret");
 });
+
+test("oneLine folds control characters, so nothing but text is typed", () => {
+  expect(oneLine("go\u001b[31m now\u0003\tthen\u007f\u0085 done\u2028ok")).toBe(
+    "go [31m now then done ok",
+  );
+});
+
+test("a send that times out after the turn was confirmed is still submitted", async () => {
+  const { controller, driver, inbox, speak } = setup();
+  driver.failSend = true;
+  driver.onSend = () => controller.interrupted("agent", "c1");
+  const id = speak();
+  expect(await controller.reply({ id, text: "go" })).toEqual({ ok: true, status: "submitted" });
+  expect(inbox.get(id)?.state).toBe("busy");
+});

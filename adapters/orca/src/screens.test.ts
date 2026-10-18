@@ -107,3 +107,35 @@ test("promptVerdict with typed text: the prompt must start with it, spacing asid
     reason: "draft",
   });
 });
+
+test("Claude Code: a multi-word spinner, or esc to interrupt, means busy", () => {
+  const multi = claudeBusy.map((l) =>
+    l.startsWith("✽") ? "✶ Running the test suite… (1m 3s · esc to interrupt)" : l,
+  );
+  expect(screenState("claude", multi)?.idle).toBe(false);
+  const compacting = claudeBusy.map((l) =>
+    l.startsWith("✽") ? "✻ Compacting conversation… (12s)" : l,
+  );
+  expect(screenState("claude", compacting)?.idle).toBe(false);
+  const esc = claudeBusy.map((l) => (l.startsWith("✽") ? "  (Esc to interrupt)" : l));
+  expect(screenState("claude", esc)?.idle).toBe(false);
+});
+
+test("Claude Code: a spinner above a long todo list is still busy", () => {
+  const todos = Array.from({ length: 20 }, (_, i) => `     ☐ step ${i + 1}`);
+  const tail = [
+    "✶ Running the test suite… (1m 3s · esc to interrupt)",
+    "  ⎿  ☒ first step",
+    ...todos,
+    RULE,
+    "❯",
+    RULE,
+    ...claudeFooter,
+  ];
+  expect(screenState("claude", tail)?.idle).toBe(false);
+});
+
+test("Codex: Esc to interrupt in any case means busy", () => {
+  const busy = ["• Working (12s • Esc to interrupt)", ...codexIdle.slice(2)];
+  expect(screenState("codex", busy)?.idle).toBe(false);
+});

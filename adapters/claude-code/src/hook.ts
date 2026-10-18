@@ -9,7 +9,11 @@ export type HookDeps = HookContext;
 export async function handleHook(event: string, input: unknown, deps: HookContext): Promise<void> {
   if (deps.env.MOUTHPIECE_CHILD === "1" || !isRecord(input)) return;
   const sessionId = typeof input.session_id === "string" ? input.session_id : undefined;
-  const route = replyRoute(deps.env, "claude");
+  // A headless `claude -p` run inside an Orca terminal inherits its handle; only the interactive
+  // session (entrypoint "cli") owns that terminal.
+  const entrypoint = deps.env.CLAUDE_CODE_ENTRYPOINT;
+  const route =
+    entrypoint === undefined || entrypoint === "cli" ? replyRoute(deps.env, "claude") : undefined;
   switch (event) {
     case "stop": {
       const text = await assistantText(input, deps);

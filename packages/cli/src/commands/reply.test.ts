@@ -137,3 +137,18 @@ test("no match, or no text, is a usage error", async () => {
   expect(await run(["reply", "web"], h.io, h.deps)).toBe(2);
   expect(await run(["reply"], h.io, h.deps)).toBe(2);
 });
+
+test("an id prefix that is also another session's label is refused, not guessed", async () => {
+  const h = harness([
+    entry({ id: "cafe0001-1", label: "web" }),
+    entry({ id: "bbbbbbbb-2", conversationId: "s2", label: "cafe" }),
+  ]);
+  expect(await run(["reply", "cafe", "go"], h.io, h.deps)).toBe(2);
+  expect(h.replies).toEqual([]);
+});
+
+test("an empty target is a usage error", async () => {
+  const h = harness([entry({})]);
+  expect(await run(["reply", "", "go"], h.io, h.deps)).toBe(2);
+  expect(h.replies).toEqual([]);
+});

@@ -1,4 +1,10 @@
-import type { Config, InboxEntry, InboxState, NormalizedSpeakEvent } from "@mouthpiece/core";
+import type {
+  Config,
+  InboxEntry,
+  InboxState,
+  NormalizedSpeakEvent,
+  ReplyRoute,
+} from "@mouthpiece/core";
 
 export type InboxChange = { type: "entry"; entry: InboxEntry } | { type: "remove"; id: string };
 
@@ -43,12 +49,17 @@ export class Inbox {
     if (event.kind === "alert") {
       if (!existing) return undefined;
       existing.alert = { text: event.text, at: this.#now() };
-      if (event.reply) existing.route = event.reply;
+      if (event.reply) {
+        this.#claim(key, event.reply);
+        existing.route = event.reply;
+      }
       this.#emit(existing);
       return undefined;
     }
     if (event.kind !== "response") return undefined;
-    const route = event.reply ?? existing?.route;
+    // A route is only as current as the event that carried it: no carry-over from older events.
+    const route = event.reply;
+    if (route) this.#claim(key, route);
     const entry: StoredEntry = {
       id: this.#newId(),
       source: event.source,
@@ -125,6 +136,20 @@ export class Inbox {
     return () => {
       this.#listeners.delete(listener);
     };
+  }
+
+  /**
+   * A terminal belongs to the latest conversation that reported from it (after `/clear`, or a new
+   * agent in the same terminal): every other entry loses its route to it.
+   */
+  #claim(key: string, route: ReplyRoute): void {
+    for (const [other, entry] of this.#entries) {
+      if (other === key || entry.route?.via !== route.via || entry.route.target !== route.target) {
+        continue;
+      }
+      delete entry.route;
+      this.#emit(entry);
+    }
   }
 
   #emit(entry: StoredEntry): void {

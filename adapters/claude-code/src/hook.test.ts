@@ -174,3 +174,12 @@ test("a permission alert attaches the route too", async () => {
   );
   expect(spoken[0]?.reply).toEqual(orcaRoute);
 });
+
+test("a headless claude -p run in that terminal attaches no route", async () => {
+  const { d, spoken } = deps({ ...ORCA, CLAUDE_CODE_ENTRYPOINT: "sdk-cli" });
+  await handleHook("stop", stopInput, d);
+  expect(spoken[0]).not.toHaveProperty("reply");
+  const interactive = deps({ ...ORCA, CLAUDE_CODE_ENTRYPOINT: "cli" });
+  await handleHook("stop", stopInput, interactive.d);
+  expect(interactive.spoken[0]?.reply).toEqual(orcaRoute);
+});

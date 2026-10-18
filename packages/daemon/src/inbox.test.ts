@@ -138,3 +138,18 @@ test("list is newest first, and unsubscribe stops changes", () => {
   inbox.record(event({ conversationId: "c" }));
   expect(seen).toHaveLength(2);
 });
+
+test("a terminal belongs to the latest conversation that reported from it", () => {
+  const { inbox } = setup();
+  const old = inbox.record(event({ conversationId: "before-clear", reply: route })) as string;
+  const now = inbox.record(event({ conversationId: "after-clear", reply: route })) as string;
+  expect(inbox.get(old)?.route).toBeUndefined();
+  expect(inbox.get(now)?.route).toEqual(route);
+});
+
+test("a response without a route does not inherit the previous one", () => {
+  const { inbox } = setup();
+  inbox.record(event({ reply: route }));
+  const id = inbox.record(event({ text: "Answered from elsewhere." })) as string;
+  expect(inbox.get(id)?.route).toBeUndefined();
+});

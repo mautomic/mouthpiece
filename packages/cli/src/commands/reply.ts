@@ -25,7 +25,7 @@ export const replyCommand: CommandFn = async (args, io, deps) => {
     return 2;
   }
   const [target, ...words] = positionals;
-  if (target === undefined) {
+  if (target === undefined || target === "") {
     io.err(`${USAGE}\n`);
     return 2;
   }
@@ -42,13 +42,12 @@ export const replyCommand: CommandFn = async (args, io, deps) => {
   return 2;
 };
 
-/** One entry by id prefix, else by label; otherwise every candidate (none or several). */
+/** The one entry `target` names by id prefix or label; otherwise every candidate (none or several). */
 function pick(entries: InboxEntry[], target: string): InboxEntry | InboxEntry[] {
   const byId = entries.filter((e) => e.id.startsWith(target));
-  if (byId.length === 1) return byId[0] as InboxEntry;
   const byLabel = entries.filter((e) => (e.label ?? e.source) === target);
-  if (byLabel.length === 1) return byLabel[0] as InboxEntry;
-  return byLabel.length > 1 ? byLabel : byId;
+  const candidates = [...new Set([...byId, ...byLabel])];
+  return candidates.length === 1 ? (candidates[0] as InboxEntry) : candidates;
 }
 
 async function deliver(
