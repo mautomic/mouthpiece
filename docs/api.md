@@ -25,6 +25,7 @@ Body (generic event envelope, PRD §8.3):
 | `voice` | string | none | provider voice for this event (≤ 100); see voice selection below |
 | `verbatim` | boolean | `false` | speak `text` as given: never summarized and never dropped as trivial, whatever the mode or length. Mode `off` still mutes it; markdown is still cleaned unless `format: "plain"` |
 | `announce` | `always` \| `auto` | `auto` | `always`: speak `label` before every item (when there is one); `auto`: only when 2+ conversations spoke within `queue.labelWindowMs`. A source profile can override it (see below) |
+| `reply` | `{ via: "orca", target, agent }` | none | where a reply to this event is typed (PRD §13): `target` an Orca terminal handle `^term_[A-Za-z0-9-]{1,128}$`, `agent` `^[a-z][a-z0-9-]{0,31}$` (e.g. `claude`). An invalid route is dropped; the event is still spoken |
 
 202 `{ "id": "<item id>" }`, or 202 `{ "id": null, "skipped": "trivial" }` when filtered.
 A new event replaces any not-yet-playing item from the same `source` + `conversationId`.

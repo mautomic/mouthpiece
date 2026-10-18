@@ -8,7 +8,7 @@ export interface ExecResult {
 
 export type Exec = (
   cmd: string[],
-  opts?: { stdin?: string; cwd?: string; env?: Env },
+  opts?: { stdin?: string; cwd?: string; env?: Env; timeoutMs?: number },
 ) => Promise<ExecResult>;
 
 export const defaultExec: Exec = async (cmd, opts = {}) => {
@@ -20,6 +20,7 @@ export const defaultExec: Exec = async (cmd, opts = {}) => {
       stderr: "pipe",
       cwd: opts.cwd,
       env: opts.env as Record<string, string> | undefined,
+      timeout: opts.timeoutMs,
     });
   } catch (error) {
     return { code: 127, stdout: "", stderr: String(error) };

@@ -22,6 +22,7 @@ function event(text: string, extra: Partial<NormalizedSpeakEvent> = {}): Normali
     voice: undefined,
     verbatim: false,
     announce: "auto",
+    reply: undefined,
     ...extra,
   };
 }

@@ -6,6 +6,9 @@ import {
   parseModeRequest,
   parsePauseRequest,
   parseReplayRequest,
+  parseReplyRequest,
+  parseReplyRoute,
+  parseReplySubmitRequest,
   parseSettingsUpdate,
   parseSpeakEvent,
 } from "./envelope.ts";
@@ -26,6 +29,7 @@ describe("parseSpeakEvent", () => {
         voice: undefined,
         verbatim: false,
         announce: "auto",
+        reply: undefined,
       },
     });
   });
@@ -256,4 +260,56 @@ describe("parseSettingsUpdate", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain(error);
   });
+});
+
+const route = {
+  via: "orca",
+  target: "term_148202cb-9a23-4308-8380-a4efd3957057",
+  agent: "claude",
+} as const;
+
+test("a speak event keeps a valid reply route", () => {
+  const r = parseSpeakEvent({ text: "hi there", source: "x", reply: route });
+  expect(r.ok && r.value.reply).toEqual(route);
+});
+
+test("a bad reply route is dropped and the event is still accepted", () => {
+  for (const reply of [
+    { ...route, via: "tmux" },
+    { ...route, target: "term_; rm -rf" },
+    { ...route, target: "%3" },
+    { ...route, agent: "Claude Code" },
+    { ...route, agent: undefined },
+    "term_abc",
+    null,
+  ]) {
+    const r = parseSpeakEvent({ text: "hi there", source: "x", reply });
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.value.reply).toBeUndefined();
+  }
+});
+
+test("no reply route means reply is undefined", () => {
+  const r = parseSpeakEvent({ text: "hi there", source: "x" });
+  expect(r.ok && r.value.reply).toBeUndefined();
+});
+
+test("parseReplyRoute caps the target length", () => {
+  expect(parseReplyRoute({ ...route, target: `term_${"a".repeat(128)}` })).toBeDefined();
+  expect(parseReplyRoute({ ...route, target: `term_${"a".repeat(129)}` })).toBeUndefined();
+});
+
+test("parseReplyRequest needs an id and a string text", () => {
+  expect(parseReplyRequest({ id: "e1", text: "go ahead" })).toEqual({
+    ok: true,
+    value: { id: "e1", text: "go ahead" },
+  });
+  expect(parseReplyRequest({ text: "go" }).ok).toBe(false);
+  expect(parseReplyRequest({ id: "e1", text: 5 }).ok).toBe(false);
+  expect(parseReplyRequest({ id: "e1" }).ok).toBe(false);
+});
+
+test("parseReplySubmitRequest needs an id", () => {
+  expect(parseReplySubmitRequest({ id: "e1" })).toEqual({ ok: true, value: { id: "e1" } });
+  expect(parseReplySubmitRequest({}).ok).toBe(false);
 });

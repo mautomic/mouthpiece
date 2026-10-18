@@ -14,3 +14,10 @@ test("captures stdout, stderr, exit code, and stdin", async () => {
 test("missing command is code 127, not a throw", async () => {
   expect((await defaultExec(["/nonexistent/bin"])).code).toBe(127);
 });
+
+test("timeoutMs kills a command that runs too long", async () => {
+  const started = performance.now();
+  const r = await defaultExec(["sleep", "5"], { timeoutMs: 100 });
+  expect(r.code).not.toBe(0);
+  expect(performance.now() - started).toBeLessThan(3000);
+});
