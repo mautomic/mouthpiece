@@ -383,7 +383,7 @@ Stories are grouped by phase. Each should fit in one focused session.
 - [ ] **Fallback adapter:** tails a JSONL or log file with a per-tool parser, for tools without hooks
 - [ ] Each adapter has an install doc and maps into the same `POST /v1/speak` contract
 
-*2026-10-18:* the fallback tailer also reads Margin review logs (`.margin/<doc>.jsonl`): an agent's replies are spoken, named by document. `[[follow]]` in the config runs any tail format with the daemon (spec `docs/superpowers/specs/2026-10-18-margin-speech-design.md`).
+*2026-10-18:* the fallback tailer also reads Margin review logs (`.margin/<doc>.jsonl`): an agent's replies are spoken, named by document, while a Margin tab shows it. `[[follow]]` in the config runs any tail format with the daemon (spec `docs/superpowers/specs/2026-10-18-margin-speech-design.md`).
 
 #### US-015: Additional providers
 **Description:** As a user, I want to switch providers or voices by config to trade quality, cost, and latency.

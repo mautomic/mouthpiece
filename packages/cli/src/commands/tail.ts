@@ -31,6 +31,7 @@ export const tailCommand = async (args: string[], io: CliIO, deps: TailDeps): Pr
       env: deps.env,
       warn: io.err,
       onFollow: (file) => io.err(`following ${file}\n`),
+      onUnfollow: (file) => io.err(`stopped following ${file}\n`),
       pollMs: deps.pollMs,
     },
   );
