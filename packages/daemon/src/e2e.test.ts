@@ -22,6 +22,8 @@ beforeEach(async () => {
     provider: new FakeProvider(),
     player,
     log: () => {},
+    hotkeys: false,
+    summarizer: null,
   });
 });
 afterEach(async () => {

@@ -81,7 +81,50 @@ test.each([[null], ["text"], [{}], [{ last_assistant_message: "   " }]])(
 
 test("unknown events are ignored", async () => {
   const { d, spoken } = deps();
-  await handleHook("notify", stopInput, d);
+  await handleHook("subagent-stop", stopInput, d);
+  expect(spoken).toEqual([]);
+});
+
+test("permission_prompt speaks an alert naming the project and tool", async () => {
+  const { d, spoken } = deps();
+  await handleHook(
+    "notify",
+    {
+      session_id: "s1",
+      cwd: "/x/web",
+      notification_type: "permission_prompt",
+      message: "Claude needs your permission to use Bash",
+    },
+    d,
+  );
+  expect(spoken).toEqual([
+    {
+      text: "web needs your approval to use Bash.",
+      source: "claude-code",
+      conversationId: "s1",
+      kind: "alert",
+      format: "plain",
+    },
+  ]);
+});
+
+test("permission_prompt without a recognizable tool, and idle_prompt", async () => {
+  const { d, spoken } = deps();
+  await handleHook(
+    "notify",
+    { session_id: "s1", cwd: "/x/web", notification_type: "permission_prompt", message: "?" },
+    d,
+  );
+  await handleHook("notify", { session_id: "s1", notification_type: "idle_prompt" }, d);
+  expect(spoken.map((s) => s.text)).toEqual([
+    "web needs your approval.",
+    "Claude Code is waiting for you.",
+  ]);
+});
+
+test("unknown notification types are ignored", async () => {
+  const { d, spoken } = deps();
+  await handleHook("notify", { session_id: "s1", notification_type: "auth_success" }, d);
   expect(spoken).toEqual([]);
 });
 

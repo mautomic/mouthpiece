@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@mouthpiece/core": "workspace:*",
-    "@mouthpiece/client": "workspace:*"
+    "@mouthpiece/client": "workspace:*",
+    "@mouthpiece/hook-kit": "workspace:*"
   }
 }

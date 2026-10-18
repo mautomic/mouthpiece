@@ -7,8 +7,12 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@mouthpiece/adapter-file-tail": "workspace:*",
+    "@mouthpiece/adapter-tmux": "workspace:*",
     "@mouthpiece/core": "workspace:*",
     "@mouthpiece/client": "workspace:*",
-    "@mouthpiece/daemon": "workspace:*"
+    "@mouthpiece/daemon": "workspace:*",
+    "@mouthpiece/hotkeys": "workspace:*",
+    "@mouthpiece/providers": "workspace:*"
   }
 }

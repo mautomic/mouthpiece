@@ -1,16 +1,12 @@
-import { basename } from "node:path";
-import { type Env, type InterruptRequest, isRecord, type SpeakEvent } from "@mouthpiece/core";
+import { isRecord } from "@mouthpiece/core";
+import { approvalText, type HookContext, labelFromCwd } from "@mouthpiece/hook-kit";
 
 export const SOURCE = "claude-code";
 
-export interface HookDeps {
-  speak(event: SpeakEvent): Promise<unknown>;
-  interrupt(request: InterruptRequest): Promise<unknown>;
-  readFile(path: string): Promise<string>;
-  env: Env;
-}
+/** Kept for existing callers; the hook runtime's context. */
+export type HookDeps = HookContext;
 
-export async function handleHook(event: string, input: unknown, deps: HookDeps): Promise<void> {
+export async function handleHook(event: string, input: unknown, deps: HookContext): Promise<void> {
   if (deps.env.MOUTHPIECE_CHILD === "1" || !isRecord(input)) return;
   const sessionId = typeof input.session_id === "string" ? input.session_id : undefined;
   switch (event) {
@@ -21,7 +17,7 @@ export async function handleHook(event: string, input: unknown, deps: HookDeps):
         text,
         source: SOURCE,
         conversationId: sessionId,
-        label: typeof input.cwd === "string" ? basename(input.cwd) : undefined,
+        label: labelFromCwd(input.cwd),
         kind: "response",
         format: "markdown",
       });
@@ -30,14 +26,43 @@ export async function handleHook(event: string, input: unknown, deps: HookDeps):
     case "prompt":
       if (sessionId) await deps.interrupt({ source: SOURCE, conversationId: sessionId });
       return;
+    case "notify": {
+      // The label is already in the text, so `label` stays unset to avoid a double prefix (US-012).
+      const text = notificationText(input, labelFromCwd(input.cwd) ?? "Claude Code");
+      if (!text) return;
+      await deps.speak({
+        text,
+        source: SOURCE,
+        conversationId: sessionId,
+        kind: "alert",
+        format: "plain",
+      });
+      return;
+    }
     default:
       return;
   }
 }
 
+function notificationText(input: Record<string, unknown>, label: string): string | null {
+  switch (input.notification_type) {
+    case "permission_prompt": {
+      const tool =
+        typeof input.message === "string"
+          ? /permission to use ([\w.:-]+)/i.exec(input.message)?.[1]
+          : undefined;
+      return approvalText(label, tool);
+    }
+    case "idle_prompt":
+      return `${label} is waiting for you.`;
+    default:
+      return null;
+  }
+}
+
 async function assistantText(
   input: Record<string, unknown>,
-  deps: HookDeps,
+  deps: HookContext,
 ): Promise<string | null> {
   const direct = input.last_assistant_message;
   if (typeof direct === "string" && direct.trim()) return direct;

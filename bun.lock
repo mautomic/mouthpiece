@@ -8,6 +8,7 @@
         "@biomejs/biome": "^2.5.15",
         "@mouthpiece/core": "workspace:*",
         "@mouthpiece/providers": "workspace:*",
+        "@mouthpiece/summarizers": "workspace:*",
         "@types/bun": "^1.4.3",
         "typescript": "^7.0.2",
       },
@@ -18,15 +19,53 @@
       "dependencies": {
         "@mouthpiece/client": "workspace:*",
         "@mouthpiece/core": "workspace:*",
+        "@mouthpiece/hook-kit": "workspace:*",
+      },
+    },
+    "adapters/codex": {
+      "name": "@mouthpiece/adapter-codex",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/client": "workspace:*",
+        "@mouthpiece/core": "workspace:*",
+        "@mouthpiece/hook-kit": "workspace:*",
+      },
+    },
+    "adapters/file-tail": {
+      "name": "@mouthpiece/adapter-file-tail",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/client": "workspace:*",
+        "@mouthpiece/core": "workspace:*",
+      },
+    },
+    "adapters/gemini": {
+      "name": "@mouthpiece/adapter-gemini",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/client": "workspace:*",
+        "@mouthpiece/core": "workspace:*",
+        "@mouthpiece/hook-kit": "workspace:*",
+      },
+    },
+    "adapters/tmux": {
+      "name": "@mouthpiece/adapter-tmux",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/core": "workspace:*",
       },
     },
     "packages/cli": {
       "name": "@mouthpiece/cli",
       "version": "0.1.0",
       "dependencies": {
+        "@mouthpiece/adapter-file-tail": "workspace:*",
+        "@mouthpiece/adapter-tmux": "workspace:*",
         "@mouthpiece/client": "workspace:*",
         "@mouthpiece/core": "workspace:*",
         "@mouthpiece/daemon": "workspace:*",
+        "@mouthpiece/hotkeys": "workspace:*",
+        "@mouthpiece/providers": "workspace:*",
       },
     },
     "packages/client": {
@@ -45,14 +84,45 @@
       "version": "0.1.0",
       "dependencies": {
         "@mouthpiece/core": "workspace:*",
+        "@mouthpiece/hotkeys": "workspace:*",
         "@mouthpiece/providers": "workspace:*",
+        "@mouthpiece/summarizers": "workspace:*",
       },
       "devDependencies": {
         "@mouthpiece/client": "workspace:*",
       },
     },
+    "packages/hook-kit": {
+      "name": "@mouthpiece/hook-kit",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/client": "workspace:*",
+        "@mouthpiece/core": "workspace:*",
+      },
+    },
+    "packages/hotkeys": {
+      "name": "@mouthpiece/hotkeys",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/core": "workspace:*",
+      },
+    },
+    "packages/listen": {
+      "name": "@mouthpiece/listen",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/core": "workspace:*",
+      },
+    },
     "packages/providers": {
       "name": "@mouthpiece/providers",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/core": "workspace:*",
+      },
+    },
+    "packages/summarizers": {
+      "name": "@mouthpiece/summarizers",
       "version": "0.1.0",
       "dependencies": {
         "@mouthpiece/core": "workspace:*",
@@ -80,6 +150,14 @@
 
     "@mouthpiece/adapter-claude-code": ["@mouthpiece/adapter-claude-code@workspace:adapters/claude-code"],
 
+    "@mouthpiece/adapter-codex": ["@mouthpiece/adapter-codex@workspace:adapters/codex"],
+
+    "@mouthpiece/adapter-file-tail": ["@mouthpiece/adapter-file-tail@workspace:adapters/file-tail"],
+
+    "@mouthpiece/adapter-gemini": ["@mouthpiece/adapter-gemini@workspace:adapters/gemini"],
+
+    "@mouthpiece/adapter-tmux": ["@mouthpiece/adapter-tmux@workspace:adapters/tmux"],
+
     "@mouthpiece/cli": ["@mouthpiece/cli@workspace:packages/cli"],
 
     "@mouthpiece/client": ["@mouthpiece/client@workspace:packages/client"],
@@ -88,7 +166,15 @@
 
     "@mouthpiece/daemon": ["@mouthpiece/daemon@workspace:packages/daemon"],
 
+    "@mouthpiece/hook-kit": ["@mouthpiece/hook-kit@workspace:packages/hook-kit"],
+
+    "@mouthpiece/hotkeys": ["@mouthpiece/hotkeys@workspace:packages/hotkeys"],
+
+    "@mouthpiece/listen": ["@mouthpiece/listen@workspace:packages/listen"],
+
     "@mouthpiece/providers": ["@mouthpiece/providers@workspace:packages/providers"],
+
+    "@mouthpiece/summarizers": ["@mouthpiece/summarizers@workspace:packages/summarizers"],
 
     "@types/bun": ["@types/bun@1.4.3", "", { "dependencies": { "bun-types": "1.4.3" } }, "sha512-N67Pqy8JXbAY/j0tNraS3V5mubGvc6rrrNDmDCtZLlFzccbUJPDb0tvgUBC5q4m8ybkP93Jcn1QB+RYQ6PvBhw=="],
 

@@ -1,11 +1,19 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { MouthpieceError } from "@mouthpiece/client";
 import type { SpeakEvent } from "@mouthpiece/core";
-import { type CliDeps, type CliIO, run } from "./run.ts";
+import { run } from "./run.ts";
+import type { CliDeps, CliIO } from "./types.ts";
 
-function harness(opts: { stdin?: string; tty?: boolean; fail?: boolean } = {}) {
+function harness(
+  opts: { stdin?: string; tty?: boolean; fail?: boolean; env?: Record<string, string> } = {},
+) {
   const out: string[] = [];
   const err: string[] = [];
   const spoken: SpeakEvent[] = [];
+  const execCalls: string[][] = [];
   const io: CliIO = {
     out: (s) => out.push(s),
     err: (s) => err.push(s),
@@ -26,10 +34,33 @@ function harness(opts: { stdin?: string; tty?: boolean; fail?: boolean } = {}) {
       stop: async () => ({ stopped: true, dropped: 2 }),
       skip: async () => ({ skipped: true }),
       health: async () => ({ ok: true, version: "0.1.0", provider: "say", queueDepth: 0 }),
+      getMode: async () => ({ default: "summary", overrides: [] }),
+      setMode: async () => ({ default: "summary", overrides: [] }),
+      replay: async () => ({ id: null }),
+      usage: async () => ({ from: "2026-10-01", to: "2026-11-01", rows: [], quotas: [] }),
+      voices: async () => ({ providers: [] }),
+      status: async () => ({
+        version: "0.1.0",
+        speaking: false,
+        paused: false,
+        pauseReasons: [],
+        mode: "summary",
+        queueDepth: 0,
+        provider: "say",
+        current: null,
+      }),
+      pause: async (reason = "user") => ({ paused: true, pauseReasons: [reason] }),
+      resume: async () => ({ paused: false, pauseReasons: [] }),
     },
     startDaemon: async () => ({ url: "http://127.0.0.1:7317" }),
+    env: opts.env ?? {},
+    exec: async (cmd) => {
+      execCalls.push(cmd);
+      return { code: 0, stdout: "", stderr: "" };
+    },
+    paths: { repoRoot: "/repo", bun: "/bun" },
   };
-  return { io, deps, out, err, spoken };
+  return { io, deps, out, err, spoken, execCalls };
 }
 
 test("say joins positional args", async () => {
@@ -74,8 +105,43 @@ test("stop, skip, status", async () => {
   const h = harness();
   expect(await run(["stop"], h.io, h.deps)).toBe(0);
   expect(await run(["skip"], h.io, h.deps)).toBe(0);
+  h.out.length = 0;
   expect(await run(["status"], h.io, h.deps)).toBe(0);
-  expect(h.out.join("\n")).toContain('"provider": "say"');
+  expect(JSON.parse(h.out.join(""))).toMatchObject({
+    speaking: false,
+    paused: false,
+    pauseReasons: [],
+    provider: "say",
+  });
+});
+
+test("status falls back to health when the daemon has no /v1/status (404)", async () => {
+  const h = harness();
+  h.deps.client = {
+    ...h.deps.client,
+    status: async () => {
+      throw new MouthpieceError("not found", 404);
+    },
+  };
+  expect(await run(["status"], h.io, h.deps)).toBe(0);
+  expect(JSON.parse(h.out.join(""))).toEqual({
+    ok: true,
+    version: "0.1.0",
+    provider: "say",
+    queueDepth: 0,
+  });
+});
+
+test("status does not hide other errors behind the health fallback", async () => {
+  const h = harness();
+  h.deps.client = {
+    ...h.deps.client,
+    status: async () => {
+      throw new MouthpieceError("unauthorized", 401);
+    },
+  };
+  expect(await run(["status"], h.io, h.deps)).toBe(1);
+  expect(h.err.join("")).toContain("unauthorized");
 });
 
 test("start launches the daemon", async () => {
@@ -88,4 +154,75 @@ test("unknown command prints usage", async () => {
   const h = harness();
   expect(await run(["nope"], h.io, h.deps)).toBe(2);
   expect(h.err.join("")).toContain("usage: mouthpiece");
+});
+
+test("mode routes to its command module", async () => {
+  const h = harness();
+  expect(await run(["mode"], h.io, h.deps)).toBe(0);
+  expect(JSON.parse(h.out.join(""))).toEqual({ default: "summary", overrides: [] });
+});
+
+test("tail routes to its command (which needs --format)", async () => {
+  const h = harness();
+  expect(await run(["tail"], h.io, h.deps)).toBe(2);
+  expect(h.err.join("")).toContain("--format");
+});
+
+test("voices routes to its command module", async () => {
+  const h = harness();
+  expect(await run(["voices"], h.io, h.deps)).toBe(0);
+  expect(h.err.join("")).not.toContain("not implemented");
+});
+
+test("usage text lists say, voices and tail", async () => {
+  const h = harness();
+  await run([], h.io, h.deps);
+  const usage = h.err.join("");
+  for (const cmd of ["say", "voices", "tail"]) expect(usage).toContain(`  ${cmd} `);
+});
+
+test("usage text shows every flag of say, voices, tail and the hook targets", async () => {
+  const h = harness();
+  await run([], h.io, h.deps);
+  const usage = h.err.join("");
+  for (const flag of [
+    "--file path",
+    "--source s",
+    "--label l",
+    "--kind response|alert|info",
+    "--mode summary|full|off",
+    "--voice v",
+    "--priority high|normal|low",
+    "--plain | --markdown",
+    "--fallback-say",
+    "voices [--provider x]",
+    "tail --format codex|gemini|lines [--path p]",
+    "install-hooks [--target claude-code|codex|gemini] [--idle-alerts]",
+    "uninstall-hooks [--target claude-code|codex|gemini]",
+  ])
+    expect(usage).toContain(flag);
+});
+
+test("build-helper is an alias of build-hotkeys", async () => {
+  const home = await mkdtemp(join(tmpdir(), "mp-run-helper-"));
+  try {
+    const h = harness({ env: { MOUTHPIECE_HOME: home } });
+    expect(await run(["build-helper"], h.io, h.deps)).toBe(0);
+    expect(h.execCalls.some((c) => c[0] === "swiftc")).toBe(true);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("usage text lists the phase 4 commands", async () => {
+  const h = harness();
+  await run([], h.io, h.deps);
+  const usage = h.err.join("");
+  for (const text of [
+    "kokoro install | status | uninstall",
+    "pause | resume",
+    "send --tmux <target> <text…>",
+    "build-hotkeys | build-helper",
+  ])
+    expect(usage).toContain(text);
 });

@@ -3,16 +3,22 @@ import {
   type InterruptRequest,
   KINDS,
   MODES,
+  type ModeRequest,
   type NormalizedSpeakEvent,
+  type PauseRequest,
   PRIORITIES,
+  type ReplayRequest,
 } from "./contracts.ts";
 import { isRecord } from "./guards.ts";
 
 export const MAX_TEXT_CHARS = 100_000;
 export const MAX_CONVERSATION_ID_CHARS = 256;
 export const MAX_LABEL_CHARS = 100;
+export const MAX_VOICE_CHARS = 100;
 export const DEFAULT_CONVERSATION_ID = "default";
+export const DEFAULT_PAUSE_REASON = "user";
 const SOURCE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const PAUSE_REASON_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 
 export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -56,6 +62,13 @@ function optionalEnum<T extends string>(
   return value as T;
 }
 
+function optionalBoolean(obj: Record<string, unknown>, key: string): boolean | undefined {
+  const value = obj[key];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "boolean") fail(`${key} must be a boolean`);
+  return value;
+}
+
 function requiredSource(obj: Record<string, unknown>): string {
   const value = obj.source;
   if (typeof value !== "string" || !SOURCE_PATTERN.test(value)) {
@@ -83,6 +96,7 @@ export function parseSpeakEvent(input: unknown): ParseResult<NormalizedSpeakEven
         optionalEnum(input, "priority", PRIORITIES) ?? (kind === "alert" ? "high" : "normal"),
       mode: optionalEnum(input, "mode", MODES),
       format: optionalEnum(input, "format", FORMATS) ?? "markdown",
+      voice: optionalString(input, "voice", MAX_VOICE_CHARS),
     };
   });
 }
@@ -94,5 +108,41 @@ export function parseInterruptRequest(input: unknown): ParseResult<InterruptRequ
       source: requiredSource(input),
       conversationId: optionalString(input, "conversationId", MAX_CONVERSATION_ID_CHARS),
     };
+  });
+}
+
+export function parseModeRequest(input: unknown): ParseResult<ModeRequest> {
+  return parse(() => {
+    if (!isRecord(input)) fail("body must be a JSON object");
+    const mode = optionalEnum(input, "mode", MODES);
+    const toggle = optionalBoolean(input, "toggle") === true ? true : undefined;
+    const clear = optionalBoolean(input, "clear") === true ? true : undefined;
+    if ([mode !== undefined, toggle, clear].filter(Boolean).length !== 1) {
+      fail("exactly one of mode, toggle: true, or clear: true is required");
+    }
+    const source = input.source === undefined ? undefined : requiredSource(input);
+    const conversationId = optionalString(input, "conversationId", MAX_CONVERSATION_ID_CHARS);
+    if (conversationId !== undefined && source === undefined)
+      fail("conversationId requires source");
+    return { mode, toggle, clear, source, conversationId };
+  });
+}
+
+export function parseReplayRequest(input: unknown): ParseResult<ReplayRequest> {
+  return parse(() => {
+    if (!isRecord(input)) fail("body must be a JSON object");
+    return { full: optionalBoolean(input, "full") ?? false };
+  });
+}
+
+/** POST /v1/pause and /v1/resume. An absent reason means `user`. */
+export function parsePauseRequest(input: unknown): ParseResult<PauseRequest> {
+  return parse(() => {
+    if (!isRecord(input)) fail("body must be a JSON object");
+    const reason = input.reason ?? DEFAULT_PAUSE_REASON;
+    if (typeof reason !== "string" || !PAUSE_REASON_PATTERN.test(reason)) {
+      fail(`reason must match ${PAUSE_REASON_PATTERN.source}`);
+    }
+    return { reason };
   });
 }

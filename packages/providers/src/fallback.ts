@@ -1,7 +1,9 @@
-import type { AudioClip, SynthesizeOptions, TtsProvider } from "@mouthpiece/core";
+import type { AudioClip, ChunkHint, SynthesizeOptions, TtsProvider } from "@mouthpiece/core";
 
 export interface FallbackOptions {
   firstByteTimeoutMs: number;
+  /** Overrides the first-byte timeout for one provider and text (e.g. a local renderer). */
+  timeoutFor?: (provider: string, text: string) => number;
   onFallback?: (from: string, error: unknown) => void;
 }
 
@@ -14,6 +16,8 @@ export class FallbackProvider implements TtsProvider {
   readonly name: string;
   readonly maxCharsPerRequest: number;
   readonly pricePerMillionChars: number;
+  /** The first provider's: the others only speak when it fails. */
+  readonly chunking: ChunkHint | undefined;
 
   constructor(
     private readonly providers: readonly TtsProvider[],
@@ -24,6 +28,7 @@ export class FallbackProvider implements TtsProvider {
     this.name = providers.map((p) => p.name).join(">");
     this.maxCharsPerRequest = Math.min(...providers.map((p) => p.maxCharsPerRequest));
     this.pricePerMillionChars = first.pricePerMillionChars;
+    this.chunking = first.chunking;
   }
 
   async synthesize(text: string, options: SynthesizeOptions = {}): Promise<AudioClip> {
@@ -37,13 +42,12 @@ export class FallbackProvider implements TtsProvider {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const timeout = new Promise<never>((_, reject) => {
         if (isLast) return;
+        const ms = this.opts.timeoutFor?.(provider.name, text) ?? this.opts.firstByteTimeoutMs;
         timer = setTimeout(() => {
-          const error = new Error(
-            `${provider.name}: no audio within ${this.opts.firstByteTimeoutMs}ms`,
-          );
+          const error = new Error(`${provider.name}: no audio within ${ms}ms`);
           attempt.abort(error);
           reject(error);
-        }, this.opts.firstByteTimeoutMs);
+        }, ms);
       });
       try {
         // On success the abort link stays in place so the caller can still stop the stream.

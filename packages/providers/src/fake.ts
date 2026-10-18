@@ -1,5 +1,6 @@
 import {
   type AudioClip,
+  type ChunkHint,
   delay,
   type SynthesizeOptions,
   singleChunk,
@@ -12,22 +13,33 @@ export interface FakeProviderOptions {
   delayMs?: number;
   failWith?: Error;
   failMidStream?: boolean | ((text: string) => boolean);
+  cacheKey?: string;
+  /** Default 0 (free). Set it to test metering, caching, quotas and budgets. */
+  pricePerMillionChars?: number;
+  chunking?: ChunkHint;
 }
 
 /** Deterministic provider for tests: the "audio" is the UTF-8 text itself. */
 export class FakeProvider implements TtsProvider {
   readonly name: string;
   readonly maxCharsPerRequest: number;
-  readonly pricePerMillionChars = 0;
+  readonly pricePerMillionChars: number;
   readonly calls: string[] = [];
+  readonly options: SynthesizeOptions[] = [];
+  readonly cacheKey: string | undefined;
+  readonly chunking: ChunkHint | undefined;
 
   constructor(private readonly opts: FakeProviderOptions = {}) {
     this.name = opts.name ?? "fake";
+    this.chunking = opts.chunking;
+    this.cacheKey = opts.cacheKey;
+    this.pricePerMillionChars = opts.pricePerMillionChars ?? 0;
     this.maxCharsPerRequest = opts.maxCharsPerRequest ?? 1000;
   }
 
   async synthesize(text: string, options: SynthesizeOptions = {}): Promise<AudioClip> {
     this.calls.push(text);
+    this.options.push(options);
     if (this.opts.delayMs) await delay(this.opts.delayMs, options.signal);
     if (this.opts.failWith) throw this.opts.failWith;
     const bytes = new TextEncoder().encode(text);
