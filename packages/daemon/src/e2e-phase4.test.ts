@@ -244,7 +244,9 @@ test("the helper starts with menubar and mic-pause args; its exit clears the mic
   expect(cmd[0]).toBe(helperBinary(home));
   expect(cmd).toContain("--menubar");
   expect(cmd).toContain("--bind");
-  expect(cmd.join(" ")).toContain("--mic-pause --mic-resume-delay 500 --mic-ignore us.zoom.xos");
+  expect(cmd.join(" ")).toContain(
+    "--mic-pause --mic-resume-delay 500 --mic-refresh 200000 --mic-ignore us.zoom.xos",
+  );
   expect(cmd.join(" ")).toContain(`--url ${d.url} --token-file ${join(home, "token")}`);
 
   // The helper reports the mic in use, the user also pauses, then the helper dies.

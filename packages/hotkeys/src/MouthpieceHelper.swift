@@ -4,7 +4,7 @@
 //   --mic-pause   CoreAudio mic-in-use watcher that posts /v1/pause and /v1/resume, reason "mic" (US-022)
 // Usage: mouthpiece-helper --url http://127.0.0.1:7317 --token-file ~/.mouthpiece/token
 //          [--bind stop=ctrl+alt+s ...] [--menubar]
-//          [--mic-pause [--mic-ignore <bundleId> ...] [--mic-resume-delay <ms>]]
+//          [--mic-pause [--mic-ignore <bundleId> ...] [--mic-resume-delay <ms>] [--mic-refresh <ms>]]
 // At least one of --bind, --menubar, --mic-pause is required.
 // Exit 2: bad arguments or a hotkey that is already taken.
 // The token is re-read from --token-file for every request and is never logged.
@@ -49,6 +49,9 @@ var menubarEnabled = false
 var micPauseEnabled = false
 var micIgnore: [String] = []
 var micResumeDelayMs = 800
+// Re-post the mic pause this often while the mic stays in use: the daemon expires a pause reason
+// after micPause.maxPauseMs, and a restarted daemon has forgotten it.
+var micRefreshMs = 200_000
 
 var argIterator = CommandLine.arguments.dropFirst().makeIterator()
 while let arg = argIterator.next() {
@@ -83,6 +86,11 @@ while let arg = argIterator.next() {
       fail("--mic-resume-delay needs a positive number of milliseconds")
     }
     micResumeDelayMs = ms
+  case "--mic-refresh":
+    guard let value = argIterator.next(), let ms = Int(value), ms > 0 else {
+      fail("--mic-refresh needs a positive number of milliseconds")
+    }
+    micRefreshMs = ms
   default:
     fail("unknown argument \(arg)")
   }
@@ -380,6 +388,7 @@ func readCFString(_ object: AudioObjectID, _ selector: AudioObjectPropertySelect
 final class MicWatcher {
   let ignore: [String]
   let resumeDelay: TimeInterval
+  let refreshInterval: TimeInterval
   let excludedPIDs: Set<pid_t> = [getpid(), getppid()]
   let system = AudioObjectID(kAudioObjectSystemObject)
 
@@ -387,13 +396,15 @@ final class MicWatcher {
   var active = false
   var resumeWork: DispatchWorkItem?
   var recheckTimer: Timer?
+  var refreshTimer: Timer?
   var deviceListener: (device: AudioObjectID, block: AudioObjectPropertyListenerBlock)?
   var processListeners: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
   var perProcess = false
 
-  init(ignore: [String], resumeDelayMs: Int) {
+  init(ignore: [String], resumeDelayMs: Int, refreshMs: Int) {
     self.ignore = ignore
     self.resumeDelay = TimeInterval(resumeDelayMs) / 1000
+    self.refreshInterval = TimeInterval(refreshMs) / 1000
     if #available(macOS 14.0, *) {
       perProcess = readObjectList(system, kAudioHardwarePropertyProcessObjectList) != nil
     }
@@ -516,15 +527,23 @@ final class MicWatcher {
     }
   }
 
-  /// While paused, re-check every 2 s in case an idle notification never arrives (no CPU cost when idle).
+  /// While paused, re-check every 2 s in case an idle notification never arrives (no CPU cost when idle),
+  /// and re-post the pause every refreshInterval so it neither expires in the daemon (maxPauseMs) nor is
+  /// lost when the daemon restarts. A repeated pause only restarts the reason's clock.
   func startRecheck() {
-    recheckTimer?.invalidate()
+    stopRecheck()
     recheckTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.evaluate() }
+    refreshTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
+      guard let self, self.active else { return }
+      self.sync(active: true, attempt: 0)
+    }
   }
 
   func stopRecheck() {
     recheckTimer?.invalidate()
     recheckTimer = nil
+    refreshTimer?.invalidate()
+    refreshTimer = nil
   }
 
   /// Tell the daemon; retry a few times (2 s apart) while the state is unchanged.
@@ -549,5 +568,5 @@ let app = NSApplication.shared
 // .accessory, not .prohibited: a status item needs a window server connection. LSUIElement hides the Dock icon.
 app.setActivationPolicy(.accessory)
 let menubar = menubarEnabled ? Menubar() : nil
-let micWatcher = micPauseEnabled ? MicWatcher(ignore: micIgnore, resumeDelayMs: micResumeDelayMs) : nil
+let micWatcher = micPauseEnabled ? MicWatcher(ignore: micIgnore, resumeDelayMs: micResumeDelayMs, refreshMs: micRefreshMs) : nil
 app.run()

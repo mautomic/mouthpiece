@@ -95,6 +95,15 @@ function bindArgs(hotkeys: Config["hotkeys"]): string[] {
 }
 
 /**
+ * How often the helper re-posts the `mic` pause while the mic stays in use. The daemon expires a
+ * reason after maxPauseMs, and a repeated pause restarts its clock, so three refreshes fit in one
+ * window. It also re-establishes the pause after a daemon restart (US-022).
+ */
+export function micRefreshMs(maxPauseMs: number): number {
+  return Math.max(5_000, Math.floor(maxPauseMs / 3));
+}
+
+/**
  * Full argument list for the helper app. Throws on duplicate bindings or when no feature is enabled.
  * Passing a bare `hotkeys` table is the Phase 2 form: hotkeys only.
  */
@@ -117,6 +126,7 @@ export function helperArgs(
   if (c.menubar.enabled) args.push("--menubar");
   if (c.micPause.enabled) {
     args.push("--mic-pause", "--mic-resume-delay", String(c.micPause.resumeDelayMs));
+    args.push("--mic-refresh", String(micRefreshMs(c.micPause.maxPauseMs)));
     for (const id of c.micPause.ignoreBundleIds) args.push("--mic-ignore", id);
   }
   return args;

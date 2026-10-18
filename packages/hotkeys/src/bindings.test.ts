@@ -58,6 +58,8 @@ test("helperArgs with every feature enabled (defaults)", () => {
     "--mic-pause",
     "--mic-resume-delay",
     "800",
+    "--mic-refresh",
+    "200000",
   ]);
 });
 
@@ -82,6 +84,8 @@ test("helperArgs: mic pause only, with ignored bundle ids and resume delay", () 
     "--mic-pause",
     "--mic-resume-delay",
     "1500",
+    "--mic-refresh",
+    "200000",
     "--mic-ignore",
     "us.zoom.xos",
     "--mic-ignore",
@@ -96,7 +100,20 @@ test("helperArgs: hotkeys and mic pause without menubar", () => {
     "--mic-pause",
     "--mic-resume-delay",
     "800",
+    "--mic-refresh",
+    "200000",
   ]);
+});
+
+test("helperArgs: the mic pause is refreshed every third of maxPauseMs, at least every 5 s", () => {
+  const refresh = (maxPauseMs: number) => {
+    const args = helperArgs(cfg({ hotkeys: false, menubar: false }, { maxPauseMs }), target);
+    return args[args.indexOf("--mic-refresh") + 1];
+  };
+  expect(refresh(600_000)).toBe("200000");
+  expect(refresh(60_001)).toBe("20000");
+  expect(refresh(9_000)).toBe("5000");
+  expect(helperArgs(cfg({ micPause: false }), target)).not.toContain("--mic-refresh");
 });
 
 test("helperArgs: disabled hotkeys are not validated", () => {
