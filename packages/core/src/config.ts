@@ -14,6 +14,8 @@ export interface Config {
     /** Deepgram's voice is its model (e.g. `aura-2-thalia-en`). */
     deepgram: { model: string };
     openai: { model: string; voice: string; instructions?: string };
+    /** Local Kokoro voice (e.g. `af_heart`); installed by `mouthpiece kokoro install`. */
+    kokoro: { voice: string };
   };
   /** `[voices.<provider>] "<label>" = "<voice>"`: per-label (e.g. per-project) voice for each provider. */
   voices: Record<string, Record<string, string>>;
@@ -42,6 +44,18 @@ export interface Config {
   };
   alerts: { dedupeWindowMs: number };
   hotkeys: { enabled: boolean; stop: string; skip: string; replay: string; toggleMode: string };
+  /** Menubar status item in the helper app (US-018). */
+  menubar: { enabled: boolean };
+  /** Pause speech while another app uses the microphone (US-022). */
+  micPause: {
+    enabled: boolean;
+    /** Bundle ids whose mic use never pauses speech (e.g. `us.zoom.xos`). */
+    ignoreBundleIds: string[];
+    /** How long the mic must stay idle before speech resumes. */
+    resumeDelayMs: number;
+    /** Safety: a pause reason expires after this long. */
+    maxPauseMs: number;
+  };
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -52,6 +66,7 @@ export const DEFAULT_CONFIG: Config = {
     elevenlabs: { model: "eleven_flash_v2_5", voice: "JBFqnCBsd6RMkjVDRZzb" },
     deepgram: { model: "aura-2-thalia-en" },
     openai: { model: "tts-1", voice: "alloy" },
+    kokoro: { voice: "af_heart" },
   },
   voices: {},
   filter: { minChars: 20, trivial: ["done", "ok", "okay", "got it", "sounds good"] },
@@ -78,6 +93,8 @@ export const DEFAULT_CONFIG: Config = {
     replay: "ctrl+alt+r",
     toggleMode: "ctrl+alt+m",
   },
+  menubar: { enabled: true },
+  micPause: { enabled: true, ignoreBundleIds: [], resumeDelayMs: 800, maxPauseMs: 600_000 },
 };
 
 export class ConfigError extends Error {}
@@ -116,6 +133,7 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
   const elevenlabs = table(provider.elevenlabs, "provider.elevenlabs");
   const deepgram = table(provider.deepgram, "provider.deepgram");
   const openai = table(provider.openai, "provider.openai");
+  const kokoro = table(provider.kokoro, "provider.kokoro");
   const filter = table(root.filter, "filter");
   const queue = table(root.queue, "queue");
   const fallback = table(root.fallback, "fallback");
@@ -126,6 +144,8 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
   const usage = table(root.usage, "usage");
   const alerts = table(root.alerts, "alerts");
   const hotkeys = table(root.hotkeys, "hotkeys");
+  const menubar = table(root.menubar, "menubar");
+  const micPause = table(root.micPause, "micPause");
   return structuredClone({
     provider: {
       chain: optional(provider.chain, "provider.chain", nonEmptyStringList) ?? base.provider.chain,
@@ -154,6 +174,11 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
           base.provider.deepgram.model,
       },
       openai: resolveOpenAi(openai, base.provider.openai),
+      kokoro: {
+        voice:
+          optional(kokoro.voice, "provider.kokoro.voice", nonEmptyString) ??
+          base.provider.kokoro.voice,
+      },
     },
     voices: resolveVoices(root.voices, base.voices),
     filter: {
@@ -233,6 +258,21 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
         optional(hotkeys.toggleMode, "hotkeys.toggleMode", nonEmptyString) ??
         base.hotkeys.toggleMode,
     },
+    menubar: {
+      enabled: optional(menubar.enabled, "menubar.enabled", bool) ?? base.menubar.enabled,
+    },
+    micPause: {
+      enabled: optional(micPause.enabled, "micPause.enabled", bool) ?? base.micPause.enabled,
+      ignoreBundleIds:
+        optional(micPause.ignoreBundleIds, "micPause.ignoreBundleIds", nonEmptyStrings) ??
+        base.micPause.ignoreBundleIds,
+      resumeDelayMs:
+        optional(micPause.resumeDelayMs, "micPause.resumeDelayMs", positiveInt) ??
+        base.micPause.resumeDelayMs,
+      maxPauseMs:
+        optional(micPause.maxPauseMs, "micPause.maxPauseMs", positiveInt) ??
+        base.micPause.maxPauseMs,
+    },
   });
 }
 
@@ -261,6 +301,13 @@ function stringList(value: unknown, name: string): string[] {
     throw new ConfigError(`${name} must be a list of strings`);
   }
   return value;
+}
+
+/** A possibly empty list of non-empty strings. */
+function nonEmptyStrings(value: unknown, name: string): string[] {
+  const list = stringList(value, name);
+  if (list.some((v) => v === "")) throw new ConfigError(`${name} must not contain empty strings`);
+  return list;
 }
 
 function nonEmptyStringList(value: unknown, name: string): string[] {

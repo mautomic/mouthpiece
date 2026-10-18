@@ -157,3 +157,74 @@ test.each([
 ])("rejects phase 3 %p", (raw, message) => {
   expect(() => resolveConfig(raw)).toThrow(message);
 });
+
+test("phase 4 defaults", () => {
+  expect(DEFAULT_CONFIG.provider.kokoro).toEqual({ voice: "af_heart" });
+  expect(DEFAULT_CONFIG.menubar).toEqual({ enabled: true });
+  expect(DEFAULT_CONFIG.micPause).toEqual({
+    enabled: true,
+    ignoreBundleIds: [],
+    resumeDelayMs: 800,
+    maxPauseMs: 600_000,
+  });
+  expect(resolveConfig({}).micPause).toEqual(DEFAULT_CONFIG.micPause);
+});
+
+test("phase 4 settings resolve", () => {
+  const c = resolveConfig({
+    provider: { kokoro: { voice: "bm_lewis" } },
+    menubar: { enabled: false },
+    micPause: {
+      enabled: false,
+      ignoreBundleIds: ["us.zoom.xos"],
+      resumeDelayMs: 1200,
+      maxPauseMs: 60_000,
+    },
+  });
+  expect(c.provider.kokoro).toEqual({ voice: "bm_lewis" });
+  expect(c.menubar).toEqual({ enabled: false });
+  expect(c.micPause).toEqual({
+    enabled: false,
+    ignoreBundleIds: ["us.zoom.xos"],
+    resumeDelayMs: 1200,
+    maxPauseMs: 60_000,
+  });
+});
+
+test("phase 4 TOML resolves and partial tables keep defaults", async () => {
+  const path = join(dir, "config.toml");
+  await writeFile(
+    path,
+    '[provider]\nchain = ["kokoro", "say"]\n[micPause]\nignoreBundleIds = ["us.zoom.xos"]\n',
+  );
+  const c = await loadConfig(path);
+  expect(c.provider.chain).toEqual(["kokoro", "say"]);
+  expect(c.provider.kokoro).toEqual({ voice: "af_heart" });
+  expect(c.menubar).toEqual({ enabled: true });
+  expect(c.micPause).toEqual({ ...DEFAULT_CONFIG.micPause, ignoreBundleIds: ["us.zoom.xos"] });
+});
+
+test("phase 4 defaults are not shared mutable state", () => {
+  resolveConfig({}).micPause.ignoreBundleIds.push("mutated");
+  expect(DEFAULT_CONFIG.micPause.ignoreBundleIds).toEqual([]);
+});
+
+test.each([
+  [{ provider: { kokoro: "af_heart" } }, "provider.kokoro must be a table"],
+  [{ provider: { kokoro: { voice: "" } } }, "provider.kokoro.voice"],
+  [{ provider: { kokoro: { voice: 1 } } }, "provider.kokoro.voice"],
+  [{ menubar: true }, "menubar must be a table"],
+  [{ menubar: { enabled: "yes" } }, "menubar.enabled"],
+  [{ micPause: { enabled: 1 } }, "micPause.enabled"],
+  [{ micPause: { ignoreBundleIds: "us.zoom.xos" } }, "micPause.ignoreBundleIds"],
+  [{ micPause: { ignoreBundleIds: [1] } }, "micPause.ignoreBundleIds"],
+  [{ micPause: { ignoreBundleIds: [""] } }, "micPause.ignoreBundleIds"],
+  [{ micPause: { resumeDelayMs: 0 } }, "micPause.resumeDelayMs"],
+  [{ micPause: { resumeDelayMs: -1 } }, "micPause.resumeDelayMs"],
+  [{ micPause: { resumeDelayMs: 1.5 } }, "micPause.resumeDelayMs"],
+  [{ micPause: { maxPauseMs: 0 } }, "micPause.maxPauseMs"],
+  [{ micPause: { maxPauseMs: "600000" } }, "micPause.maxPauseMs"],
+])("rejects phase 4 %p", (raw, message) => {
+  expect(() => resolveConfig(raw)).toThrow(ConfigError);
+  expect(() => resolveConfig(raw)).toThrow(message);
+});

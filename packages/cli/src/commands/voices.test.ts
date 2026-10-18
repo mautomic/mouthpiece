@@ -40,6 +40,18 @@ function harness(response: VoicesResponse = RESPONSE) {
       setMode: async () => ({ default: "summary", overrides: [] }),
       replay: async () => ({ id: null }),
       usage: async () => ({ from: "a", to: "b", rows: [], quotas: [] }),
+      status: async () => ({
+        version: "0.1.0",
+        speaking: false,
+        paused: false,
+        pauseReasons: [],
+        mode: "summary",
+        queueDepth: 0,
+        provider: "say",
+        current: null,
+      }),
+      pause: async () => ({ paused: true, pauseReasons: ["user"] }),
+      resume: async () => ({ paused: false, pauseReasons: [] }),
       voices: async (opts) => {
         calls.push({ provider: opts?.provider });
         timeouts.push(opts?.timeoutMs);

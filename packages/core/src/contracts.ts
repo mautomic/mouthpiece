@@ -62,6 +62,35 @@ export interface HealthResponse {
   queueDepth: number;
 }
 
+/** GET /v1/status (US-018): what the daemon is doing right now. */
+export interface StatusResponse {
+  version: string;
+  /** True while an item is playing (false while paused). */
+  speaking: boolean;
+  /** True while any pause reason is active. */
+  paused: boolean;
+  /** Active pause reasons, e.g. `["mic"]`. */
+  pauseReasons: string[];
+  /** Effective global mode (ModeState.default). */
+  mode: Mode;
+  queueDepth: number;
+  /** First provider in the chain. */
+  provider: string;
+  /** The item playing (or paused mid-item); null when idle. */
+  current: { source: string; label?: string } | null;
+}
+
+/** POST /v1/pause and POST /v1/resume (US-022). */
+export interface PauseRequest {
+  /** `^[a-z][a-z0-9-]{0,31}$`, e.g. `mic`, `user`. */
+  reason: string;
+}
+
+export interface PauseResponse {
+  paused: boolean;
+  pauseReasons: string[];
+}
+
 export type AudioFormat = "aiff" | "mp3" | "wav";
 
 export interface AudioClip {

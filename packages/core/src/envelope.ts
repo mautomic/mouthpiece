@@ -5,6 +5,7 @@ import {
   MODES,
   type ModeRequest,
   type NormalizedSpeakEvent,
+  type PauseRequest,
   PRIORITIES,
   type ReplayRequest,
 } from "./contracts.ts";
@@ -15,7 +16,9 @@ export const MAX_CONVERSATION_ID_CHARS = 256;
 export const MAX_LABEL_CHARS = 100;
 export const MAX_VOICE_CHARS = 100;
 export const DEFAULT_CONVERSATION_ID = "default";
+export const DEFAULT_PAUSE_REASON = "user";
 const SOURCE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const PAUSE_REASON_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 
 export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -129,5 +132,17 @@ export function parseReplayRequest(input: unknown): ParseResult<ReplayRequest> {
   return parse(() => {
     if (!isRecord(input)) fail("body must be a JSON object");
     return { full: optionalBoolean(input, "full") ?? false };
+  });
+}
+
+/** POST /v1/pause and /v1/resume. An absent reason means `user`. */
+export function parsePauseRequest(input: unknown): ParseResult<PauseRequest> {
+  return parse(() => {
+    if (!isRecord(input)) fail("body must be a JSON object");
+    const reason = input.reason ?? DEFAULT_PAUSE_REASON;
+    if (typeof reason !== "string" || !PAUSE_REASON_PATTERN.test(reason)) {
+      fail(`reason must match ${PAUSE_REASON_PATTERN.source}`);
+    }
+    return { reason };
   });
 }

@@ -7,11 +7,14 @@ import {
   type ModeRequest,
   type ModeState,
   mouthpieceHome,
+  type PauseRequest,
+  type PauseResponse,
   type ReplayRequest,
   type ReplayResponse,
   readToken,
   type SpeakEvent,
   type SpeakResponse,
+  type StatusResponse,
   type UsageReport,
   type VoicesResponse,
 } from "@mouthpiece/core";
@@ -108,3 +111,9 @@ export const voices = (opts: ClientOptions & { provider?: string } = {}) =>
     undefined,
     opts,
   );
+export const status = (opts: ClientOptions = {}) =>
+  request<StatusResponse>("GET", "/v1/status", undefined, opts);
+export const pause = (reason = "user", opts: ClientOptions = {}) =>
+  request<PauseResponse>("POST", "/v1/pause", { reason } satisfies PauseRequest, opts);
+export const resume = (reason = "user", opts: ClientOptions = {}) =>
+  request<PauseResponse>("POST", "/v1/resume", { reason } satisfies PauseRequest, opts);

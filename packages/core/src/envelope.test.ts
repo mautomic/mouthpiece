@@ -4,6 +4,7 @@ import {
   MAX_TEXT_CHARS,
   parseInterruptRequest,
   parseModeRequest,
+  parsePauseRequest,
   parseReplayRequest,
   parseSpeakEvent,
 } from "./envelope.ts";
@@ -169,5 +170,41 @@ describe("parseReplayRequest", () => {
   });
   test("rejects non-boolean full", () => {
     expect(parseReplayRequest({ full: 1 }).ok).toBe(false);
+  });
+});
+
+describe("parsePauseRequest", () => {
+  test("accepts a reason matching the pattern", () => {
+    for (const reason of ["mic", "user", "a", "do-not-disturb2", `a${"b".repeat(31)}`]) {
+      expect(parsePauseRequest({ reason })).toEqual({ ok: true, value: { reason } });
+    }
+  });
+  test("defaults an absent reason to user", () => {
+    expect(parsePauseRequest({})).toEqual({ ok: true, value: { reason: "user" } });
+    expect(parsePauseRequest({ reason: null })).toEqual({ ok: true, value: { reason: "user" } });
+  });
+  test("ignores unknown fields", () => {
+    expect(parsePauseRequest({ reason: "mic", extra: 1 })).toEqual({
+      ok: true,
+      value: { reason: "mic" },
+    });
+  });
+  test.each([
+    [{ reason: "" }],
+    [{ reason: "Mic" }],
+    [{ reason: "1mic" }],
+    [{ reason: "-mic" }],
+    [{ reason: "mic pause" }],
+    [{ reason: "mic_pause" }],
+    [{ reason: `a${"b".repeat(32)}` }],
+    [{ reason: 1 }],
+  ])("rejects %p", (input) => {
+    const r = parsePauseRequest(input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("reason must match");
+  });
+  test("rejects a non-object body", () => {
+    expect(parsePauseRequest("mic").ok).toBe(false);
+    expect(parsePauseRequest(null).ok).toBe(false);
   });
 });

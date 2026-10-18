@@ -47,6 +47,39 @@ Stops everything and clears the queue. 200 `{ "stopped": true, "dropped": 3 }`
 ## POST /v1/skip
 Skips the item currently playing. 200 `{ "skipped": true }`
 
+## GET /v1/status
+200 `StatusResponse`, what the daemon is doing right now (polled by the menubar, US-018):
+
+```json
+{ "version": "0.4.0", "speaking": true, "paused": false, "pauseReasons": [], "mode": "summary",
+  "queueDepth": 2, "provider": "say", "current": { "source": "claude-code", "label": "web" } }
+```
+
+| Field | Notes |
+|---|---|
+| `speaking` | `true` while an item is playing; `false` while paused |
+| `paused` / `pauseReasons` | `paused` is `true` while any reason is active; `pauseReasons` lists them, e.g. `["mic"]` |
+| `mode` | effective global mode (`ModeState.default`) |
+| `provider` | first provider in the chain |
+| `current` | `{ source, label? }` of the item playing, or held mid-item by a pause; `null` when idle |
+
+## POST /v1/pause
+Body `{ "reason": "mic" }`. `reason` matches `^[a-z][a-z0-9-]{0,31}$` and defaults to `"user"` when absent.
+200 `PauseResponse`: `{ "paused": true, "pauseReasons": ["mic"] }`. Pausing again with an active reason keeps one entry and restarts its expiry clock.
+
+## POST /v1/resume
+Body `{ "reason": "mic" }` (same rules as `POST /v1/pause`). Removes that reason; resuming a reason that is not active is a no-op.
+200 `PauseResponse`: `{ "paused": false, "pauseReasons": [] }`
+
+Pause semantics (US-022):
+- Speech is paused while *any* reason is active, so two reasons (e.g. `mic` and `user`) both need resuming.
+- On pause, the item playing stops, is kept at the head of the queue with the same id, and resumes from the chunk that was
+  interrupted (not from the beginning). While paused nothing plays; new items still queue, and coalescing and expiry apply.
+  The held item does not expire while paused.
+- `POST /v1/interrupt`, `/v1/stop` and `/v1/skip` still work while paused; an item they drop never resumes.
+- Safety: a reason expires after `micPause.maxPauseMs` (default 600000 ms), and the daemon clears `mic` as soon as the helper
+  that reported it exits.
+
 ## GET /v1/mode
 200 `ModeState`: `{ "default": "summary", "overrides": [{ "source": "claude-code", "conversationId": "s1", "mode": "full" }] }`
 

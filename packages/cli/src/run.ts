@@ -2,9 +2,13 @@ import { authCommand } from "./commands/auth.ts";
 import { buildHotkeysCommand } from "./commands/build-hotkeys.ts";
 import { installAgentCommand } from "./commands/install-agent.ts";
 import { installHooksCommand } from "./commands/install-hooks.ts";
+import { kokoroCommand } from "./commands/kokoro.ts";
 import { modeCommand } from "./commands/mode.ts";
+import { pauseCommand } from "./commands/pause.ts";
 import { replayCommand } from "./commands/replay.ts";
+import { resumeCommand } from "./commands/resume.ts";
 import { sayCommand } from "./commands/say.ts";
+import { sendCommand } from "./commands/send.ts";
 import { tailCommand } from "./commands/tail.ts";
 import { uninstallAgentCommand } from "./commands/uninstall-agent.ts";
 import { uninstallHooksCommand } from "./commands/uninstall-hooks.ts";
@@ -21,6 +25,7 @@ const USAGE = `usage: mouthpiece <command>
       [--plain | --markdown] [--fallback-say]
                                           speak text (reads stdin when no text or --file is given)
   stop | skip | status
+  pause | resume [--reason r]             pause speech until resumed (default reason: user)
   mode [summary|full|off|toggle|clear] [--source s] [--conversation c]
   replay [--full]
   usage [--month YYYY-MM]
@@ -31,7 +36,9 @@ const USAGE = `usage: mouthpiece <command>
   uninstall-hooks [--target claude-code|codex|gemini]
   install-agent | uninstall-agent
   auth <provider> [--delete]              read the API key from stdin
-  build-hotkeys`;
+  kokoro install | status | uninstall     manage the free local Kokoro voice
+  send --tmux <target> <text…>            type text into a tmux pane (conversation spike)
+  build-hotkeys | build-helper            build the helper app (hotkeys, menubar, mic pause)`;
 
 export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<number> {
   const [command, ...rest] = argv;
@@ -53,6 +60,10 @@ export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<num
       case "status":
         io.out(`${JSON.stringify(await deps.client.health(), null, 2)}\n`);
         return 0;
+      case "pause":
+        return await pauseCommand(rest, io, deps);
+      case "resume":
+        return await resumeCommand(rest, io, deps);
       case "mode":
         return await modeCommand(rest, io, deps);
       case "replay":
@@ -73,7 +84,12 @@ export async function run(argv: string[], io: CliIO, deps: CliDeps): Promise<num
         return await uninstallAgentCommand(rest, io, deps);
       case "auth":
         return await authCommand(rest, io, deps);
+      case "kokoro":
+        return await kokoroCommand(rest, io, deps);
+      case "send":
+        return await sendCommand(rest, io, deps);
       case "build-hotkeys":
+      case "build-helper":
         return await buildHotkeysCommand(rest, io, deps);
       default:
         io.err(`${USAGE}\n`);

@@ -38,6 +38,9 @@ function harness() {
       replay: unused,
       usage: unused,
       voices: unused,
+      status: unused,
+      pause: unused,
+      resume: unused,
     },
     startDaemon: unused,
     env: {

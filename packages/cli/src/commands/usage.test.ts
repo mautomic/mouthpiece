@@ -57,6 +57,18 @@ function harness(report: UsageReport) {
         timeouts.push(opts?.timeoutMs);
         return report;
       },
+      status: async () => ({
+        version: "0.1.0",
+        speaking: false,
+        paused: false,
+        pauseReasons: [],
+        mode: "summary",
+        queueDepth: 0,
+        provider: "say",
+        current: null,
+      }),
+      pause: async () => ({ paused: true, pauseReasons: ["user"] }),
+      resume: async () => ({ paused: false, pauseReasons: [] }),
       voices: async () => ({ providers: [] }),
     },
     startDaemon: async () => ({ url: "http://127.0.0.1:7317" }),

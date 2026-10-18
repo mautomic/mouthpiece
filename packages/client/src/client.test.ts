@@ -7,9 +7,12 @@ import {
   health,
   interrupt,
   MouthpieceError,
+  pause,
   replay,
+  resume,
   setMode,
   speak,
+  status,
   usage,
   voices,
 } from "./index.ts";
@@ -134,4 +137,22 @@ test("voices is GET /v1/voices with an optional provider", async () => {
   expect(seen.at(-1)).toMatchObject({ method: "GET", path: "/v1/voices", search: "", body: "" });
   await voices({ url, token: "t", provider: "say" });
   expect(seen.at(-1)).toMatchObject({ method: "GET", path: "/v1/voices", search: "?provider=say" });
+});
+
+test("status is GET /v1/status", async () => {
+  await status({ url, token: "t" });
+  expect(seen.at(-1)).toMatchObject({ method: "GET", path: "/v1/status", body: "" });
+});
+
+test("pause and resume POST the reason, defaulting to user", async () => {
+  await pause(undefined, { url, token: "t" });
+  expect(seen.at(-1)).toMatchObject({ method: "POST", path: "/v1/pause", auth: "Bearer t" });
+  expect(JSON.parse(seen.at(-1)?.body ?? "")).toEqual({ reason: "user" });
+  await pause("mic", { url, token: "t" });
+  expect(JSON.parse(seen.at(-1)?.body ?? "")).toEqual({ reason: "mic" });
+  await resume(undefined, { url, token: "t" });
+  expect(seen.at(-1)).toMatchObject({ method: "POST", path: "/v1/resume" });
+  expect(JSON.parse(seen.at(-1)?.body ?? "")).toEqual({ reason: "user" });
+  await resume("mic", { url, token: "t" });
+  expect(JSON.parse(seen.at(-1)?.body ?? "")).toEqual({ reason: "mic" });
 });
