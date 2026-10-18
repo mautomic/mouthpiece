@@ -203,12 +203,6 @@ test("usage text shows every flag of say, voices, tail and the hook targets", as
     expect(usage).toContain(flag);
 });
 
-test.each([["send"]])("%s routes to its (not yet implemented) command", async (cmd) => {
-  const h = harness();
-  expect(await run([cmd], h.io, h.deps)).toBe(1);
-  expect(h.err.join("")).toContain(`${cmd} is not implemented`);
-});
-
 test("build-helper is an alias of build-hotkeys", async () => {
   const home = await mkdtemp(join(tmpdir(), "mp-run-helper-"));
   try {
