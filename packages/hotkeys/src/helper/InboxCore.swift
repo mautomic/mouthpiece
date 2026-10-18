@@ -292,22 +292,42 @@ func metaLine(_ entry: InboxEntry, now: Double) -> String {
   return parts.joined(separator: " · ")
 }
 
-// MARK: - Message (summary first)
+// MARK: - Message (a preview of a long reply)
 
-/// What the message area shows: the spoken summary until expanded, else the full reply. The
-/// toggle's title, or nil when there's no summary (a reply spoken in full).
+/// A long reply shows its first lines until expanded. The panel never shows the spoken summary:
+/// it arrives a moment after the reply and would swap the text under the reader.
+let previewLines = 6
+let previewChars = 400
+
+/// The reply cut to `previewLines` lines and `previewChars` characters (at a word), with "…";
+/// nil when it fits whole.
+func messagePreview(_ text: String) -> String? {
+  var t = text
+  while let last = t.last, last.isWhitespace { t.removeLast() }
+  var cut = t
+  let lines = cut.split(separator: "\n", omittingEmptySubsequences: false)
+  if lines.count > previewLines { cut = lines.prefix(previewLines).joined(separator: "\n") }
+  if cut.count > previewChars {
+    let end = cut.index(cut.startIndex, offsetBy: previewChars)
+    var head = cut[..<end]
+    if !cut[end].isWhitespace, let space = head.lastIndex(where: { $0.isWhitespace }) { head = head[..<space] }
+    cut = String(head)
+  }
+  while let last = cut.last, last.isWhitespace { cut.removeLast() }
+  return cut == t ? nil : cut + "…"
+}
+
+/// What the message area shows, and the toggle's title (nil when the reply fits whole).
 struct MessageDisplay: Equatable {
   let text: String
   let toggle: String?
 }
 
 func messageDisplay(_ entry: InboxEntry, expanded: Bool) -> MessageDisplay {
-  guard let summary = entry.summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-    return MessageDisplay(text: entry.text, toggle: nil)
-  }
+  guard let preview = messagePreview(entry.text) else { return MessageDisplay(text: entry.text, toggle: nil) }
   return expanded
-    ? MessageDisplay(text: entry.text, toggle: "Show summary")
-    : MessageDisplay(text: summary, toggle: "Show full response")
+    ? MessageDisplay(text: entry.text, toggle: "Show less")
+    : MessageDisplay(text: preview, toggle: "Show full response")
 }
 
 // MARK: - Self-test (--self-test-inbox)
@@ -542,24 +562,29 @@ func runInboxSelfTest() -> Int32 {
   rv.update(six.filter { $0.id != "r4" && $0.id != "r6" })
   check(rv.selected == conversationKey(six[4]), "vm: removing the last tab selects the one above")
 
-  // Summary first: the message shows the spoken summary until you expand it
-  let longReply = InboxEntry(
-    id: "s1", source: "agent", conversationId: "s", label: "web", text: "The whole long reply.",
-    summary: "The short version.", at: 1, route: nil, state: "waiting")
-  let shortReply = InboxEntry(
-    id: "s2", source: "agent", conversationId: "t", label: "web", text: "Done.", summary: nil, at: 1,
-    route: nil, state: "waiting")
+  // A long reply is cut to a preview until you expand it; a short one shows in full
+  func reply(_ text: String) -> InboxEntry {
+    InboxEntry(
+      id: "s1", source: "agent", conversationId: "s", label: "web", text: text, summary: "Ignored.", at: 1,
+      route: nil, state: "waiting")
+  }
+  check(messagePreview("Done.") == nil, "preview: a short reply needs none")
+  let manyLines = (1...10).map { "Line \($0)." }.joined(separator: "\n")
   check(
-    messageDisplay(longReply, expanded: false) == MessageDisplay(text: "The short version.", toggle: "Show full response"),
-    "message: a summarized reply shows its summary first")
+    messagePreview(manyLines) == (1...previewLines).map { "Line \($0)." }.joined(separator: "\n") + "…",
+    "preview: cut after \(previewLines) lines")
+  let longLine = String(repeating: "word ", count: 200)
+  let cut = messagePreview(longLine) ?? ""
+  check(cut.count <= previewChars + 1 && cut.hasSuffix("word…"), "preview: a long line is cut at a word, got \(cut.suffix(12))")
+  check(messagePreview("Line.\n\n\n") == nil, "preview: trailing blank lines don't count")
   check(
-    messageDisplay(longReply, expanded: true) == MessageDisplay(text: "The whole long reply.", toggle: "Show summary"),
+    messageDisplay(reply(manyLines), expanded: false).toggle == "Show full response"
+      && messageDisplay(reply(manyLines), expanded: false).text == messagePreview(manyLines),
+    "message: a long reply shows its preview, never the summary")
+  check(
+    messageDisplay(reply(manyLines), expanded: true) == MessageDisplay(text: manyLines, toggle: "Show less"),
     "message: expanded shows the full reply")
-  check(messageDisplay(shortReply, expanded: false) == MessageDisplay(text: "Done.", toggle: nil), "message: no summary, no toggle")
-  let blankSummary = InboxEntry(
-    id: "s3", source: "agent", conversationId: "u", label: nil, text: "Full.", summary: "  ", at: 1, route: nil,
-    state: "waiting")
-  check(messageDisplay(blankSummary, expanded: false).toggle == nil, "message: a blank summary counts as none")
+  check(messageDisplay(reply("Done."), expanded: false) == MessageDisplay(text: "Done.", toggle: nil), "message: short, no toggle")
   let ev = InboxViewModel()
   let e1 = entry("e1", conv: "e", at: 1)
   ev.update([e1])

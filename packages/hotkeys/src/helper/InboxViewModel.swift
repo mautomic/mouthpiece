@@ -22,7 +22,7 @@ final class InboxViewModel: ObservableObject {
   /// The result line under the message, per conversation.
   @Published private(set) var results: [String: ReplyOutcome] = [:]
   @Published private(set) var inFlight: Set<String> = []
-  /// Conversations showing their full reply instead of the summary.
+  /// Conversations showing their full reply instead of its preview.
   @Published private(set) var expanded: Set<String> = []
   /// Bumped to move the cursor into the reply box (the hotkey or menubar path only).
   @Published private(set) var focusRequest = 0
