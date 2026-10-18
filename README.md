@@ -209,7 +209,7 @@ Works with Claude Code and Codex sessions. `enabled` applies without a restart. 
 ### The inbox panel
 
 With `[reply] enabled`, the helper app shows an inbox panel in the native macOS look (translucent, light or dark with
-the system): a tab per session, the selected response in full, and a reply box. ⌃⌥O (or the menubar's **Inbox**)
+the system): a tab per session, the selected response (its spoken summary first, with **Show full response** to expand it), and a reply box. ⌃⌥O (or the menubar's **Inbox**)
 opens it on the newest session waiting for you. ⌘↩ sends (↩ adds a line), ⌘1–⌘9 or ⌃⇥ switch tabs, Esc closes.
 
 ```toml
