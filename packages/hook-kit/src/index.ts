@@ -4,4 +4,5 @@
  */
 export * from "./alerts.ts";
 export * from "./label.ts";
+export * from "./route.ts";
 export * from "./run.ts";

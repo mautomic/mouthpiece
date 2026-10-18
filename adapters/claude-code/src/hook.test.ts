@@ -144,3 +144,33 @@ test("lastAssistantTextFromTranscript skips garbage and tool-only records", () =
   ].join("\n");
   expect(lastAssistantTextFromTranscript(jsonl)).toBe("A\nB");
 });
+
+const ORCA = { ORCA_TERMINAL_HANDLE: "term_148202cb-9a23-4308-8380-a4efd3957057" };
+const orcaRoute = { via: "orca", target: ORCA.ORCA_TERMINAL_HANDLE, agent: "claude" };
+
+test("stop attaches the Orca reply route when the session runs in Orca", async () => {
+  const { d, spoken } = deps(ORCA);
+  await handleHook("stop", stopInput, d);
+  expect(spoken[0]?.reply).toEqual(orcaRoute);
+});
+
+test("stop outside Orca has no reply field at all", async () => {
+  const { d, spoken } = deps();
+  await handleHook("stop", stopInput, d);
+  expect(spoken[0]).not.toHaveProperty("reply");
+});
+
+test("a permission alert attaches the route too", async () => {
+  const { d, spoken } = deps(ORCA);
+  await handleHook(
+    "notify",
+    {
+      session_id: "s1",
+      cwd: "/x/web",
+      notification_type: "permission_prompt",
+      message: "Claude needs your permission to use Bash",
+    },
+    d,
+  );
+  expect(spoken[0]?.reply).toEqual(orcaRoute);
+});
