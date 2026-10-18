@@ -28,17 +28,18 @@ Mouthpiece is a local, source-agnostic voice layer. A loopback daemon accepts te
 | Daemon (foreground, isolated) | `MOUTHPIECE_HOME=$(mktemp -d) bun run daemon` |
 | CLI | `bun run mouthpiece -- say "hello"` |
 | Full helper build (temp dir, signs, never launches) | `MOUTHPIECE_HELPER_BUILD=1 bun test packages/hotkeys/src/build.test.ts` |
+| Helper's offline self-test (inbox logic, Edit menu; compiles into a temp dir) | `bun test packages/hotkeys/src/build.test.ts -t "inbox logic"` |
 
 ## Layout
 
 ```
 packages/core       contracts (types), envelope validation, cleaning, chunking, config (+ setTomlValue line editor), WAV helpers (readWavPcm, trimWavSilence), home/token
 packages/providers  TtsProvider implementations (say, kokoro, inworld, elevenlabs, deepgram, openai), voice map, fallback chain
-packages/daemon     HTTP server, speech queue (pause/resume by reason), speaker pipeline (render-ahead + start gate), stream player (mouthpiece-player) with afplay fallback, settings (GET/POST /v1/settings writes config.toml), usage metering, quota gate, status
+packages/daemon     HTTP server, speech queue (pause/resume by reason), speaker pipeline (render-ahead + start gate), stream player (mouthpiece-player) with afplay fallback, settings (GET/POST /v1/settings writes config.toml), usage metering, quota gate, status, reply inbox (in-memory inbox, ReplyController with the delivery controls; /v1/inbox, /v1/inbox/events, /v1/inbox/dismiss, /v1/reply, /v1/reply/submit)
 packages/summarizers  Summarizer backends (claude -p; prompt sized to the reply: key results first, the user's to-dos and questions last; trimmed from the middle) + first-sentence fallback
 packages/hotkeys    helper app bundle: MouthpieceHelper (src/helper/*.swift: global hotkeys, menubar, mic watcher, reply inbox panel) and mouthpiece-player (gap-free audio): Swift sources + TypeScript build/args/supervisor
-packages/client     @mouthpiece/client: speak/interrupt/stop/skip/health/mode/replay/usage/voices/status/pause/resume/settings over HTTP
-packages/hook-kit   @mouthpiece/hook-kit: silent hook runtime (runHook, HookContext, labelFromCwd, approvalText) shared by hook adapters
+packages/client     @mouthpiece/client: speak/interrupt/stop/skip/health/mode/replay/usage/voices/status/pause/resume/settings/inbox/reply/submitReply/dismissInbox over HTTP
+packages/hook-kit   @mouthpiece/hook-kit: silent hook runtime (runHook, HookContext, labelFromCwd, approvalText, replyRoute) shared by hook adapters
 packages/cli        `mouthpiece` CLI
 packages/listen     on-device speech-to-text prototype (conversation-mode spike; standalone, not wired in)
 adapters/claude-code  Claude Code hooks

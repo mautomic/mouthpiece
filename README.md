@@ -60,7 +60,7 @@ When Claude needs your approval to use a tool, you hear an alert that names the 
 | ⌃⌥M | Switch between summary and full |
 | ⌃⌥O | Open the reply inbox (with `[reply] enabled`) |
 
-The menubar icon shows whether Mouthpiece is idle, speaking, or paused, and how many items are queued. Its menu has the same controls, plus mode and pause, and a **Settings** submenu for the Kokoro voice and speed. A change there is saved to your config file and you hear the new voice right away. **Quit Mouthpiece** (⌘Q while the menu is open) stops the daemon until your next login or `mouthpiece daemon start`.
+The menubar icon shows whether Mouthpiece is idle, speaking, or paused, how many items are queued, and "✉N" while N sessions wait in the inbox. Its menu has the same controls, each showing its hotkey, plus **Inbox**, mode and pause, and a **Settings** submenu for the Kokoro voice and speed. A change there is saved to your config file and you hear the new voice right away. **Quit Mouthpiece** (⌘Q while the menu is open) stops the daemon until your next login or `mouthpiece daemon start`.
 
 **Pause while dictating:** speech pauses whenever another app is using the microphone (for example Wispr Flow or macOS Dictation), and resumes about 0.8 s after it stops, from the sentence it was on.
 
@@ -75,6 +75,8 @@ mouthpiece pause | resume                  # hold all speech, then continue wher
 mouthpiece status                          # what the daemon is doing, as JSON
 mouthpiece voices [--provider kokoro]      # list available voices
 mouthpiece usage                           # characters, cost, and quotas this billing cycle
+mouthpiece inbox [--dismiss <label> | --clear]  # the latest response of each session (see below)
+mouthpiece reply <label> "text"            # answer a session from the terminal (see below)
 ```
 
 Run `mouthpiece` with no arguments for the full list.
@@ -217,6 +219,9 @@ popup = "away"      # pop up on a new response unless the session's terminal app
 [hotkeys]
 inbox = "ctrl+alt+o"
 ```
+
+You can dictate into the reply box (Wispr Flow included) and use ⌘V, ⌘C, ⌘A and ⌘Z there. Open the panel with ⌃⌥O
+first, so it's the app in front.
 
 A tab's **×** (or ⌘⌫ in an empty reply box) removes it, and **Clear all** (in the panel's ··· menu) empties the inbox (from the CLI: `mouthpiece inbox --dismiss <label>`
 or `--clear`). A session's next response brings it back.
