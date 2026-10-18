@@ -11,7 +11,8 @@ Mouthpiece is a local, source-agnostic voice layer. A loopback daemon accepts te
 - macOS on Apple Silicon. **Bun must be the native arm64 build, ≥ 1.2.**
   - Check: `bun -e 'console.log(process.arch, Bun.version)'` must print `arm64`.
   - An x64 Bun runs under Rosetta and prints "CPU lacks AVX support" warnings. Fix it before doing anything else.
-- Audio uses the built-in `say` and `afplay`.
+- **Voices:** macOS `say`, the local Kokoro model (`kokoro-js` in a child process, installed by `mouthpiece kokoro install` into `~/.mouthpiece/kokoro`), or cloud providers.
+- **Playback:** through `mouthpiece-player` (Swift, `AVAudioEngine`, gap-free) when the helper app is built, else `afplay`.
 - Cloud TTS keys come from env vars, e.g. `INWORLD_API_KEY`. Never put keys in files.
 
 ## Commands
@@ -26,16 +27,17 @@ Mouthpiece is a local, source-agnostic voice layer. A loopback daemon accepts te
 | **Everything (run before every commit)** | `bun run check` |
 | Daemon (foreground, isolated) | `MOUTHPIECE_HOME=$(mktemp -d) bun run daemon` |
 | CLI | `bun run mouthpiece -- say "hello"` |
+| Full helper build (temp dir, signs, never launches) | `MOUTHPIECE_HELPER_BUILD=1 bun test packages/hotkeys/src/build.test.ts` |
 
 ## Layout
 
 ```
-packages/core       contracts (types), envelope validation, cleaning, chunking, config, home/token
+packages/core       contracts (types), envelope validation, cleaning, chunking, config (+ setTomlValue line editor), WAV helpers (readWavPcm, trimWavSilence), home/token
 packages/providers  TtsProvider implementations (say, kokoro, inworld, elevenlabs, deepgram, openai), voice map, fallback chain
-packages/daemon     HTTP server, speech queue (pause/resume by reason), speaker pipeline (start gate), stream player (mouthpiece-player) with afplay fallback, usage metering, quota gate, status
-packages/summarizers  Summarizer backends (claude -p) + first-sentence fallback
+packages/daemon     HTTP server, speech queue (pause/resume by reason), speaker pipeline (render-ahead + start gate), stream player (mouthpiece-player) with afplay fallback, settings (GET/POST /v1/settings writes config.toml), usage metering, quota gate, status
+packages/summarizers  Summarizer backends (claude -p; prompt sized to the reply, to-dos first) + first-sentence fallback
 packages/hotkeys    helper app bundle: MouthpieceHelper (global hotkeys, menubar, mic watcher) and mouthpiece-player (gap-free audio): Swift sources + TypeScript build/args/supervisor
-packages/client     @mouthpiece/client: speak/interrupt/stop/skip/health/mode/replay/usage/voices/status/pause/resume over HTTP
+packages/client     @mouthpiece/client: speak/interrupt/stop/skip/health/mode/replay/usage/voices/status/pause/resume/settings over HTTP
 packages/hook-kit   @mouthpiece/hook-kit: silent hook runtime (runHook, HookContext, labelFromCwd, approvalText) shared by hook adapters
 packages/cli        `mouthpiece` CLI
 packages/listen     on-device speech-to-text prototype (conversation-mode spike; standalone, not wired in)
@@ -57,9 +59,10 @@ Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client`
   - Nothing under `packages/` may mention Claude Code, Discord, or any other specific source.
   - Source-specific code lives in `adapters/`.
 - **Changing contracts:**
-  - The contracts are `packages/core/src/contracts.ts` and `docs/api.md`. Changes must be **additive** within `/v1`.
-  - Update both files in the same commit.
+  - The HTTP contract is `docs/api.md` plus its request and response types in `packages/core/src/contracts.ts`. Changes to it must be **additive** within `/v1`. Update both files in the same commit.
   - Validation ignores unknown fields, for forward compatibility.
+  - Code-only interfaces in `contracts.ts` (`TtsProvider`, `Player`, `ChunkHint`, `Summarizer`) have no consumers outside this repo. They may change, with every implementation updated in the same commit.
+- **Speech never pauses once it starts** (the user's rule, 2026-10-17). When starting sooner would risk a pause mid-response, start later. Examples: the speaker's start gate (`packages/daemon/src/start-gate.ts`), and Kokoro's chunking with and without the gap-free player.
 - **TDD:** write the failing test first.
   - Tests must not depend on wall-clock timing; inject `now()` and use fakes.
 - **Commits:**
@@ -77,9 +80,14 @@ Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client`
 
    Tests set `MOUTHPIECE_HOME` and `MOUTHPIECE_CONFIG` (and `MOUTHPIECE_CODEX_HOOKS` / `MOUTHPIECE_GEMINI_SETTINGS` for hook installs) to a temp dir. Claude Code hooks are tried with `claude --settings <file-or-json>` and never by editing user settings.
 2. **No audio and no paid API calls in automated tests.**
-   - Use `FakeProvider` / `FakePlayer`.
+   - Use `FakeProvider`, `FakePlayer` and `FakePlayerProcess`.
+   - The Swift player's tests run it only with `--self-test` or `--self-test-idle`, which render offline into memory. Never run `mouthpiece-player` without one of them in a test or an agent.
    - Live tests (real `say` playback, Inworld) only run when `MOUTHPIECE_LIVE_TESTS=1`.
 3. **Hook scripts** run through `@mouthpiece/hook-kit` `runHook()`: they never write to stdout or stderr, always exit 0, and give up after 300 ms. If they block the host tool, that's a bug (Gemini CLI retries the turn on any output or non-zero exit).
 4. **The daemon binds to `127.0.0.1` only.** Every endpoint except `GET /v1/health` requires `Authorization: Bearer <token>`.
 5. **Summarizer child processes** (`claude -p`) always run with `MOUTHPIECE_CHILD=1` in their environment. Hooks exit immediately when it is set.
-6. **Never run `install.sh`, `uninstall.sh`, `launchctl`, `security`, or `mouthpiece install-*`/`uninstall-*`/`auth` against the real system.** Use `MOUTHPIECE_DRY_RUN=1` with a temp `HOME`, and inject `exec` fakes.
+6. **Never run these against the real system:**
+   - `install.sh`, `uninstall.sh`, `launchctl` or `security`;
+   - `mouthpiece install-*`, `uninstall-*`, `auth`, `daemon start|stop|restart`, `build-helper` or `kokoro install|uninstall`.
+
+   Use `MOUTHPIECE_DRY_RUN=1` with a temp `HOME`, inject `exec` fakes, and build the helper only into a temp dir. When the user needs one of these run, give them the command (they can type `! <command>`).

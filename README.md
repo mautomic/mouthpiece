@@ -2,7 +2,7 @@
 
 Mouthpiece reads your AI coding assistant's output aloud, so you don't have to watch the terminal.
 
-When Claude Code (or Codex, Gemini CLI, or any script) finishes a response, Mouthpiece cleans it up, optionally condenses it into a sentence or two, and speaks it. Multiple sessions share one queue, so voices never overlap, and each project announces its name when more than one is talking. Speech pauses while you dictate and picks up where it left off.
+When Claude Code (or Codex, Gemini CLI, or any script) finishes a response, Mouthpiece cleans it up, optionally condenses it into a short spoken summary, and speaks it. Multiple sessions share one queue, so voices never overlap, and each project announces its name when more than one is talking. Speech pauses while you dictate and picks up where it left off.
 
 It runs entirely on your Mac. The default voices are free: macOS `say`, or the local [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) model. Summaries use your Claude Code subscription through `claude -p`, so they don't add API charges.
 
@@ -33,7 +33,7 @@ cd mouthpiece
 The installer is safe to re-run. It:
 
 1. installs dependencies and links the `mouthpiece` command into `~/.local/bin`,
-2. builds the helper app (hotkeys, menubar, mic pause),
+2. builds the helper app (hotkeys, menubar, mic pause, gap-free player),
 3. offers to store an Inworld API key and to install the local Kokoro voice (~500 MB),
 4. installs hooks for Claude Code, and for Codex and Gemini CLI if they're installed,
 5. starts the daemon as a launchd agent, so it runs at login,
@@ -45,7 +45,12 @@ To update later, run `git pull && ./install.sh`.
 
 ## Everyday use
 
-Start a new Claude Code session. Responses are spoken as short summaries. When Claude needs your approval to use a tool, you hear an alert that names the project, even when responses are muted. Typing your next prompt interrupts whatever that session is saying.
+Start a new Claude Code session. Responses are spoken as summaries:
+- **Order:** first any question Claude is asking you, then anything you need to do (like restarting something), then what was done and how it turned out.
+- **Length:** short replies get a sentence or two, and complex ones get more, up to 700 characters.
+- **Shorter replies:** a reply under 300 characters is read in full.
+
+When Claude needs your approval to use a tool, you hear an alert that names the project, even when responses are muted. Typing your next prompt interrupts whatever that session is saying.
 
 | Hotkey | Action |
 |---|---|
@@ -105,7 +110,11 @@ web = "bm_george"
 api = "af_bella"
 ```
 
-With the helper app built (`mouthpiece build-helper`), speech plays through a gap-free player: Kokoro starts speaking after the first sentence and continues without breaks between sentences. Without it, Mouthpiece plays each clip with `afplay`, which adds about a second between clips.
+With the helper app built (`mouthpiece build-helper`), speech plays through a gap-free player.
+- **No pauses:** once speech starts, it never pauses mid-response.
+- **Start time:** Kokoro renders ahead and starts as soon as the rest is sure to keep up. That's usually right after the first sentence, a little later when the response opens with a very short one.
+
+Without the helper app, Mouthpiece plays each clip with `afplay`, which adds about a second between clips. To keep breaks rare, it sends Kokoro text in clips of up to 400 characters.
 
 ## Configuration
 
@@ -118,6 +127,7 @@ Commonly changed settings:
 | `provider.chain` | `["say"]` | Voices to try, in order |
 | `modes.default` | `"summary"` | `summary`, `full`, or `off` |
 | `summarizer.thresholdChars` | `300` | Responses shorter than this are spoken in full |
+| `summarizer.maxChars` | `700` | The longest a summary can be; each one is sized to its response (about 40% of its length) |
 | `filter.minChars` | `20` | Shorter responses (and "done", "ok", …) aren't spoken |
 | `hotkeys.stop` / `skip` / `replay` / `toggleMode` | `ctrl+alt+s` / `n` / `r` / `m` | Global hotkeys |
 | `menubar.enabled` | `true` | Show the menubar icon |
@@ -177,7 +187,8 @@ bun run mouthpiece -- say "hello"                 # the CLI from source
 
 Tests never play audio or call paid APIs. Live tests run only with `MOUTHPIECE_LIVE_TESTS=1`.
 
-- [`CLAUDE.md`](CLAUDE.md): the package layout, dependency rules, conventions, and guardrails.
+- [`CLAUDE.md`](CLAUDE.md) (also `AGENTS.md`): the package layout, dependency rules, conventions, and guardrails for coding agents.
 - [`docs/PRD.md`](docs/PRD.md): the product spec, including the user stories (US-xxx) and functional requirements (FR-x) cited in commits.
 - [`docs/api.md`](docs/api.md): the HTTP API.
+- `docs/*-checklist.md`: the manual test checklists (things only a person can check, like how speech sounds).
 - [`docs/spikes/conversation-mode.md`](docs/spikes/conversation-mode.md): notes on two-way voice conversation, a possible next step.

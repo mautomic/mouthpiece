@@ -1,6 +1,6 @@
 # PRD: Mouthpiece
 
-> **Status:** Draft v0.1 · research + design kickoff (no code yet)
+> **Status:** v0.4 · Phases 0–4 implemented and on `main` (2026-10-17). Plans and decisions: `docs/superpowers/plans/`.
 > **Date:** 2026-10-17
 > **Owner:** @mautomic
 
@@ -31,7 +31,7 @@ Speech-to-text (Wispr Flow) has made *talking to* Claude Code much faster than t
   - **< 1.5 s** in full mode
   - **< 4 s** in summary mode with the subscription summarizer (§8.5)
 - **G2:** Two speech modes that can be switched on the fly:
-  - **summary** (default): 1–3 spoken sentences.
+  - **summary** (default): a short spoken summary, sized to the response (updated 2026-10-17; it was 1–3 sentences). It leads with any question for the user and anything they need to do. See US-009.
   - **full**: the whole response with markdown and code cleaned out.
   - "Replay the full version of the last message" is always available.
 - **G3:** Never slow down or block Claude Code. Hooks are fire-and-forget, and a dead daemon degrades silently.
@@ -39,6 +39,7 @@ Speech-to-text (Wispr Flow) has made *talking to* Claude Code much faster than t
 - **G5:** Provider-agnostic TTS layer: swapping ElevenLabs / Inworld / Deepgram / OpenAI / macOS `say` is a config change.
 - **G6:** Keep it cheap and visible: **≤ $50/month** at heavy personal usage in summary mode. Track character usage per provider and project against each plan's quota (used / remaining / projected), warn at 80%, and fall back to a free voice at 100%.
 - **G7:** Source-agnostic core: one entry point that anything can use (`mouthpiece say` / `POST /v1/speak`). Claude Code is just the first adapter, and other sources (a Discord bot, cron jobs, CI, other AI CLIs) are thin adapters onto the same pipeline (§8.3).
+- **G8 (added 2026-10-17):** Once speech starts, it never pauses mid-response. When starting sooner would risk a pause, start later. With a local model (Kokoro), this trades the G1 targets for continuity.
 
 ## 3. Decisions made so far
 
@@ -317,10 +318,10 @@ Stories are grouped by phase. Each should fit in one focused session.
   - The child process gets `MOUTHPIECE_CHILD=1` in its environment (recursion guard; see §4.5)
   - Tools are disabled for the child, and the summarize prompt is passed on stdin
 - [ ] **Optional backend:** calls `claude-haiku-5-5` through `@anthropic-ai/sdk` with `effort: "low"`, used only when `summarizer.backend = "api"` and a key is configured
-- [ ] Both backends share one prompt with a 1–3 sentence target of at most 350 characters
-- [ ] The prompt puts **questions and decisions for the user** first, then the outcome. It never reads code aloud.
+- [ ] Both backends share one prompt. Updated 2026-10-17: the target is sized to the response, about 40% of its length, at least 200 characters and at most `summarizer.maxChars` (default 700, was 350).
+- [ ] The prompt puts **questions and decisions for the user** first, then **anything the user needs to do** (restart something, run a command, try a change), then what was done and how it turned out. It never drops a question or a to-do, and never reads code, file paths, commit ids or exact counts aloud.
 - [ ] Responses already shorter than the summary threshold (~300 characters after cleaning) skip the LLM call
-- [ ] Falls back to the first ~2 sentences of the cleaned text on error or timeout. Defaults: 6 s for `claude -p`, 2.5 s for the API; tune both from the US-002 measurements.
+- [ ] Falls back to the first ~2 sentences of the cleaned text on error or timeout. Defaults: 12 s for `claude -p` (measured 2–8 s, longer for complex replies; was 6 s), 2.5 s for the API.
 - [ ] Stores both the summary and the full cleaned text for each item, for replay
 - [ ] Eval: 20 captured responses, summaries hand-reviewed; at least 18 of 20 judged "I'd act the same as if I'd read it"
 
@@ -412,11 +413,15 @@ Stories are grouped by phase. Each should fit in one focused session.
 ### Phase 4: Polish (stretch)
 
 - **US-017:** Global hotkeys for stop, skip, replay, and mode toggle (via `skhd`/Hammerspoon or a tiny Swift helper). **Moved to Phase 2** (2026-10-17): users need a one-key way to stop speech; interim workaround is a macOS Shortcuts hotkey running `mouthpiece stop`.
-- **US-018:** Menubar indicator: speaking, idle, or muted; queue depth; current provider.
-- **US-019:** Local high-quality TTS (Kokoro-82M via MLX/Core ML) as a $0 provider.
+- **US-018:** Menubar indicator: speaking, idle, or muted; queue depth; current provider. *Implemented.* Its Settings submenu changes the Kokoro voice and speed and saves them to the config file (`POST /v1/settings`).
+- **US-019:** Local high-quality TTS (Kokoro-82M) as a $0 provider. *Implemented* with `kokoro-js` (ONNX, q8), not MLX/Core ML.
+  - Installed by `mouthpiece kokoro install`.
+  - Runs in a child process, so a render can be killed mid-way.
+  - Has a configurable voice and speed.
+  - Renders about 15 ms per character on an M4 Pro and cuts off past about 450 characters.
 - **US-020:** Streaming speech while Claude is still writing, using the `MessageDisplay` hook, if its payload supports it.
 - **US-021:** Clipboard or selection "read this to me" hotkey.
-- **US-022:** Auto-ducking or pausing TTS while Wispr Flow is dictating, to avoid feedback.
+- **US-022:** Auto-ducking or pausing TTS while Wispr Flow is dictating, to avoid feedback. *Implemented* as a pause while any app uses the microphone, which resumes from the interrupted sentence.
 - **US-023:** Distribute as a Claude Code plugin through a marketplace repo, plus a compiled `mouthpiece` binary (Homebrew tap or GitHub release). See §4.4.
   - The plugin bundles hooks, commands (`/mouthpiece:mode`, …), and `mp-hook`.
   - `SessionStart` detects a missing binary and prints the install command.
@@ -428,7 +433,7 @@ Stories are grouped by phase. Each should fit in one focused session.
 - **FR-1:** The daemon must bind to `127.0.0.1` only and require a shared-secret token on every non-health endpoint.
 - **FR-2:** Hook clients must never block Claude Code. They must be `async: true`, send with a ≤ 300 ms timeout, always exit 0, and print nothing to stdout.
 - **FR-3:** Text cleaning must run before both summarization and verbatim speech.
-- **FR-4:** **summary** mode must produce at most 350 characters of speech per response. **full** mode must speak all cleaned text, split into chunks under each provider's per-request limit.
+- **FR-4:** **summary** mode must produce at most `summarizer.maxChars` characters of speech per response (default 700 since 2026-10-17; it was 350). **full** mode must speak all cleaned text, split into chunks under each provider's per-request limit.
 - **FR-5:** Only one audio item may play at a time, system-wide.
 - **FR-6:** An interrupt for conversation C (for example a `UserPromptSubmit` from Claude Code session C) must interrupt and flush only C's audio.
 - **FR-13:** The core (`packages/core`, daemon, queue) must not import or reference anything Claude Code-specific. All source-specific behavior lives in adapters and source profiles (§8.3).
@@ -437,6 +442,8 @@ Stories are grouped by phase. Each should fit in one focused session.
 - **FR-9:** API keys must be read from env vars or the macOS Keychain, never from plain-text config committed anywhere.
 - **FR-10:** All characters sent to paid providers must be metered and checked against a monthly budget.
 - **FR-11:** Config lives at `~/.config/mouthpiece/config.toml` and is hot-reloaded on change.
+  - A file that fails to load is reported with a spoken notice and `configError` in `GET /v1/status`, and the previous config is kept (the defaults at startup).
+  - The menubar's Settings menu writes changes into the file, keeping the rest of it as written.
 - **FR-12:** The daemon runs as a `launchd` user agent (`mouthpiece install-agent`) and also in the foreground for development.
 
 ## 7. Non-Goals (v1)
@@ -529,6 +536,15 @@ Easiest first: write mp3 to a temp file and run `afplay`. This adds latency, sin
 
 Better: stream PCM into a long-lived player process (`ffplay -nodisp -`, `sox play`, or a small Swift CoreAudio helper) so playback starts on the first chunk. Decide this in the US-002 spike.
 
+**Decided and built (2026-10-17): `mouthpiece-player`,** a small Swift `AVAudioEngine` player in the helper app bundle. Plan: `docs/superpowers/plans/2026-10-17-gapless-player.md`.
+- **Why:** `afplay` costs about 0.9 s per clip, and Kokoro pads each clip with about 0.65 s of silence. That made a break of about 1.5 s between every clip.
+- **How:**
+  - The player plays PCM clips back to back and reports when each has 0.3 s left, so the daemon sends the next one in time.
+  - With a local model, the speaker renders ahead and starts only once the rest can keep up (G8).
+  - `afplay` remains the fallback when the helper isn't built, for non-PCM clips, or when the player crashes, hangs or can't start.
+  - The engine stops after 30 s idle.
+- **Not done yet:** streaming a cloud provider's audio into the player as it arrives (US-005's original intent).
+
 ### 8.5 Latency budget (summary mode)
 
 | Step | Target |
@@ -539,6 +555,12 @@ Better: stream PCM into a long-lived player process (`ffplay -nodisp -`, `sox pl
 | TTS time to first byte | ≈ 100–300 ms (Inworld); ≈ 0 for `say` |
 | Player start | ≈ 50 ms |
 | **Total** | **≈ 2–4 s** via `claude -p`, **≈ 1–1.3 s** via the API |
+
+Measured (2026-10-17):
+- `claude -p` summaries took 2–8 s, longer for complex replies.
+- Kokoro renders about 15 ms per character, and speech starts once the start gate is satisfied (usually 1–1.5 s of rendering).
+- Total from the end of a complex response to speech: about 5–10 s. G8 is accepted in exchange.
+- A later option is to stream the summary and start on its first sentence. That arrives 0.9–1.4 s before the whole summary.
 
 Full mode skips the summary call and is faster to first audio. If `claude -p` cold start dominates, options are:
 - a warm, long-lived `claude -p` process using streaming JSON input
