@@ -59,6 +59,11 @@ export interface Config {
     /** Safety: a pause reason expires after this long (at most MAX_PAUSE_MS). */
     maxPauseMs: number;
   };
+  /**
+   * `auto`: the gap-free stream player (`mouthpiece-player`, built by `mouthpiece build-helper`)
+   * when it is built, else afplay. `afplay`: always afplay. Read when the daemon starts.
+   */
+  player: { backend: PlayerBackend };
 }
 
 /** The largest `micPause.maxPauseMs`: 24 hours. */
@@ -104,6 +109,7 @@ export const DEFAULT_CONFIG: Config = {
   },
   menubar: { enabled: true },
   micPause: { enabled: true, ignoreBundleIds: [], resumeDelayMs: 800, maxPauseMs: 600_000 },
+  player: { backend: "auto" },
 };
 
 export class ConfigError extends Error {}
@@ -160,6 +166,7 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
   const hotkeys = table(root.hotkeys, "hotkeys");
   const menubar = table(root.menubar, "menubar");
   const micPause = table(root.micPause, "micPause");
+  const player = table(root.player, "player");
   return structuredClone({
     provider: {
       chain: optional(provider.chain, "provider.chain", nonEmptyStringList) ?? base.provider.chain,
@@ -291,6 +298,10 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
           atMost(positiveInt(v, n), MAX_PAUSE_MS, n),
         ) ?? base.micPause.maxPauseMs,
     },
+    player: {
+      backend:
+        optional(player.backend, "player.backend", oneOf(PLAYER_BACKENDS)) ?? base.player.backend,
+    },
   });
 }
 
@@ -359,6 +370,9 @@ function positiveNumber(value: unknown, name: string): number {
   }
   return value;
 }
+
+export const PLAYER_BACKENDS = ["auto", "afplay"] as const;
+export type PlayerBackend = (typeof PLAYER_BACKENDS)[number];
 
 export const KOKORO_SPEED_MIN = 0.5;
 export const KOKORO_SPEED_MAX = 2;
