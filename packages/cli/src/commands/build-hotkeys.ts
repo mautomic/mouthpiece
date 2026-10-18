@@ -11,6 +11,8 @@ export const buildHotkeysCommand: CommandFn = async (_args, io, deps) => {
     io.err(`mouthpiece: ${(error as Error).message}\n`);
     return 1;
   }
-  io.out(`Built ${app}. Restart the daemon to enable hotkeys, the menubar and mic pause.\n`);
+  io.out(
+    `Built ${app}. Restart the daemon to enable hotkeys, the menubar, mic pause and gap-free playback.\n`,
+  );
   return 0;
 };

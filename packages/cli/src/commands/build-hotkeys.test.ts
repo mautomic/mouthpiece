@@ -3,7 +3,13 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Exec } from "@mouthpiece/core";
-import { HELPER_SOURCE, helperAppPath, helperBinary } from "@mouthpiece/hotkeys";
+import {
+  HELPER_SOURCE,
+  helperAppPath,
+  helperBinary,
+  PLAYER_SOURCE,
+  playerBinary,
+} from "@mouthpiece/hotkeys";
 import type { CliDeps, CliIO } from "../types.ts";
 import { buildHotkeysCommand } from "./build-hotkeys.ts";
 
@@ -62,6 +68,8 @@ test("builds the helper app into <home> and hints at a daemon restart", async ()
   expect(await buildHotkeysCommand([], h.io, h.deps)).toBe(0);
   expect(calls).toEqual([
     ["swiftc", "-O", "-swift-version", "5", "-o", helperBinary(home), HELPER_SOURCE],
+    ["swiftc", "-O", "-swift-version", "5", "-o", playerBinary(home), PLAYER_SOURCE],
+    ["codesign", "-f", "-s", "-", "--identifier", "dev.mouthpiece.player", playerBinary(home)],
     ["codesign", "-f", "-s", "-", "--identifier", "dev.mouthpiece.helper", app],
   ]);
   expect(await readFile(join(app, "Contents", "Info.plist"), "utf8")).toContain("LSUIElement");
