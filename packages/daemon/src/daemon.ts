@@ -109,6 +109,9 @@ class ProviderSwitch implements TtsProvider {
   get maxCharsPerRequest() {
     return this.current.maxCharsPerRequest;
   }
+  get chunking() {
+    return this.current.chunking;
+  }
   get pricePerMillionChars() {
     return this.current.pricePerMillionChars;
   }

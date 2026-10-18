@@ -107,3 +107,11 @@ test("timeoutFor overrides the first-byte timeout per provider and text", async 
   expect(fallbacks).toEqual([]);
   expect(seen).toEqual([["local", "a long chunk"]]);
 });
+
+test("takes its chunking hint from the first provider", () => {
+  const hint = { firstChars: 80, targetChars: 150 };
+  const chain = (first: FakeProvider, second: FakeProvider) =>
+    new FallbackProvider([first, second], { firstByteTimeoutMs: 1000 });
+  expect(chain(new FakeProvider({ chunking: hint }), new FakeProvider()).chunking).toEqual(hint);
+  expect(chain(new FakeProvider(), new FakeProvider({ chunking: hint })).chunking).toBeUndefined();
+});

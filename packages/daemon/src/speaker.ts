@@ -52,7 +52,7 @@ export function createSpeaker(deps: SpeakerDeps): PlayFn {
     }
     const body = prepared.spoken;
     const text = announceLabel && item.event.label ? `${item.event.label}: ${body}` : body;
-    const chunks = chunksFor(frozen.get(item), text, startChunk, deps.provider.maxCharsPerRequest);
+    const chunks = chunksFor(frozen.get(item), text, startChunk, deps.provider);
     frozen.set(item, chunks);
     const synthesize = (chunk: string): Promise<Synthesis> =>
       deps.provider
@@ -103,12 +103,15 @@ function chunksFor(
   frozen: string[] | undefined,
   text: string,
   startChunk: number,
-  maxChars: number,
+  provider: Pick<TtsProvider, "maxCharsPerRequest" | "chunking">,
 ): string[] {
-  if (!frozen) return chunkText(text, { maxChars });
+  const maxChars = provider.maxCharsPerRequest;
+  if (!frozen) return chunkText(text, { maxChars, ...provider.chunking });
   const tooLong = frozen.findIndex((c, i) => i >= startChunk && c.length > maxChars);
   if (tooLong === -1) return frozen;
-  return [...frozen.slice(0, tooLong), ...chunkText(frozen.slice(tooLong).join(" "), { maxChars })];
+  const rest = frozen.slice(tooLong).join(" ");
+  const targetChars = provider.chunking?.targetChars;
+  return [...frozen.slice(0, tooLong), ...chunkText(rest, { maxChars, targetChars })];
 }
 
 export function skipReason(event: NormalizedSpeakEvent, filter: Config["filter"]): string | null {

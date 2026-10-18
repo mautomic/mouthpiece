@@ -1,5 +1,6 @@
 import {
   type AudioClip,
+  type ChunkHint,
   delay,
   type SynthesizeOptions,
   singleChunk,
@@ -15,6 +16,7 @@ export interface FakeProviderOptions {
   cacheKey?: string;
   /** Default 0 (free). Set it to test metering, caching, quotas and budgets. */
   pricePerMillionChars?: number;
+  chunking?: ChunkHint;
 }
 
 /** Deterministic provider for tests: the "audio" is the UTF-8 text itself. */
@@ -25,9 +27,11 @@ export class FakeProvider implements TtsProvider {
   readonly calls: string[] = [];
   readonly options: SynthesizeOptions[] = [];
   readonly cacheKey: string | undefined;
+  readonly chunking: ChunkHint | undefined;
 
   constructor(private readonly opts: FakeProviderOptions = {}) {
     this.name = opts.name ?? "fake";
+    this.chunking = opts.chunking;
     this.cacheKey = opts.cacheKey;
     this.pricePerMillionChars = opts.pricePerMillionChars ?? 0;
     this.maxCharsPerRequest = opts.maxCharsPerRequest ?? 1000;

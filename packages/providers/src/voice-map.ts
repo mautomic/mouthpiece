@@ -1,5 +1,6 @@
 import type {
   AudioClip,
+  ChunkHint,
   ProviderUsage,
   SynthesizeOptions,
   TtsProvider,
@@ -16,6 +17,7 @@ export class VoiceMapProvider implements TtsProvider {
   readonly maxCharsPerRequest: number;
   readonly pricePerMillionChars: number;
   readonly cacheKey: string | undefined;
+  readonly chunking: ChunkHint | undefined;
   readonly listVoices?: () => Promise<VoiceInfo[]>;
   readonly usageStatus?: () => Promise<ProviderUsage | undefined>;
 
@@ -27,6 +29,7 @@ export class VoiceMapProvider implements TtsProvider {
     this.maxCharsPerRequest = inner.maxCharsPerRequest;
     this.pricePerMillionChars = inner.pricePerMillionChars;
     this.cacheKey = inner.cacheKey;
+    this.chunking = inner.chunking;
     // Present only when the inner provider has them, so callers can tell "unsupported" apart.
     if (inner.listVoices) this.listVoices = inner.listVoices.bind(inner);
     if (inner.usageStatus) this.usageStatus = inner.usageStatus.bind(inner);

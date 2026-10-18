@@ -128,6 +128,12 @@ export class KokoroProvider implements TtsProvider {
   /** `generate()` truncates past ~510 tokens. */
   readonly maxCharsPerRequest = 400;
   readonly pricePerMillionChars = 0;
+  /**
+   * Kokoro renders a whole chunk before it plays, at about 20 ms a character on an M4 Pro: an
+   * 80-character first chunk starts speaking in ~1.6 s, and 150-character chunks render faster
+   * than the one before them plays.
+   */
+  readonly chunking = { firstChars: 80, targetChars: 150 };
   readonly cacheKey: string;
   #engine: Promise<KokoroEngine> | undefined;
   #loadFailureLogged = false;

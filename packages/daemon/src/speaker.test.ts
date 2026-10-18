@@ -66,6 +66,22 @@ test("cleans markdown, prefixes the label when asked, and plays chunk by chunk",
   );
 });
 
+test("a provider's chunking hint shortens the first chunk and the packing", async () => {
+  const provider = new FakeProvider({ chunking: { firstChars: 40, targetChars: 30 } });
+  const player = new FakePlayer();
+  await createSpeaker({ provider, player, log: () => {}, prepare })(
+    item("I fixed the reload bug, and added a test for it. Tests pass. Check is green.", {
+      format: "plain",
+    }),
+    ctx(),
+  );
+  expect(provider.calls).toEqual([
+    "I fixed the reload bug,",
+    "and added a test for it.",
+    "Tests pass. Check is green.",
+  ]);
+});
+
 test("plain format skips cleaning", async () => {
   const player = new FakePlayer();
   await createSpeaker({ provider: new FakeProvider(), player, log: () => {}, prepare })(

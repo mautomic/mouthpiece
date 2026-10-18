@@ -217,3 +217,24 @@ test("hot reload applies a new per-label voice map", async () => {
   await daemon.queue.idle();
   expect(fake.options.map((x) => x.voice)).toEqual(["V2"]);
 }, 20_000);
+
+test("the first provider's chunking hint survives every wrapper in the chain (US-019)", async () => {
+  // Priced, so the chain also wraps it in the audio cache.
+  const fast = new FakeProvider({
+    name: "kokoro",
+    pricePerMillionChars: 1,
+    chunking: { firstChars: 30, targetChars: 30 },
+  });
+  await boot(sayChain(), { providers: [fast, new FakeProvider({ name: "say" })] });
+  await speak(
+    {
+      source: "cli",
+      format: "plain",
+      mode: "full",
+      text: "I fixed the reload bug, and added a test. Tests pass.",
+    },
+    o(),
+  );
+  await daemon.queue.idle();
+  expect(fast.calls).toEqual(["I fixed the reload bug,", "and added a test. Tests pass."]);
+});

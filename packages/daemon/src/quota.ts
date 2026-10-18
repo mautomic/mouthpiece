@@ -126,6 +126,9 @@ export class QuotaGatedProvider implements TtsProvider {
   get maxCharsPerRequest() {
     return this.inner.maxCharsPerRequest;
   }
+  get chunking() {
+    return this.inner.chunking;
+  }
   get pricePerMillionChars() {
     return this.inner.pricePerMillionChars;
   }

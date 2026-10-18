@@ -1,4 +1,4 @@
-import type { AudioClip, SynthesizeOptions, TtsProvider } from "@mouthpiece/core";
+import type { AudioClip, ChunkHint, SynthesizeOptions, TtsProvider } from "@mouthpiece/core";
 
 export interface FallbackOptions {
   firstByteTimeoutMs: number;
@@ -16,6 +16,8 @@ export class FallbackProvider implements TtsProvider {
   readonly name: string;
   readonly maxCharsPerRequest: number;
   readonly pricePerMillionChars: number;
+  /** The first provider's: the others only speak when it fails. */
+  readonly chunking: ChunkHint | undefined;
 
   constructor(
     private readonly providers: readonly TtsProvider[],
@@ -26,6 +28,7 @@ export class FallbackProvider implements TtsProvider {
     this.name = providers.map((p) => p.name).join(">");
     this.maxCharsPerRequest = Math.min(...providers.map((p) => p.maxCharsPerRequest));
     this.pricePerMillionChars = first.pricePerMillionChars;
+    this.chunking = first.chunking;
   }
 
   async synthesize(text: string, options: SynthesizeOptions = {}): Promise<AudioClip> {
