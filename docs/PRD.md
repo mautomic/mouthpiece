@@ -512,6 +512,8 @@ Claude Code is the first source, not a special one. **Everything source-specific
 - extra cleaning rules (Discord: `<@123>` mentions → names, `:emoji:` dropped)
 - voice, priority, and mute settings
 
+*2026-10-18:* two envelope fields let a source shape how it's heard, with no source-specific code in the core: `verbatim` (speak the text as given, never summarized; mute still applies) and `announce: "always" | "auto"` (speak the label every time, or only when several conversations are active). A source profile's `announce = "never" | "auto" | "always"` overrides the event. The first user is lambda-ai, which speaks its own Go-written headlines (spec `docs/superpowers/specs/2026-10-18-lambda-ai-speech-design.md`).
+
 **Adapters run locally and pull.** A source on another machine, like a Discord bot hosted elsewhere, is handled by a small local adapter that connects *out* to Discord's gateway and forwards events to the loopback daemon. The daemon never opens an inbound port beyond `127.0.0.1`.
 
 **Replying is the same seam as §12.** "Respond to the Discord bot" is a **ConversationDriver** that posts a message back to the channel. It's the same interface Claude Code would use via tmux. v1 ships no drivers, but `conversationId` and `source` on every queued item keep the reply target addressable later.
