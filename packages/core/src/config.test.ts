@@ -137,8 +137,20 @@ test("profiles take an announce setting", () => {
   expect(c.profiles.web).toEqual({ mode: "full", announce: "always" });
 });
 
+test("follow is a list of tail followers, empty by default", () => {
+  expect(resolveConfig({}).follow).toEqual([]);
+  expect(
+    resolveConfig({
+      follow: [{ format: "margin" }, { format: "lines", path: "/l.log", label: "build" }],
+    }).follow,
+  ).toEqual([{ format: "margin" }, { format: "lines", path: "/l.log", label: "build" }]);
+});
+
 test.each([
   [{ modes: { default: "loud" } }, "modes.default"],
+  [{ follow: { format: "margin" } }, "follow"],
+  [{ follow: [{}] }, "follow[0].format"],
+  [{ follow: [{ format: "margin", path: "" }] }, "follow[0].path"],
   [{ profiles: { x: { mode: "loud" } } }, "profiles.x.mode"],
   [{ profiles: { x: { announce: "sometimes" } } }, "profiles.x.announce"],
   [{ summarizer: { backend: "gpt" } }, "summarizer.backend"],

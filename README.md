@@ -135,6 +135,7 @@ Commonly changed settings:
 | `micPause.ignoreBundleIds` | `[]` | Apps whose mic use doesn't pause speech, e.g. `["us.zoom.xos"]` |
 | `usage.quotas.<provider>` | none | e.g. `{ chars = 100000 }`: warn at 80%, switch to a free voice at 100% |
 | `player.backend` | `"auto"` | `auto` plays through the gap-free player when it's built; `afplay` always uses afplay (restart the daemon after changing it) |
+| `[[follow]]` | none | Tail followers to run with the daemon, e.g. `format = "margin"`, plus optional `path`, `source` and `label`, as for `mouthpiece tail` (restart the daemon after changing it) |
 
 All settings and their defaults are in [`packages/core/src/config.ts`](packages/core/src/config.ts).
 
@@ -143,6 +144,14 @@ All settings and their defaults are in [`packages/core/src/config.ts`](packages/
 - **Codex:** `mouthpiece install-hooks --target codex`, then run `/hooks` in Codex to trust them.
 - **Gemini CLI:** `mouthpiece install-hooks --target gemini`.
 - **Tools without hooks:** `mouthpiece tail --format codex|gemini|lines` speaks new messages from a session log as they're written.
+- **Margin:** `mouthpiece tail --format margin` speaks an agent's replies in [Margin](https://github.com/ariboren/margin) reviews, named by document ("PRD: Agreed, …"). It follows every document Margin has recently opened, or one with `--path <doc.md>`, and never speaks your own comments. To run it with the daemon, add to your config and run `mouthpiece daemon restart`:
+
+  ```toml
+  [[follow]]
+  format = "margin"
+  ```
+
+  `mouthpiece mode off --source margin` mutes it.
 - **Anything else:** `mouthpiece say`, or POST to the local HTTP API:
 
   ```sh

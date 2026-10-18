@@ -1,9 +1,10 @@
 // parsers.ts: turn one session-log line into a message to speak (US-014). The Codex and Gemini
 // formats are undocumented and may change; anything unexpected is null, never an error.
 import { isRecord } from "@mouthpiece/core";
+import { createMarginParser } from "./margin.ts";
 import type { LineParser } from "./tailer.ts";
 
-export const TAIL_FORMATS = ["codex", "gemini", "lines"] as const;
+export const TAIL_FORMATS = ["codex", "gemini", "lines", "margin"] as const;
 export type TailFormat = (typeof TAIL_FORMATS)[number];
 
 function parseRecord(line: string): Record<string, unknown> | null {
@@ -57,4 +58,9 @@ const lines: LineParser = (line) => {
   return text ? { text } : null;
 };
 
-export const PARSERS: Record<TailFormat, LineParser> = { codex, gemini, lines };
+export const PARSERS: Record<TailFormat, LineParser> = {
+  codex,
+  gemini,
+  lines,
+  margin: createMarginParser(),
+};

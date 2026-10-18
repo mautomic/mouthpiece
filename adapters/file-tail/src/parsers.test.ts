@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { PARSERS } from "./parsers.ts";
+import { PARSERS, TAIL_FORMATS } from "./parsers.ts";
 
 const CODEX_FILE =
   "/h/.codex/sessions/2026/10/17/rollout-2026-10-17T12-00-00-0199f0aa-1234-7abc-8def-0123456789ab.jsonl";
@@ -88,4 +88,9 @@ test("lines: each trimmed non-empty line is a message", () => {
   expect(PARSERS.lines("  Build finished.  ", "/tmp/log")).toEqual({ text: "Build finished." });
   expect(PARSERS.lines("   ", "/tmp/log")).toBeNull();
   expect(PARSERS.lines("", "/tmp/log")).toBeNull();
+});
+
+test("margin is a tail format", () => {
+  expect(TAIL_FORMATS).toContain("margin");
+  expect(typeof PARSERS.margin).toBe("function");
 });

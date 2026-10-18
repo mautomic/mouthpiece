@@ -152,3 +152,27 @@ test("default paths honor CODEX_HOME and GEMINI_HOME", () => {
   expect(defaultTailPath("gemini", { HOME: "/h", GEMINI_HOME: "/g" })).toBe("/g/tmp");
   expect(defaultTailPath("lines", { HOME: "/h" })).toBeUndefined();
 });
+
+test("tail --format margin --path <doc> speaks the agent's replies as source margin", async () => {
+  const docs = join(dir, "docs");
+  await mkdir(join(docs, ".margin"), { recursive: true });
+  const doc = join(docs, "PRD.md");
+  const log = join(docs, ".margin", "PRD.md.jsonl");
+  await writeFile(log, "");
+  const h = harness();
+  const done = tailCommand(["--format", "margin", "--path", doc], h.io, h.deps);
+  await until(() => h.err.join("").includes("following"));
+  await appendFile(
+    log,
+    `${JSON.stringify({ seq: 1, type: "reply", by: "agent", id: "c1", text: "Agreed." })}\n`,
+  );
+  await until(() => h.spoken.length >= 1);
+  h.controller.abort();
+  expect(await done).toBe(0);
+  expect(h.spoken[0]).toMatchObject({
+    text: "Agreed.",
+    source: "margin",
+    label: "PRD",
+    announce: "always",
+  });
+});

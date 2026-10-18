@@ -44,7 +44,7 @@ packages/listen     on-device speech-to-text prototype (conversation-mode spike;
 adapters/claude-code  Claude Code hooks
 adapters/codex      Codex CLI hooks
 adapters/gemini     Gemini CLI hooks
-adapters/file-tail  session-log tailers for tools without hooks (`mouthpiece tail`)
+adapters/file-tail  session-log tailers for tools without hooks (`mouthpiece tail`, `[[follow]]`), including Margin review logs
 adapters/tmux       TmuxDriver (ConversationDriver over `tmux send-keys`; `mouthpiece send`)
 ```
 
@@ -74,6 +74,7 @@ Dependency direction: `core` ← `providers`, `summarizers`, `hotkeys`, `client`
 1. **Never touch the real user environment from code, tests, or agents:**
    - `~/.claude/settings.json`
    - `~/.codex` (`hooks.json`, `config.toml`, sessions) and `~/.gemini` (`settings.json`, chats)
+   - Margin's state (`~/.cache/margin`) and any real `.margin/` review log (tests set `MARGIN_STATE_DIR`)
    - `~/Library/LaunchAgents`
    - the macOS Keychain
    - the real `~/.mouthpiece`
