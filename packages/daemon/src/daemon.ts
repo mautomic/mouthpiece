@@ -233,6 +233,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     }),
     expireAfterMs: config.queue.expireAfterMs,
     labelWindowMs: config.queue.labelWindowMs,
+    // Read live, so a config reload applies to the next item.
+    announceFor: (source) => config.profiles[source]?.announce,
     maxPauseMs: config.micPause.maxPauseMs,
     onError: (error, item) =>
       log({ level: "error", msg: "play_failed", id: item.id, error: String(error) }),
