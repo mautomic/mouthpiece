@@ -58,7 +58,7 @@ When Claude needs your approval to use a tool, you hear an alert that names the 
 | ⌃⌥N | Skip to the next item |
 | ⌃⌥R | Replay the last response |
 | ⌃⌥M | Switch between summary and full |
-| ⌃⌥I | Open the reply inbox (with `[reply] enabled`) |
+| ⌃⌥O | Open the reply inbox (with `[reply] enabled`) |
 
 The menubar icon shows whether Mouthpiece is idle, speaking, or paused, and how many items are queued. Its menu has the same controls, plus mode and pause, and a **Settings** submenu for the Kokoro voice and speed. A change there is saved to your config file and you hear the new voice right away. **Quit Mouthpiece** (⌘Q while the menu is open) stops the daemon until your next login or `mouthpiece daemon start`.
 
@@ -130,7 +130,7 @@ Commonly changed settings:
 | `summarizer.thresholdChars` | `300` | Responses shorter than this are spoken in full |
 | `summarizer.maxChars` | `700` | The longest a summary can be; each one is sized to its response (about 40% of its length) |
 | `filter.minChars` | `20` | Shorter responses (and "done", "ok", …) aren't spoken |
-| `hotkeys.stop` / `skip` / `replay` / `toggleMode` / `inbox` | `ctrl+alt+s` / `n` / `r` / `m` / `i` | Global hotkeys |
+| `hotkeys.stop` / `skip` / `replay` / `toggleMode` / `inbox` | `ctrl+alt+s` / `n` / `r` / `m` / `o` | Global hotkeys |
 | `menubar.enabled` | `true` | Show the menubar icon |
 | `reply.enabled` | `false` | Reply to sessions from the inbox (see "Replying to a session") |
 | `reply.popup` | `"away"` | When the inbox pops up: `away`, `always` or `never` |
@@ -207,15 +207,15 @@ Works with Claude Code and Codex sessions. `enabled` applies without a restart. 
 ### The inbox panel
 
 With `[reply] enabled`, the helper app shows an inbox panel in the native macOS look (translucent, light or dark with
-the system): a tab per session, the selected response in full, and a reply box. ⌃⌥I (or the menubar's **Inbox**)
+the system): a tab per session, the selected response in full, and a reply box. ⌃⌥O (or the menubar's **Inbox**)
 opens it on the newest session waiting for you. ⌘↩ sends (↩ adds a line), ⌘1–⌘9 or ⌃⇥ switch tabs, Esc closes.
 
 ```toml
 [reply]
 popup = "away"      # pop up on a new response unless the session's terminal app (Orca) is in front;
-                    # "always" pops on every one; "never" only opens on ⌃⌥I or from the menubar
+                    # "always" pops on every one; "never" only opens on ⌃⌥O or from the menubar
 [hotkeys]
-inbox = "ctrl+alt+i"
+inbox = "ctrl+alt+o"
 ```
 
 A tab's **×** (or ⌘⌫ in an empty reply box) removes it, and **Clear all** (in the panel's ··· menu) empties the inbox (from the CLI: `mouthpiece inbox --dismiss <label>`

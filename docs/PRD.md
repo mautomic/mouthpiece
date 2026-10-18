@@ -489,7 +489,7 @@ Stories are grouped by phase. Each should fit in one focused session.
 *Implemented 2026-10-18. Spec: `docs/superpowers/specs/2026-10-18-reply-inbox-panel-design.md`.*
 
 **Acceptance Criteria:**
-- [x] A floating panel that doesn't take focus. It pops up per `[reply] popup` (`away` by default: unless the session's terminal app is in front), and also opens from the menubar and a hotkey (⌃⌥I).
+- [x] A floating panel that doesn't take focus. It pops up per `[reply] popup` (`away` by default: unless the session's terminal app is in front), and also opens from the menubar and a hotkey (⌃⌥O; it was ⌃⌥I, which window managers like Magnet use).
 - [x] Each row shows the label, age and spoken summary, with the full text on expand
 - [ ] The reply box previews the text as one line, exactly as it will be typed. *The field is one line; line breaks in pasted text are joined by the daemon, not shown in the field.*
 - [x] ⌘↩ sends the reply. The row shows the result: submitted, typed but not submitted (with a **Submit** button that sends Enter alone), busy, newer response, or no route.

@@ -128,7 +128,8 @@ export const DEFAULT_CONFIG: Config = {
     skip: "ctrl+alt+n",
     replay: "ctrl+alt+r",
     toggleMode: "ctrl+alt+m",
-    inbox: "ctrl+alt+i",
+    // Not ⌃⌥I: window managers (Magnet, Rectangle) snap a window to a quarter on it.
+    inbox: "ctrl+alt+o",
   },
   menubar: { enabled: true },
   micPause: { enabled: true, ignoreBundleIds: [], resumeDelayMs: 800, maxPauseMs: 600_000 },

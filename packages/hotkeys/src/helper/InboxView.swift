@@ -294,7 +294,7 @@ struct ReplyEditor: NSViewRepresentable {
     view.textContainer?.lineFragmentPadding = 0
     view.isAutomaticQuoteSubstitutionEnabled = false
     view.isAutomaticDashSubstitutionEnabled = false
-    // -1: a new editor (tab switch, ⌃⌥I picking a tab) takes the cursor if the panel is key.
+    // -1: a new editor (tab switch, the inbox hotkey picking a tab) takes the cursor if the panel is key.
     context.coordinator.lastFocus = -1
     return scroll
   }
@@ -308,7 +308,7 @@ struct ReplyEditor: NSViewRepresentable {
     view.textColor = enabled ? .labelColor : .secondaryLabelColor
     if context.coordinator.lastFocus != focusRequest {
       context.coordinator.lastFocus = focusRequest
-      // Only in a key panel (⌃⌥I or the menubar): a pop-up is never key, so it never takes focus.
+      // Only in a key panel (the inbox hotkey or the menubar): a pop-up is never key, so it never takes focus.
       DispatchQueue.main.async {
         if view.window?.isKeyWindow == true { view.window?.makeFirstResponder(view) }
       }
