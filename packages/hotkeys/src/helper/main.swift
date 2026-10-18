@@ -1,12 +1,14 @@
-// MouthpieceHelper.swift: the Mouthpiece helper app (MouthpieceHelper.app, LSUIElement).
+// helper/main.swift: the Mouthpiece helper app (MouthpieceHelper.app, LSUIElement); the other helper/*.swift files are part of it.
 //   --bind        global hotkeys via Carbon RegisterEventHotKey (no Accessibility permission)
 //   --menubar     NSStatusItem that polls GET /v1/status (US-018); its Settings submenu reads and
 //                 writes GET/POST /v1/settings (the Kokoro voice and speed); Quit posts /v1/shutdown
+//   --inbox       the reply inbox panel (US-026): GET /v1/inbox/events, POST /v1/reply; --inbox-popup away|always|never
 //   --mic-pause   CoreAudio mic-in-use watcher that posts /v1/pause and /v1/resume, reason "mic" (US-022)
 // Usage: mouthpiece-helper --url http://127.0.0.1:7317 --token-file ~/.mouthpiece/token
 //          [--bind stop=ctrl+alt+s ...] [--menubar]
 //          [--mic-pause [--mic-ignore <bundleId> ...] [--mic-resume-delay <ms>] [--mic-refresh <ms>]]
-// At least one of --bind, --menubar, --mic-pause is required.
+//          [--inbox [--inbox-popup away|always|never]]
+// At least one of --bind, --menubar, --mic-pause, --inbox is required.
 // Exit 2: bad arguments or a hotkey that is already taken.
 // The token is re-read from --token-file for every request and is never logged.
 import AppKit
@@ -43,11 +45,18 @@ func fail(_ message: String) -> Never {
   exit(2)
 }
 
+// Offline check of the inbox logic (InboxCore.swift); needs no daemon and opens no window.
+if CommandLine.arguments.dropFirst().first == "--self-test-inbox" { exit(runInboxSelfTest()) }
+
 var baseURL = ""
 var tokenFile = ""
 var bindings: [Binding] = []
 var menubarEnabled = false
 var micPauseEnabled = false
+var inboxEnabled = false
+var inboxPopup = PopupMode.away
+/// The inbox panel (US-026), when --inbox is on; the `inbox` hotkey toggles it.
+var inboxPanel: InboxPanel?
 var micIgnore: [String] = []
 var micResumeDelayMs = 800
 // Re-post the mic pause this often while the mic stays in use: the daemon expires a pause reason
@@ -66,7 +75,7 @@ while let arg = argIterator.next() {
   case "--bind":
     guard let spec = argIterator.next(), let eq = spec.firstIndex(of: "=") else { fail("--bind needs action=keys") }
     let action = String(spec[..<eq])
-    guard routes[action] != nil else { fail("unknown action \(action)") }
+    guard routes[action] != nil || action == "inbox" else { fail("unknown action \(action)") }
     var parts = spec[spec.index(after: eq)...].lowercased().split(separator: "+").map(String.init)
     guard let key = parts.popLast(), let code = keyCodes[key] else { fail("unknown key in \(spec)") }
     var mask = 0
@@ -77,6 +86,13 @@ while let arg = argIterator.next() {
     bindings.append(Binding(action: action, keyCode: code, modifiers: UInt32(mask)))
   case "--menubar":
     menubarEnabled = true
+  case "--inbox":
+    inboxEnabled = true
+  case "--inbox-popup":
+    guard let value = argIterator.next(), let mode = PopupMode(rawValue: value) else {
+      fail("--inbox-popup needs away, always or never")
+    }
+    inboxPopup = mode
   case "--mic-pause":
     micPauseEnabled = true
   case "--mic-ignore":
@@ -99,8 +115,8 @@ while let arg = argIterator.next() {
 if baseURL.isEmpty || tokenFile.isEmpty {
   fail("usage: mouthpiece-helper --url URL --token-file PATH [--bind action=mods+key ...] [--menubar] [--mic-pause]")
 }
-if bindings.isEmpty && !menubarEnabled && !micPauseEnabled {
-  fail("nothing to do: pass at least one of --bind, --menubar, --mic-pause")
+if bindings.isEmpty && !menubarEnabled && !micPauseEnabled && !inboxEnabled {
+  fail("nothing to do: pass at least one of --bind, --menubar, --mic-pause, --inbox")
 }
 
 // MARK: - Daemon client
@@ -154,6 +170,10 @@ func post(_ path: String, _ body: String, done: ((Data?) -> Void)? = nil) {
 // MARK: - Hotkeys
 
 func sendHotkey(_ action: String) {
+  if action == "inbox" {
+    inboxPanel?.toggle()
+    return
+  }
   guard let route = routes[action] else { return }
   post(route.path, route.body)
 }
@@ -245,6 +265,9 @@ final class Menubar: NSObject, NSMenuDelegate {
   var failures = 0
   var inFlight = false
   var timer: Timer?
+  var inboxCount = 0
+  var inboxItem: NSMenuItem?
+  var openInbox: (() -> Void)?
 
   override init() {
     item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -293,6 +316,19 @@ final class Menubar: NSObject, NSMenuDelegate {
     render()
     poll()
   }
+
+  /// The inbox panel's menu item (US-026), first in the menu.
+  func attachInbox(_ open: @escaping () -> Void) {
+    openInbox = open
+    let entry = NSMenuItem(title: "Inbox", action: #selector(openInboxItem(_:)), keyEquivalent: "")
+    entry.target = self
+    menu.insertItem(entry, at: 0)
+    menu.insertItem(NSMenuItem.separator(), at: 1)
+    inboxItem = entry
+    render()
+  }
+
+  @objc func openInboxItem(_ sender: NSMenuItem) { openInbox?() }
 
   /// A menu item that posts `body` to `path` when chosen.
   func routeItem(_ title: String, _ path: String, _ body: String) -> NSMenuItem {
@@ -484,7 +520,9 @@ final class Menubar: NSObject, NSMenuDelegate {
     item.button?.image = image
     item.button?.toolTip = description
     let depth = status?.queueDepth ?? 0
-    item.button?.title = depth > 0 ? " \(depth)" : ""
+    let inboxText = inboxCount > 0 ? " ✉\(inboxCount)" : ""
+    item.button?.title = (depth > 0 ? " \(depth)" : "") + inboxText
+    inboxItem?.title = inboxCount > 0 ? "Inbox — \(inboxCount) waiting" : "Inbox"
 
     for entry in actionItems { entry.isEnabled = reachable }
     for (mode, entry) in modeItems {
@@ -724,4 +762,14 @@ let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let menubar = menubarEnabled ? Menubar() : nil
 let micWatcher = micPauseEnabled ? MicWatcher(ignore: micIgnore, resumeDelayMs: micResumeDelayMs, refreshMs: micRefreshMs) : nil
+if inboxEnabled {
+  let inbox = InboxPanel(baseURL: baseURL, mode: inboxPopup, token: readToken)
+  inbox.onCountChange = { count in
+    menubar?.inboxCount = count
+    menubar?.render()
+  }
+  menubar?.attachInbox { inbox.showFocused() }
+  inbox.start()
+  inboxPanel = inbox
+}
 app.run()

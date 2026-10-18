@@ -3,7 +3,14 @@ import { join } from "node:path";
 import { defaultExec, type Exec } from "@mouthpiece/core";
 
 /** Swift source of the helper app: global hotkeys, menubar status item, mic watcher. */
-export const HELPER_SOURCE = join(import.meta.dir, "MouthpieceHelper.swift");
+/** The helper's entry file (top-level code, the key-code table). */
+export const HELPER_SOURCE = join(import.meta.dir, "helper", "main.swift");
+/** Every helper source, compiled together; only main.swift has top-level code. */
+export const HELPER_SOURCES: readonly string[] = [
+  HELPER_SOURCE,
+  join(import.meta.dir, "helper", "InboxCore.swift"),
+  join(import.meta.dir, "helper", "InboxPanel.swift"),
+];
 /** @deprecated Phase 2 name; use HELPER_SOURCE. */
 export const HOTKEYS_SOURCE = HELPER_SOURCE;
 
@@ -69,10 +76,11 @@ export async function buildHelper(opts: {
   const app = helperAppPath(opts.home);
   await mkdir(join(app, "Contents", "MacOS"), { recursive: true });
   await writeFile(join(app, "Contents", "Info.plist"), infoPlist());
-  for (const [source, binary] of [
-    [HELPER_SOURCE, helperBinary(opts.home)],
-    [PLAYER_SOURCE, playerBinary(opts.home)],
-  ] as const) {
+  const targets: [readonly string[], string][] = [
+    [HELPER_SOURCES, helperBinary(opts.home)],
+    [[PLAYER_SOURCE], playerBinary(opts.home)],
+  ];
+  for (const [sources, binary] of targets) {
     const compile = await exec([
       opts.swiftc ?? "swiftc",
       "-O",
@@ -80,7 +88,7 @@ export async function buildHelper(opts: {
       "5",
       "-o",
       binary,
-      source,
+      ...sources,
     ]);
     if (compile.code !== 0)
       throw new Error(`swiftc failed (${compile.code}): ${compile.stderr.trim()}`);

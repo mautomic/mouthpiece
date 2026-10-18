@@ -433,7 +433,7 @@ Stories are grouped by phase. Each should fit in one focused session.
   - API keys come from plugin user-config options or `mouthpiece auth` (Keychain).
   - Test with `claude --plugin-dir`, then with a real marketplace install on a clean machine.
 
-### Phase 5: Reply inbox (2026-10-18; design in §13; US-024 and US-025 implemented)
+### Phase 5: Reply inbox (2026-10-18; design in §13; US-024 to US-026 implemented)
 
 #### US-024: Reply routes on speak events
 **Description:** As a user, I want each response to remember where it came from, so a reply can go back to that exact terminal.
@@ -486,13 +486,15 @@ Stories are grouped by phase. Each should fit in one focused session.
 #### US-026: Inbox panel in the menubar app
 **Description:** As a user, I want a small window that shows each new response with a reply box, so I can answer a session without finding its terminal.
 
+*Implemented 2026-10-18. Spec: `docs/superpowers/specs/2026-10-18-reply-inbox-panel-design.md`.*
+
 **Acceptance Criteria:**
-- [ ] A floating panel that doesn't take focus. It opens on a new response when `[reply] popup` is on, and also from the menubar and a hotkey.
-- [ ] Each row shows the label, age and spoken summary, with the full text on expand
-- [ ] The reply box previews the text as one line, exactly as it will be typed
-- [ ] ⌘↩ sends the reply. The row shows the result: submitted, typed but not submitted (with a **Submit** button that sends Enter alone), busy, newer response, or no route.
-- [ ] The reply box is turned off, with the reason shown, for alerts and for rows with no route
-- [ ] Built and tested only into a temp dir (Guardrail 6)
+- [x] A floating panel that doesn't take focus. It pops up per `[reply] popup` (`away` by default: unless the session's terminal app is in front), and also opens from the menubar and a hotkey (⌃⌥I).
+- [x] Each row shows the label, age and spoken summary, with the full text on expand
+- [ ] The reply box previews the text as one line, exactly as it will be typed. *The field is one line; line breaks in pasted text are joined by the daemon, not shown in the field.*
+- [x] ⌘↩ sends the reply. The row shows the result: submitted, typed but not submitted (with a **Submit** button that sends Enter alone), busy, newer response, or no route.
+- [x] The reply box is turned off, with the reason shown, for rows with no route; alerts are never rows (part 1)
+- [x] Built and tested only into a temp dir (Guardrail 6)
 
 #### US-027: Reply from a notification (stretch)
 **Description:** As a user, I want to answer from a macOS notification banner, like Messages.

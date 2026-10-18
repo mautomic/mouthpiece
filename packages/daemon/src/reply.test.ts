@@ -39,7 +39,7 @@ function setup(opts: { enabled?: boolean; withRoute?: boolean } = {}) {
   const controller = new ReplyController({
     inbox,
     drivers: [driver],
-    config: () => ({ enabled: opts.enabled ?? true, confirmMs: 5000 }),
+    config: () => ({ enabled: opts.enabled ?? true, confirmMs: 5000, popup: "away" }),
     log: (r) => logs.push(r),
     now: () => 2_000,
     sleep: (ms) => {

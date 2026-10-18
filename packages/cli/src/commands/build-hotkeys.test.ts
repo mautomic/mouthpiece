@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Exec } from "@mouthpiece/core";
 import {
-  HELPER_SOURCE,
+  HELPER_SOURCES,
   helperAppPath,
   helperBinary,
   PLAYER_SOURCE,
@@ -70,7 +70,7 @@ test("builds the helper app into <home> and hints at a daemon restart", async ()
   const app = helperAppPath(home);
   expect(await buildHotkeysCommand([], h.io, h.deps)).toBe(0);
   expect(calls).toEqual([
-    ["swiftc", "-O", "-swift-version", "5", "-o", helperBinary(home), HELPER_SOURCE],
+    ["swiftc", "-O", "-swift-version", "5", "-o", helperBinary(home), ...HELPER_SOURCES],
     ["swiftc", "-O", "-swift-version", "5", "-o", playerBinary(home), PLAYER_SOURCE],
     ["codesign", "-f", "-s", "-", "--identifier", "dev.mouthpiece.player", playerBinary(home)],
     ["codesign", "-f", "-s", "-", "--identifier", "dev.mouthpiece.helper", app],

@@ -73,6 +73,7 @@ test("phase 2 defaults", () => {
     skip: "ctrl+alt+n",
     replay: "ctrl+alt+r",
     toggleMode: "ctrl+alt+m",
+    inbox: "ctrl+alt+i",
   });
   expect(DEFAULT_CONFIG.usage).toEqual({ resetDay: 1, quotas: {}, warnAt: 0.8 });
 });
@@ -266,16 +267,26 @@ test("player backend: auto by default, afplay when set, anything else rejected",
 });
 
 test("[reply] defaults to off with a 5 s confirmation and no orca path", () => {
-  expect(resolveConfig({}).reply).toEqual({ enabled: false, confirmMs: 5000 });
+  expect(resolveConfig({}).reply).toEqual({ enabled: false, confirmMs: 5000, popup: "away" });
 });
 
 test("[reply] reads enabled, confirmMs and orca", () => {
   expect(
-    resolveConfig({ reply: { enabled: true, confirmMs: 2000, orca: "/opt/orca" } }).reply,
-  ).toEqual({ enabled: true, confirmMs: 2000, orca: "/opt/orca" });
+    resolveConfig({
+      reply: { enabled: true, confirmMs: 2000, orca: "/opt/orca", popup: "always" },
+    }).reply,
+  ).toEqual({ enabled: true, confirmMs: 2000, orca: "/opt/orca", popup: "always" });
 });
 
 test("[reply] rejects a bad value", () => {
   expect(() => resolveConfig({ reply: { enabled: "yes" } })).toThrow("reply.enabled");
   expect(() => resolveConfig({ reply: { confirmMs: 0 } })).toThrow("reply.confirmMs");
+});
+
+test("[reply] popup must be away, always or never", () => {
+  expect(() => resolveConfig({ reply: { popup: "sometimes" } })).toThrow("reply.popup");
+});
+
+test("[hotkeys] inbox reads a binding", () => {
+  expect(resolveConfig({ hotkeys: { inbox: "ctrl+alt+b" } }).hotkeys.inbox).toBe("ctrl+alt+b");
 });
