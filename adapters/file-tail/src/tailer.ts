@@ -170,6 +170,8 @@ export class FileTailer {
   private chain: Promise<void> = Promise.resolve();
   private busy = false;
   private timer: ReturnType<typeof setInterval> | undefined;
+  /** Set by stop(): a poll already queued or running then emits nothing. */
+  private stopped = false;
 
   constructor(private readonly opts: FileTailerOptions) {
     this.fs = opts.fs ?? nodeTailFs;
@@ -183,6 +185,7 @@ export class FileTailer {
 
   start(): void {
     if (this.timer) return;
+    this.stopped = false;
     void this.poll();
     this.timer = setInterval(() => {
       if (!this.busy) void this.poll();
@@ -190,6 +193,7 @@ export class FileTailer {
   }
 
   stop(): void {
+    this.stopped = true;
     clearInterval(this.timer);
     this.timer = undefined;
   }
@@ -390,6 +394,7 @@ export class FileTailer {
   }
 
   private emit(line: string, file: string): void {
+    if (this.stopped) return;
     let message: TailMessage | null;
     try {
       message = this.opts.parser(line, file);

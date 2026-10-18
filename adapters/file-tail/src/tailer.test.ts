@@ -325,6 +325,24 @@ test("files are searched 4 directory levels deep (like sessions/YYYY/MM/DD), no 
   expect(followed).toEqual([join(sessions, "a", "b", "c", "rollout-ok.jsonl")]);
 });
 
+test("stop() also ends a poll that was already queued", async () => {
+  const file = join(dir, "log.txt");
+  await writeFile(file, "");
+  const messages: TailMessage[] = [];
+  const t = new FileTailer({
+    path: file,
+    parser: PARSERS.lines,
+    onMessage: (m) => messages.push(m),
+    pollMs: 60_000,
+  });
+  await t.poll(); // start at the (empty) end of the file
+  await appendFile(file, "after stop\n");
+  t.start(); // queues a poll at once
+  t.stop(); // before that poll runs
+  await Bun.sleep(30);
+  expect(messages).toEqual([]);
+});
+
 test("start() polls on an interval and stop() ends it", async () => {
   const file = join(dir, "log.txt");
   await writeFile(file, "");
