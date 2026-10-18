@@ -9,6 +9,7 @@ export const HELPER_SOURCE = join(import.meta.dir, "helper", "main.swift");
 export const HELPER_SOURCES: readonly string[] = [
   HELPER_SOURCE,
   join(import.meta.dir, "helper", "InboxCore.swift"),
+  join(import.meta.dir, "helper", "InboxViewModel.swift"),
   join(import.meta.dir, "helper", "InboxPanel.swift"),
 ];
 /** @deprecated Phase 2 name; use HELPER_SOURCE. */
