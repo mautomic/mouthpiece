@@ -433,6 +433,69 @@ Stories are grouped by phase. Each should fit in one focused session.
   - API keys come from plugin user-config options or `mouthpiece auth` (Keychain).
   - Test with `claude --plugin-dir`, then with a real marketplace install on a clean machine.
 
+### Phase 5: Reply inbox (proposed 2026-10-18; design in §13)
+
+#### US-024: Reply routes on speak events
+**Description:** As a user, I want each response to remember where it came from, so a reply can go back to that exact terminal.
+
+**Acceptance Criteria:**
+- [ ] `SpeakEvent.reply?: { via: "orca" | "tmux" | "url"; target: string }`, added in `contracts.ts` and `docs/api.md` in the same commit
+- [ ] Validation:
+  - Orca handles must match `^term_[\w-]+$`.
+  - tmux targets must match `TMUX_TARGET`.
+  - `url` must be loopback http.
+  - A bad or unknown route drops the field and the event is still spoken.
+- [ ] A `hook-kit` helper reads `ORCA_TERMINAL_HANDLE` first, then `TMUX_PANE`. The Claude Code, Codex and Gemini adapters attach the route it returns.
+- [ ] `bun run check` passes
+
+#### US-025: Daemon inbox and reply endpoint
+**Description:** As a user, I want the daemon to keep the latest response per conversation and send my reply back to it.
+
+**Acceptance Criteria:**
+- [ ] `GET /v1/inbox` lists one entry per conversation, holding its latest response, and drops entries under FR-7's limits
+- [ ] `GET /v1/inbox/events` streams new and changed entries
+- [ ] `POST /v1/reply {id, text}` sends through the entry's stored route, under the delivery controls in §13. It returns:
+  - `202 {status: "submitted" | "typed"}` when sent;
+  - `409` when the session is busy, has a newer response than `id` (`newer`), already has a reply in flight, or couldn't be checked (`unverified`);
+  - `410` when the entry is gone;
+  - `413` when the text is over 4,000 characters;
+  - `422` when the entry has no route;
+  - `403` while `[reply] enabled` is false.
+- [ ] "submitted" needs proof: Orca's `--wait-submit` turn start, or that session's prompt-submit hook within 5 s. Without it the status is "typed". The text is never resent and Enter is never pressed again automatically. `POST /v1/reply/submit {id}` sends Enter alone.
+- [ ] Lines are joined into one before sending
+- [ ] Before typing, the driver checks that the session is idle and its prompt is empty, and refuses if it can't tell
+- [ ] An Orca driver (`adapters/orca`) runs `orca terminal wait`, `orca terminal read` and `orca terminal send … --enter --wait-submit 5 --json` through an injected `exec`, and maps the JSON result to a status. The tmux driver gains a 150 ms settle before Enter and a `capture-pane` prompt check. `mouthpiece start` injects both into the daemon.
+- [ ] Tests (fake `exec`, injected clock) cover each failure:
+  - Enter absorbed: no hook arrives, so the status is "typed";
+  - multi-line input is joined;
+  - text is left at the prompt, so the reply is refused;
+  - mid-turn, so the reply is refused;
+  - a newer response, so the reply is refused;
+  - two replies at once, so the second is refused.
+- [ ] Alert entries can't be replied to
+- [ ] Reply text never appears in logs
+- [ ] `mouthpiece inbox` and `mouthpiece reply <label|id> <text…>` work
+- [ ] Tests use fake `exec` and fake drivers; no real terminal is ever typed into
+- [ ] `bun run check` passes
+
+#### US-026: Inbox panel in the menubar app
+**Description:** As a user, I want a small window that shows each new response with a reply box, so I can answer a session without finding its terminal.
+
+**Acceptance Criteria:**
+- [ ] A floating panel that doesn't take focus. It opens on a new response when `[reply] popup` is on, and also from the menubar and a hotkey.
+- [ ] Each row shows the label, age and spoken summary, with the full text on expand
+- [ ] The reply box previews the text as one line, exactly as it will be typed
+- [ ] ⌘↩ sends the reply. The row shows the result: submitted, typed but not submitted (with a **Submit** button that sends Enter alone), busy, newer response, or no route.
+- [ ] The reply box is turned off, with the reason shown, for alerts and for rows with no route
+- [ ] Built and tested only into a temp dir (Guardrail 6)
+
+#### US-027: Reply from a notification (stretch)
+**Description:** As a user, I want to answer from a macOS notification banner, like Messages.
+
+**Acceptance Criteria:**
+- [ ] A notification with a text-reply action posts to `POST /v1/reply`
+- [ ] Verified working from the ad-hoc-signed helper bundle, or this story is dropped
+
 ## 6. Functional Requirements
 
 - **FR-1:** The daemon must bind to `127.0.0.1` only and require a shared-secret token on every non-health endpoint.
@@ -454,9 +517,9 @@ Stories are grouped by phase. Each should fit in one focused session.
 ## 7. Non-Goals (v1)
 
 - No speech-to-text. Wispr Flow already covers input.
-- No voice *conversation* or agent: Mouthpiece speaks, it doesn't converse.
+- No voice *conversation* or agent: Mouthpiece speaks, it doesn't converse. *Proposed for later:* typed replies from an inbox (§13).
 - No cross-platform support in v1. macOS only, though Linux shouldn't be precluded.
-- No GUI beyond the optional menubar stretch goal.
+- No GUI beyond the optional menubar stretch goal. *Proposed for later:* the inbox panel (§13).
 - No reading of tool output, diffs, or file contents. Only assistant prose.
 - No cloud hosting or multi-user anything. Single user, local only.
 - No custom voice cloning workflow in v1 (providers support it; revisit later).
@@ -518,7 +581,7 @@ Claude Code is the first source, not a special one. **Everything source-specific
 
 **Adapters run locally and pull.** A source on another machine, like a Discord bot hosted elsewhere, is handled by a small local adapter that connects *out* to Discord's gateway and forwards events to the loopback daemon. The daemon never opens an inbound port beyond `127.0.0.1`.
 
-**Replying is the same seam as §12.** "Respond to the Discord bot" is a **ConversationDriver** that posts a message back to the channel. It's the same interface Claude Code would use via tmux. v1 ships no drivers, but `conversationId` and `source` on every queued item keep the reply target addressable later.
+**Replying is the same seam as §12.** "Respond to the Discord bot" is a **ConversationDriver** that posts a message back to the channel. It's the same interface Claude Code would use via tmux. v1 ships no drivers, but `conversationId` and `source` on every queued item keep the reply target addressable later. *2026-10-18:* the reply inbox (§13) would add a `reply` route to the envelope, because `conversationId` alone doesn't name a terminal.
 
 **Mouthpiece as a framework.** The long-term shape is a local voice layer that other tools build on, not a Claude Code add-on. The extension points:
 
@@ -528,7 +591,7 @@ Claude Code is the first source, not a special one. **Everything source-specific
 | **TTS providers** | `TtsProvider` | `say`, Inworld |
 | **Summarizers** | `Summarizer`: `summarize(text, profile) → string` | `claude -p`, Anthropic API, first-sentences fallback |
 | **Source profiles** | Config: prompt, cleaning rules, mode, voice | Claude Code, default |
-| **Conversation drivers** | `ConversationDriver` (§12) | none in v1 |
+| **Conversation drivers** | `ConversationDriver` (§12, §13) | none in v1; `TmuxDriver` added later as a spike (`mouthpiece send`) |
 
 **v1 framework commitments (cheap now, expensive to retrofit):**
 - The HTTP API is versioned (`/v1`), documented in `docs/api.md`, and changed only additively within v1.
@@ -686,6 +749,99 @@ Either way, the summarizer is negligible next to TTS, and it cuts TTS spend by a
 - Does Wispr Flow expose any trigger or output API?
 - Would conversation mode run alongside the terminal UI, or replace it?
 - How do we handle long autonomous runs mid-conversation, e.g. "I'll tell you when I'm done"?
+
+## 13. Future direction: reply inbox (proposed 2026-10-18, not in scope)
+
+**Idea:** the Mac app shows each response as soon as the daemon queues it, in an inbox panel with a reply box. A reply you type there goes back into the session the response came from, as if you had typed it at that session's prompt. It is the text-first half of §12. Wispr Flow already types into any focused text field, so you can dictate into the reply box from day one.
+
+**Is it possible? Yes, for sessions in Orca or tmux, for any agent CLI.** Findings, 2026-10-18 (Claude Code 2.1.302, Orca 1.4.224):
+
+| Where the session runs | How a reply gets back | How Mouthpiece learns the target | Verdict |
+|---|---|---|---|
+| **Orca** (the user's terminal) | `orca terminal send --terminal <handle> --text <reply> --enter --wait-submit <s> --json`. Its JSON result reports whether the input was accepted, whether the prompt was submitted, and whether a turn started. `orca terminal wait --for tui-idle` exists too. | `ORCA_TERMINAL_HANDLE` is in the environment the agent passes to its hooks | **Chosen first.** The CLI exists in the app bundle (`/Applications/Orca.app/Contents/Resources/bin/orca`). Not tried yet: verify that a hook sees the handle and that `send` is accepted. |
+| **tmux** | `TmuxDriver` (`adapters/tmux`, `mouthpiece send --tmux`): `send-keys -l` and then Enter | `TMUX_PANE`, inherited by hooks | **Chosen with Orca.** Already built. It joins lines into one and can't confirm submission. Hooks inheriting `TMUX_PANE` isn't a documented contract (*verify*). |
+| Claude Code **channels** (research preview) | An MCP server declares `claude/channel` and sends `notifications/claude/channel`. An idle session starts a turn, and a busy one queues the event. | The server gets `CLAUDE_CODE_SESSION_ID` (stale after `/clear`) | **Later, as an option.** It works in any terminal, but only for Claude Code. The session must start with `--dangerously-load-development-channels server:<name>` (a warning dialog), and the model sees a `<channel>` event, not your prompt. |
+| Claude Code **cross-session socket** (`CLAUDE_CODE_MESSAGING_SOCKET`) | Post a message into the session | Hook env | **Not chosen.** The wire format isn't documented, and messages are framed as coming from another session, not from you. |
+| `claude -p --resume <id>` | Runs a separate headless turn | `session_id` | **Not chosen.** It doesn't reach the open terminal UI, and the two processes interleave one transcript. |
+| Remote Control | Anthropic's relay into the same session | — | **Not chosen.** There is no local API, and it needs claude.ai login. |
+| iTerm2, Terminal.app, Ghostty | AppleScript `write text` or synthetic keystrokes | `ITERM_SESSION_ID`; nothing for Ghostty | **Not chosen.** It needs Automation or Accessibility permission, and keystrokes go to whatever has focus. |
+| **Margin** | Reply in Margin's page. The inbox shows "Open in Margin" | — | A user comment needs the page's private token (Margin internals, §8.3 note). |
+| **Any source with its own loopback server** (e.g. lambda-ai) | The daemon POSTs `{conversationId, text}` to a URL the source gave | The event's `reply` | Generic. lambda-ai would need a small endpoint that posts into its Discord thread. |
+
+Codex, Gemini and opencode sessions in Orca or tmux use the same terminal routes, with no extra work.
+
+**Design sketch:**
+- **Envelope (additive):**
+  - A `SpeakEvent` can carry an optional `reply`: `{ via: "orca" | "tmux" | "url", target: string }`.
+  - Hook adapters fill it in from the environment through a `hook-kit` helper that checks Orca first, then tmux.
+  - Each `via` has its own target rule, and `url` must be loopback http. An unknown `via` drops the field; it doesn't reject the event.
+  - `orca` and `tmux` are terminal hosts, not sources, so FR-13 holds. Their drivers live in `adapters/`. `mouthpiece start` passes them to the daemon, as it already does for `[[follow]]`, because the daemon may not depend on adapters. The `url` driver is generic and lives in the daemon.
+- **Inbox (daemon, in memory):**
+  - One entry per conversation, holding its latest response: id, source, label, time, full text, spoken summary, reply route and state.
+  - **States:**
+    - **waiting:** a `response` arrived.
+    - **busy:** a prompt-submit interrupt arrived, or a reply was sent.
+    - **closed:** the conversation aged out under FR-7's limits.
+  - Alerts such as permission prompts are listed with replies turned off ("answer in the terminal"). Typed text would pick a menu option.
+  - Nothing is written to disk (§8.6).
+- **API (additive):**
+  - `GET /v1/inbox` returns the entries.
+  - `GET /v1/inbox/events` is a server-sent event stream, so the app hears about new messages at once instead of polling.
+  - `POST /v1/reply {id, text}` returns:
+    - `202 {status: "submitted" | "typed"}`, where "typed" means the text is at the prompt but its submission wasn't confirmed;
+    - `409` when the session is busy, the reply is stale, or the session couldn't be checked;
+    - `410` when the entry is gone;
+    - `413` when the text is too long;
+    - `422` when there's no route.
+
+    The delivery controls below give the details.
+  - `POST /v1/reply/submit {id}` sends Enter alone, for a reply whose status is "typed".
+  - A reply names an inbox entry, and the route is the one stored with that entry, never one taken from the request. So the endpoint can't be aimed at an arbitrary terminal.
+  - The CLI gets `mouthpiece inbox` and `mouthpiece reply <label|id> <text…>`.
+- **App:**
+  - `MouthpieceHelper`, the existing AppKit menubar app, gets an Inbox panel. It floats and doesn't take focus, so it doesn't pull you out of what you're typing.
+  - It opens when a new response arrives (`[reply] popup`, on by default) or from the menubar or a hotkey.
+  - **Each row shows:**
+    - the label and how long ago it arrived;
+    - the spoken summary, which expands to the full markdown;
+    - a reply field that sends on ⌘↩.
+
+    The field is turned off, with the reason shown, when there's no route or the session is busy.
+  - *Stretch:* a macOS notification with a text-reply action (`UNTextInputNotificationAction`), like Messages. *Verify* that it works from the ad-hoc-signed bundle.
+- **Safety:**
+  - Replies are off until `[reply] enabled = true`. `POST /v1/reply` is the first endpoint that can make an agent act.
+  - Reply text is never logged. Each delivery logs only the source, label, route and result.
+  - A sent reply fires that session's prompt-submit hook, which already interrupts its speech (US-008). So a reply also stops any speech still playing for that session.
+- **Delivery controls:**
+  - **What can go wrong:** text typed into a terminal is input, not a message.
+    - A reply can sit typed but never submitted, while you think it was sent.
+    - It can be cut short at a newline, or merged with text that was already at the prompt.
+    - It can arrive in the middle of a turn.
+
+    In each case the agent waits forever, or acts on an instruction you didn't write. The second is worse: "fix the tests" on line 1 is submitted without "but don't touch the fixtures" on line 2, by an agent that can run tools. Every control below either prevents a case or reports it. None of them guesses.
+  1. **Submission is confirmed, never assumed:**
+     - **Orca:** uses its own text-plus-Enter send (`--enter`), which is built for agent prompts.
+     - **tmux:** sends the text and the Enter as two separate inputs, with a short settle in between (150 ms, from an injected clock). That way an Enter that arrives too soon isn't absorbed into a paste.
+     - A reply counts as **submitted** only when Orca's `--wait-submit` reports that a turn started, or when that session's prompt-submit hook arrives within 5 s. Both Claude Code and Codex send that hook.
+     - Otherwise the result is **typed, not submitted**. The panel says so, and offers a **Submit** button that sends Enter alone.
+     - Mouthpiece never resends the text, and never presses Enter again on its own.
+  2. **One line, shown before it's sent:**
+     - Both drivers join the lines of a reply into one, separated by spaces. The reply box previews the text exactly as it will be typed.
+     - A reply over 4,000 characters is refused (`413`), not cut.
+     - Multi-line delivery stays off until Orca is shown to keep newlines as a paste.
+  3. **Only into a session waiting at an empty prompt:**
+     - The entry must be **waiting**: its latest event is a response, and no prompt-submit has arrived since. If you type at the terminal yourself, the entry turns **busy** and the reply is refused (`409`).
+     - The reply must name the entry's latest response id. If a newer response arrived while you were typing, it's refused (`409 newer`), so you read it first.
+     - Only one reply per conversation is in flight at a time.
+     - Just before typing, the driver checks that the session is idle (Orca: `orca terminal wait --for tui-idle`) and that its prompt line is empty (Orca: `orca terminal read`; tmux: `capture-pane`). *Verify* that both checks can be read reliably for Claude Code's and Codex's prompt.
+
+       If a check can't be done, the reply is refused rather than sent blind (`409 unverified`). A per-route `[reply] check_prompt = false` can turn the empty-prompt check off, at your own risk.
+
+**Open questions:**
+- Should the panel pop up for every response, or only when you're away from the terminal that sent it? Or should it stay a notification, plus a hotkey?
+- Multi-line replies: lines are joined into one for now (delivery control 2). *Verify* whether `orca terminal send` keeps newlines as a paste, or submits at the first one.
+- Is a Claude Code channel worth adding for sessions outside Orca and tmux, given the launch flag and the `<channel>` framing?
+- Should a Margin row deep-link to the thread in its page?
 
 ## Appendix A: TTS provider research notes (2026-10-17)
 
