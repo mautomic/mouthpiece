@@ -56,6 +56,14 @@ test("a long verbatim response is spoken in full and never summarized", async ()
   expect(summarized).toEqual([]);
 });
 
+test("a short verbatim response is spoken, not dropped as trivial", async () => {
+  await boot();
+  const r = await speak({ text: "No open positions.", source: "bot", verbatim: true }, o());
+  expect(r.id).toBeString();
+  await daemon.queue.idle();
+  expect(player.played).toEqual(["No open positions."]);
+});
+
 test("a verbatim response is still muted by mode off, global or per source", async () => {
   await boot();
   await setMode({ mode: "off" }, o());

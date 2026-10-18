@@ -23,7 +23,7 @@ Body (generic event envelope, PRD §8.3):
 | `mode` | `summary` \| `full` \| `off` | runtime override, then source profile, then `modes.default` | see `POST /v1/mode` for precedence |
 | `format` | `markdown` \| `plain` | `markdown` | `plain` skips markdown cleaning |
 | `voice` | string | none | provider voice for this event (≤ 100); see voice selection below |
-| `verbatim` | boolean | `false` | speak `text` as given: never summarized, whatever the mode or length. Mode `off` still mutes it; markdown is still cleaned unless `format: "plain"` |
+| `verbatim` | boolean | `false` | speak `text` as given: never summarized and never dropped as trivial, whatever the mode or length. Mode `off` still mutes it; markdown is still cleaned unless `format: "plain"` |
 | `announce` | `always` \| `auto` | `auto` | `always`: speak `label` before every item (when there is one); `auto`: only when 2+ conversations spoke within `queue.labelWindowMs`. A source profile can override it (see below) |
 
 202 `{ "id": "<item id>" }`, or 202 `{ "id": null, "skipped": "trivial" }` when filtered.

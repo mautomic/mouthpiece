@@ -226,5 +226,8 @@ function chunksFor(
 
 export function skipReason(event: NormalizedSpeakEvent, filter: Config["filter"]): string | null {
   if (event.kind !== "response") return null;
-  return shouldSpeak(speakable(event), filter) ? null : "trivial";
+  const text = speakable(event);
+  // A verbatim source wrote its text to be heard, however short; only an empty one is skipped.
+  if (event.verbatim) return text.trim() === "" ? "trivial" : null;
+  return shouldSpeak(text, filter) ? null : "trivial";
 }

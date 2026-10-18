@@ -175,6 +175,13 @@ test("skipReason filters trivial responses but never alerts", () => {
   expect(skipReason(item("A meaningful response with detail.").event, filter)).toBeNull();
 });
 
+test("a verbatim response is never trivial, unless nothing speakable is left", () => {
+  const filter = { minChars: 20, trivial: ["done"] };
+  expect(skipReason(item("Done.", { verbatim: true }).event, filter)).toBeNull();
+  expect(skipReason(item("No open positions.", { verbatim: true }).event, filter)).toBeNull();
+  expect(skipReason(item("   ", { verbatim: true }).event, filter)).toBe("trivial");
+});
+
 test("speaks the prepared summary, records history, and tags synthesis with the source", async () => {
   const provider = new FakeProvider();
   const player = new FakePlayer();
