@@ -217,7 +217,7 @@ popup = "away"      # pop up on a new response unless the session's terminal app
 inbox = "ctrl+alt+i"
 ```
 
-Each row's **×** removes it, and **Clear all** empties the inbox (from the CLI: `mouthpiece inbox --dismiss <label>`
+Each row's **×** (or ⌘⌫ in an empty reply field) removes it, and **Clear all** empties the inbox (from the CLI: `mouthpiece inbox --dismiss <label>`
 or `--clear`). A session's next response brings it back.
 
 A pop-up never takes your keystrokes, and hides after 20 seconds if you don't touch it. Orca can't say which tab

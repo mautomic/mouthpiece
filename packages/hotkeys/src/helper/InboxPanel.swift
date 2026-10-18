@@ -252,12 +252,19 @@ final class InboxRow: NSView, NSTextFieldDelegate {
     onSend(self, text)
   }
 
-  /// ⌘↩ sends; plain ↩ never does; Esc closes the panel. ⌘↩ may arrive as insertNewline: or as noop:.
+  /// ⌘↩ sends; plain ↩ never does; ⌘⌫ on an empty reply removes the row; Esc closes the panel. ⌘↩ may arrive as insertNewline: or as noop:.
   func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
     if let event = NSApp.currentEvent, event.type == .keyDown, event.keyCode == 36 || event.keyCode == 76,
       event.modifierFlags.contains(.command)
     {
       send()
+      return true
+    }
+    // ⌘⌫ on an empty reply removes the row; with text it deletes to the line start, as usual.
+    if let event = NSApp.currentEvent, event.type == .keyDown, event.keyCode == 51,
+      event.modifierFlags.contains(.command), field.stringValue.isEmpty
+    {
+      onDismiss?(self)
       return true
     }
     if selector == #selector(NSResponder.insertNewline(_:)) { return true }
@@ -361,6 +368,10 @@ final class InboxPanel: NSObject, NSWindowDelegate {
     }
     var drafts: [String: String] = [:]
     var refocus: String?
+    let shown = rowsStack.arrangedSubviews.compactMap { $0 as? InboxRow }
+    let removedAt = editing.flatMap { row in
+      ids.contains(row.entry.id) ? nil : shown.firstIndex { $0 === row }
+    }
     for (id, row) in rows where !ids.contains(id) {
       let key = "\(row.entry.source)\u{0}\(row.entry.conversationId)"
       if let draft = carriedDraft(text: row.field.stringValue, lastSent: row.lastSent) { drafts[key] = draft }
@@ -408,7 +419,15 @@ final class InboxPanel: NSObject, NSWindowDelegate {
         if let selection { editing.field.currentEditor()?.selectedRange = selection }
       }
     }
-    if let focusTarget, !focusTarget.field.isHidden { panel.makeFirstResponder(focusTarget.field) }
+    if let focusTarget, !focusTarget.field.isHidden {
+      panel.makeFirstResponder(focusTarget.field)
+    } else if focusTarget == nil, let removedAt,
+      let index = nextFocusIndex(removedAt: removedAt, remaining: desired.count)
+    {
+      // The row being typed in went (⌘⌫ or ×): the cursor moves to the row that takes its place.
+      let next = desired[index]
+      if !next.field.isHidden, next.field.isEnabled { panel.makeFirstResponder(next.field) }
+    }
     resize()
     onCountChange?(model.waitingCount)
   }
