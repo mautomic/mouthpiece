@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { health, pause, resume, setMode, speak, status } from "@mouthpiece/client";
+import { health, pause, resume, setMode, speak, status, stop } from "@mouthpiece/client";
 import {
   type AudioClip,
   type Config,
@@ -84,6 +84,15 @@ afterEach(async () => {
 const o = () => ({ url: daemon?.url, env: { MOUTHPIECE_HOME: home } });
 const sayChain = () => resolveConfig({ provider: { chain: ["say"] } });
 const plain = { source: "cli", format: "plain", mode: "full" } as const;
+
+/** Polls `condition` every 5 ms; throws after `ms`. */
+async function until(condition: () => boolean, ms = 1_000): Promise<void> {
+  const deadline = performance.now() + ms;
+  while (!condition()) {
+    if (performance.now() > deadline) throw new Error("condition not met in time");
+    await Bun.sleep(5);
+  }
+}
 
 const FIRST = "First sentence here.";
 const SECOND = "Second sentence here.";
@@ -398,6 +407,31 @@ test("stopping the daemon terminates Kokoro's host process (US-019)", async () =
   await d.stop();
   daemon = undefined;
   expect(terminated).toBe(1);
+});
+
+test("stop during a Kokoro render frees the queue without waiting for the render (US-019)", async () => {
+  const renders: string[] = [];
+  const engine: KokoroEngine = {
+    generate(text) {
+      renders.push(text);
+      // The long item's render never finishes: the queue must not wait for it.
+      if (text.startsWith("A long")) return new Promise(() => {});
+      return Promise.resolve({ toWav: () => new TextEncoder().encode(text).buffer as ArrayBuffer });
+    },
+  };
+  const player = new FakePlayer();
+  const d = await boot(
+    resolveConfig({ provider: { chain: ["kokoro", "say"] } }),
+    { player, kokoroLoader: async () => engine },
+    installFakeKokoro,
+  );
+  await speak({ ...plain, text: "A long answer that takes a while to render." }, o());
+  await until(() => renders.some((t) => t.startsWith("A long")));
+  await stop(o());
+  await speak({ ...plain, text: "Here is the short follow-up." }, o());
+  await until(() => player.played.length > 0, 2_000);
+  expect(player.played).toEqual(["Here is the short follow-up."]);
+  await d.queue.idle();
 });
 
 test("a reload that doesn't change the helper's config keeps the helper and its mic pause", async () => {

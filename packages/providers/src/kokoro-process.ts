@@ -56,6 +56,16 @@ export function kokoroRenderTimeoutMs(text: string): number {
   return 10_000 + text.length * KOKORO_MS_PER_CHAR;
 }
 
+/** A render's expected time per character (about 20 ms on an M4 Pro: 3.2 s for 157 characters). */
+const EXPECTED_MS_PER_CHAR = 20;
+
+/**
+ * An abandoned render (its caller aborted) expected to need longer than this is not waited for once
+ * another request is waiting: the host is killed and restarted instead, which costs about 1 s
+ * (0.4 s to load the model, plus a slower first render). Shorter ones finish and are discarded.
+ */
+export const ABANDONED_RENDER_WAIT_MS = 2_000;
+
 const KILL_GRACE_MS = 1_000;
 const TERMINATE_WAIT_MS = 1_500;
 /** How much of the host's stderr is kept for the exit log line. */
@@ -66,7 +76,15 @@ interface Job {
   text: string;
   voice: string;
   resolve(wav: Uint8Array): void;
-  reject(error: Error): void;
+  reject(error: unknown): void;
+}
+
+interface Render {
+  job: Job;
+  startedAt: number;
+  timer: ReturnType<typeof setTimeout>;
+  /** The caller aborted: the job has already rejected, and the reply will be discarded. */
+  abandoned: boolean;
 }
 
 /** One host process: its load state, the requests waiting for it, and the one it is rendering. */
@@ -77,7 +95,7 @@ interface Host {
   loaded: boolean;
   loadTimer: ReturnType<typeof setTimeout>;
   queue: Job[];
-  current: { job: Job; timer: ReturnType<typeof setTimeout> } | undefined;
+  current: Render | undefined;
   exited: Promise<void>;
   retired: boolean;
 }
@@ -91,8 +109,15 @@ interface Host {
  * The host starts on first use and renders one request at a time; the rest wait here, in order.
  * If it crashes, exits or fails to load, every pending request rejects and the next call starts a
  * fresh host. A render that exceeds its render timeout restarts the host, and the requests waiting
- * behind it move to the new one. The host's stdout is discarded and its stderr kept only for the
- * one log line an unexpected exit produces.
+ * behind it move to the new one.
+ *
+ * An aborted request rejects at once. If it hasn't been sent, it is dropped. If it is rendering,
+ * the host can't be interrupted (the render blocks its thread), so the render is abandoned: it
+ * finishes and its reply is discarded, unless another request is waiting and the abandoned render
+ * is expected to need more than ABANDONED_RENDER_WAIT_MS, in which case the host is restarted.
+ *
+ * The host's stdout is discarded and its stderr kept only for the one log line an unexpected exit
+ * produces.
  */
 export function processKokoroLoader(
   home: string,
@@ -155,12 +180,34 @@ export function processKokoroLoader(
       restart(h, new Error(`kokoro render timed out after ${ms}ms`));
     }, ms);
     timer.unref?.();
-    h.current = { job, timer };
+    h.current = { job, startedAt: performance.now(), timer, abandoned: false };
     const request: KokoroHostRequest = { id: job.id, text: job.text, voice: job.voice };
     try {
       h.proc.send(request);
     } catch (error) {
       retire(h, new Error(`kokoro host unreachable: ${describe(error)}`));
+    }
+  };
+
+  /** Restarts `h` rather than make a waiting request sit behind a long abandoned render. */
+  const skipAbandoned = (h: Host) => {
+    const render = h.current;
+    if (!render?.abandoned || h.queue.length === 0) return;
+    const left =
+      render.startedAt + render.job.text.length * EXPECTED_MS_PER_CHAR - performance.now();
+    if (left > ABANDONED_RENDER_WAIT_MS) restart(h, new Error("kokoro render abandoned"));
+  };
+
+  /** The caller of `job` aborted: drop it if it hasn't been sent, else abandon its render. */
+  const abandon = (job: Job, reason: unknown) => {
+    job.reject(reason);
+    const h = host;
+    if (!h) return;
+    const index = h.queue.indexOf(job);
+    if (index >= 0) h.queue.splice(index, 1);
+    else if (h.current?.job === job) {
+      h.current.abandoned = true;
+      skipAbandoned(h);
     }
   };
 
@@ -238,17 +285,28 @@ export function processKokoroLoader(
   };
 
   const engine: KokoroEngine = {
-    generate(text, { voice }) {
-      const h = start();
+    generate(text, { voice, signal }) {
       return new Promise((resolve, reject) => {
-        h.queue.push({
+        if (signal?.aborted) return reject(signal.reason);
+        const onAbort = () => abandon(job, signal?.reason);
+        const job: Job = {
           id: ++seq,
           text,
           voice,
-          resolve: (wav) => resolve({ toWav: () => toArrayBuffer(wav) }),
-          reject,
-        });
+          resolve: (wav) => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve({ toWav: () => toArrayBuffer(wav) });
+          },
+          reject: (error) => {
+            signal?.removeEventListener("abort", onAbort);
+            reject(error);
+          },
+        };
+        signal?.addEventListener("abort", onAbort, { once: true });
+        const h = start();
+        h.queue.push(job);
         pump(h);
+        skipAbandoned(h);
       });
     },
   };

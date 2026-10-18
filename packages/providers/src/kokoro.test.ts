@@ -44,6 +44,18 @@ function harness(opts: { load?: KokoroLoader; voice?: string; failWith?: Error }
   return { provider, calls, logs, loads: () => loads };
 }
 
+/** How `promise` settles, or "still pending" if it hasn't within a few event-loop turns. */
+async function outcome(promise: Promise<unknown>): Promise<string> {
+  const pending = Bun.sleep(20).then(() => "still pending");
+  return Promise.race([
+    promise.then(
+      () => "resolved",
+      (error) => `${(error as Error)?.name}: ${String(error)}`,
+    ),
+    pending,
+  ]);
+}
+
 async function bytesOf(chunks: AsyncIterable<Uint8Array>): Promise<Uint8Array[]> {
   const out: Uint8Array[] = [];
   for await (const c of chunks) out.push(c);
@@ -137,6 +149,39 @@ test("an abort during generate rejects after it returns", async () => {
     }),
   });
   await expect(provider.synthesize("a", { signal: ac.signal })).rejects.toThrow();
+});
+
+test("an abort during a render that never ends rejects at once and tells the engine", async () => {
+  const signals: (AbortSignal | undefined)[] = [];
+  const provider = new KokoroProvider({
+    voice: "af_heart",
+    load: async () => ({
+      generate(_text, { signal }) {
+        signals.push(signal);
+        return new Promise(() => {}); // a render that outlives the item
+      },
+    }),
+  });
+  const ac = new AbortController();
+  const pending = provider.synthesize("a long render", { signal: ac.signal });
+  await Bun.sleep(0);
+  expect(signals).toHaveLength(1);
+  ac.abort();
+  expect(signals[0]?.aborted).toBe(true);
+  // Rejects without waiting for the engine, which would otherwise hold the queue.
+  expect(await outcome(pending)).toContain("AbortError");
+});
+
+test("an abort while the engine is still loading rejects at once", async () => {
+  const provider = new KokoroProvider({
+    voice: "af_heart",
+    load: () => new Promise(() => {}),
+  });
+  const ac = new AbortController();
+  const pending = provider.synthesize("a", { signal: ac.signal });
+  await Bun.sleep(0);
+  ac.abort();
+  expect(await outcome(pending)).toContain("AbortError");
 });
 
 test("output is the engine's WAV in a single chunk", async () => {

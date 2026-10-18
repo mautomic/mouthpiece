@@ -38,12 +38,19 @@ async function rejection(promise: Promise<unknown>): Promise<string> {
   );
 }
 
-/** The fake host's "WAV": `<pid>|<voice>|<text>`. */
+/** The fake host's "WAV": `<pid>|<voice>|<text>|<n>`. */
 async function say(loader: ProcessKokoroLoader, text: string, voice = "af_heart") {
   const engine = await loader();
   const wav = (await engine.generate(text, { voice })).toWav();
-  const [pid, v, t] = new TextDecoder().decode(wav).split("|");
-  return { pid: Number(pid), voice: v, text: t };
+  const [pid, v, t, n] = new TextDecoder().decode(wav).split("|");
+  return { pid: Number(pid), voice: v, text: t, n: Number(n) };
+}
+
+/** Rejection time of `promise` in ms, measured from now. */
+async function rejectsWithin(promise: Promise<unknown>): Promise<{ ms: number; error: string }> {
+  const started = performance.now();
+  const error = await rejection(promise);
+  return { ms: performance.now() - started, error };
 }
 
 function isAlive(pid: number): boolean {
@@ -209,6 +216,58 @@ test("terminate escalates to SIGKILL when the host ignores SIGTERM", async () =>
   expect(isAlive(pid)).toBe(false);
 });
 
+test("an abort drops a request that hasn't been sent yet; the host never renders it", async () => {
+  const loader = fakeLoader();
+  const engine = await loader();
+  const first = engine.generate("slow first", { voice: "af_heart" });
+  const ac = new AbortController();
+  const queued = engine.generate("queued", { voice: "af_heart", signal: ac.signal });
+  ac.abort();
+  expect((await rejectsWithin(queued)).error).toContain("AbortError");
+  await first;
+  const next = await say(loader, "next");
+  expect(next.n).toBe(2); // "slow first", then "next": "queued" never reached the host
+});
+
+test("an abort mid-render rejects at once; a short abandoned render is waited for and discarded", async () => {
+  const loader = fakeLoader();
+  const engine = await loader();
+  const { pid } = await say(loader, "first");
+  const ac = new AbortController();
+  const rendering = engine.generate("block", { voice: "af_heart", signal: ac.signal });
+  await Bun.sleep(50); // the host is busy-waiting in its render
+  ac.abort();
+  const { ms, error } = await rejectsWithin(rendering);
+  expect(error).toContain("AbortError");
+  expect(ms).toBeLessThan(100);
+  // About 100 ms of expected render left (well under ABANDONED_RENDER_WAIT_MS): same host.
+  const next = await say(loader, "next");
+  expect(next).toMatchObject({ pid, text: "next", n: 3 });
+});
+
+test("an abandoned long render restarts the host once another request is waiting", async () => {
+  const loader = fakeLoader();
+  const engine = await loader();
+  const { pid } = await say(loader, "first");
+  const ac = new AbortController();
+  // 160 characters: about 3.2 s of expected render, more than ABANDONED_RENDER_WAIT_MS.
+  const long = `hang ${"x".repeat(155)}`;
+  const rendering = engine.generate(long, { voice: "af_heart", signal: ac.signal });
+  await Bun.sleep(20);
+  ac.abort();
+  const { ms, error } = await rejectsWithin(rendering);
+  expect(error).toContain("AbortError");
+  expect(ms).toBeLessThan(100);
+  await Bun.sleep(50);
+  expect(isAlive(pid)).toBe(true); // nothing is waiting yet: no restart
+  const started = performance.now();
+  const next = await say(loader, "next");
+  expect(performance.now() - started).toBeLessThan(1_000);
+  expect(next.pid).not.toBe(pid);
+  expect(next.n).toBe(1);
+  await until(() => !isAlive(pid));
+});
+
 test("terminate before any call is a no-op", async () => {
   await fakeLoader().terminate();
 });
@@ -238,7 +297,7 @@ test("KokoroProvider over the process loader returns the host's WAV", async () =
   const clip = await provider.synthesize("Through the provider.");
   const bytes: Uint8Array[] = [];
   for await (const c of clip.chunks) bytes.push(c);
-  expect(new TextDecoder().decode(bytes[0])).toEndWith("|am_adam|Through the provider.");
+  expect(new TextDecoder().decode(bytes[0])).toContain("|am_adam|Through the provider.|");
 });
 
 test("the real host reports a load failure when kokoro-js isn't installed", async () => {

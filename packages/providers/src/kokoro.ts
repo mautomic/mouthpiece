@@ -11,7 +11,14 @@ import {
 
 /** The slice of `kokoro-js`'s `KokoroTTS` Mouthpiece uses. Never `stream()`: it hangs (US-019). */
 export interface KokoroEngine {
-  generate(text: string, opts: { voice: string }): Promise<{ toWav(): ArrayBuffer }>;
+  /**
+   * `signal` tells the engine the caller has given up on this render (kokoro-js ignores it; the
+   * process engine drops or abandons the request). The caller doesn't wait for the engine to react.
+   */
+  generate(
+    text: string,
+    opts: { voice: string; signal?: AbortSignal },
+  ): Promise<{ toWav(): ArrayBuffer }>;
   list_voices?(): unknown;
 }
 
@@ -139,14 +146,19 @@ export class KokoroProvider implements TtsProvider {
     this.cacheKey = `${this.#voice}\0${KOKORO_DTYPE}`;
   }
 
+  /**
+   * An abort (stop, skip, pause, or the chain's first-byte timeout) rejects at once, even mid-load
+   * or mid-render, so the queue moves on without waiting for the engine; the engine is told through
+   * the signal and decides what happens to the render itself.
+   */
   async synthesize(text: string, options: SynthesizeOptions = {}): Promise<AudioClip> {
-    options.signal?.throwIfAborted();
-    const engine = await this.#load();
-    options.signal?.throwIfAborted();
+    const { signal } = options;
+    signal?.throwIfAborted();
+    const engine = await untilAborted(this.#load(), signal);
     // A voice from another provider in the chain (or a typo) is not a Kokoro voice: use ours.
     const voice = options.voice && VOICE_IDS.has(options.voice) ? options.voice : this.#voice;
-    const audio = await engine.generate(text, { voice });
-    options.signal?.throwIfAborted();
+    const audio = await untilAborted(engine.generate(text, { voice, signal }), signal);
+    signal?.throwIfAborted();
     return { format: "wav", chunks: singleChunk(new Uint8Array(audio.toWav())) };
   }
 
@@ -188,4 +200,15 @@ export class KokoroProvider implements TtsProvider {
     }
     return this.#engine;
   }
+}
+
+/** Settles like `promise`, or rejects with the signal's reason as soon as it aborts. */
+function untilAborted<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return promise;
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    if (signal.aborted) return onAbort();
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
