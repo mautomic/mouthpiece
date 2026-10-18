@@ -146,7 +146,7 @@ test("lastAssistantTextFromTranscript skips garbage and tool-only records", () =
 });
 
 const ORCA = { ORCA_TERMINAL_HANDLE: "term_148202cb-9a23-4308-8380-a4efd3957057" };
-const orcaRoute = { via: "orca", target: ORCA.ORCA_TERMINAL_HANDLE, agent: "claude" };
+const orcaRoute = { via: "orca", target: ORCA.ORCA_TERMINAL_HANDLE, agent: "claude" } as const;
 
 test("stop attaches the Orca reply route when the session runs in Orca", async () => {
   const { d, spoken } = deps(ORCA);
