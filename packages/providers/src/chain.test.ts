@@ -1,10 +1,14 @@
 import { expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DEFAULT_CONFIG, resolveConfig } from "@mouthpiece/core";
 import { chainProviders, createProviderChain, createProviders, PAID_PROVIDERS } from "./chain.ts";
 import { DeepgramProvider } from "./deepgram.ts";
 import { ElevenLabsProvider } from "./elevenlabs.ts";
 import { FakeProvider } from "./fake.ts";
 import { InworldProvider } from "./inworld.ts";
+import { type KokoroEngine, KokoroProvider } from "./kokoro.ts";
 import { OpenAIProvider } from "./openai.ts";
 import { SayProvider } from "./say.ts";
 
@@ -177,4 +181,71 @@ test("chainProviders maps voices and falls back across a given provider list", a
   expect(logs).toEqual([
     expect.objectContaining({ level: "warn", msg: "provider_fallback", provider: "inworld" }),
   ]);
+});
+
+async function withHome(fn: (home: string) => Promise<void>): Promise<void> {
+  const home = await mkdtemp(join(tmpdir(), "mp-chain-kokoro-"));
+  try {
+    await fn(home);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+}
+
+test("kokoro is not paid (no key)", () => {
+  expect((PAID_PROVIDERS as readonly string[]).includes("kokoro")).toBe(false);
+});
+
+test("kokoro is skipped with an install hint when it isn't installed", async () => {
+  await withHome(async (home) => {
+    const config = resolveConfig({ provider: { chain: ["kokoro", "say"] } });
+    const { deps: d, logs } = deps();
+    expect(createProviders(config, { ...d, home }).map((p) => p.name)).toEqual(["say"]);
+    expect(logs).toEqual([
+      expect.objectContaining({
+        level: "warn",
+        msg: "provider_skipped",
+        provider: "kokoro",
+        reason: "not installed; run mouthpiece kokoro install",
+      }),
+    ]);
+  });
+});
+
+test("kokoro is skipped when no home is given", () => {
+  const config = resolveConfig({ provider: { chain: ["kokoro"] } });
+  const { deps: d, logs } = deps();
+  expect(createProviders(config, d).map((p) => p.name)).toEqual(["say"]);
+  expect(logs[0]).toMatchObject({ msg: "provider_skipped", provider: "kokoro" });
+});
+
+test("kokoro is built with the configured voice and the injected loader when installed", async () => {
+  await withHome(async (home) => {
+    const pkg = join(home, "kokoro", "node_modules", "kokoro-js");
+    await mkdir(pkg, { recursive: true });
+    await writeFile(join(pkg, "package.json"), "{}");
+    const voices: string[] = [];
+    const engine: KokoroEngine = {
+      async generate(_text, { voice }) {
+        voices.push(voice);
+        return { toWav: () => new Uint8Array([1, 2, 3]).buffer };
+      },
+    };
+    const config = resolveConfig({
+      provider: { chain: ["kokoro", "say"], kokoro: { voice: "bm_george" } },
+    });
+    const { deps: d, logs } = deps();
+    const providers = createProviders(config, { ...d, home, kokoroLoader: async () => engine });
+    expect(providers.map((p) => p.name)).toEqual(["kokoro", "say"]);
+    expect(providers[0]).toBeInstanceOf(KokoroProvider);
+    expect(providers[0]?.cacheKey).toBe("bm_george\0q8");
+    const clip = await createProviderChain(config, {
+      ...d,
+      home,
+      kokoroLoader: async () => engine,
+    }).synthesize("Hi.");
+    expect(clip.format).toBe("wav");
+    expect(voices).toEqual(["bm_george"]);
+    expect(logs).toEqual([]);
+  });
 });

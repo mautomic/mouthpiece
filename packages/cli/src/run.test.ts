@@ -167,7 +167,7 @@ test("usage text shows every flag of say, voices, tail and the hook targets", as
     expect(usage).toContain(flag);
 });
 
-test.each([["kokoro"], ["pause"], ["resume"], ["send"]])(
+test.each([["pause"], ["resume"], ["send"]])(
   "%s routes to its (not yet implemented) command",
   async (cmd) => {
     const h = harness();

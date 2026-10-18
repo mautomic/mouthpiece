@@ -1,0 +1,165 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import {
+  type AudioClip,
+  type Logger,
+  type SynthesizeOptions,
+  singleChunk,
+  type TtsProvider,
+  type VoiceInfo,
+} from "@mouthpiece/core";
+
+/** The slice of `kokoro-js`'s `KokoroTTS` Mouthpiece uses. Never `stream()`: it hangs (US-019). */
+export interface KokoroEngine {
+  generate(text: string, opts: { voice: string }): Promise<{ toWav(): ArrayBuffer }>;
+  list_voices?(): unknown;
+}
+
+export type KokoroLoader = () => Promise<KokoroEngine>;
+
+export const KOKORO_MODEL = "onnx-community/Kokoro-82M-v1.0-ONNX";
+export const KOKORO_DTYPE = "q8";
+
+/** The English voices kokoro-js 1.2.1 accepts, in its own order, with display name and language. */
+const VOICES: readonly (readonly [id: string, name: string])[] = [
+  ["af_heart", "Heart"],
+  ["af_alloy", "Alloy"],
+  ["af_aoede", "Aoede"],
+  ["af_bella", "Bella"],
+  ["af_jessica", "Jessica"],
+  ["af_kore", "Kore"],
+  ["af_nicole", "Nicole"],
+  ["af_nova", "Nova"],
+  ["af_river", "River"],
+  ["af_sarah", "Sarah"],
+  ["af_sky", "Sky"],
+  ["am_adam", "Adam"],
+  ["am_echo", "Echo"],
+  ["am_eric", "Eric"],
+  ["am_fenrir", "Fenrir"],
+  ["am_liam", "Liam"],
+  ["am_michael", "Michael"],
+  ["am_onyx", "Onyx"],
+  ["am_puck", "Puck"],
+  ["am_santa", "Santa"],
+  ["bf_emma", "Emma"],
+  ["bf_isabella", "Isabella"],
+  ["bm_george", "George"],
+  ["bm_lewis", "Lewis"],
+  ["bf_alice", "Alice"],
+  ["bf_lily", "Lily"],
+  ["bm_daniel", "Daniel"],
+  ["bm_fable", "Fable"],
+];
+
+export const KOKORO_VOICES: readonly VoiceInfo[] = VOICES.map(([id, name]) => ({
+  id,
+  name,
+  language: id.startsWith("a") ? "en-US" : "en-GB",
+}));
+
+const VOICE_IDS = new Set(VOICES.map(([id]) => id));
+
+/** `<home>/kokoro`: its own package root for `kokoro-js` and the model cache (`hf/`). */
+export function kokoroHome(home: string): string {
+  return join(home, "kokoro");
+}
+
+export function isKokoroInstalled(home: string): boolean {
+  return existsSync(join(kokoroHome(home), "node_modules", "kokoro-js", "package.json"));
+}
+
+/**
+ * Loads kokoro-js from `<home>/kokoro/node_modules` (never from the repo). Remote models are off by
+ * default: the daemon only uses the model `mouthpiece kokoro install` downloaded.
+ */
+export function defaultKokoroLoader(
+  home: string,
+  opts: { allowRemoteModels?: boolean } = {},
+): KokoroLoader {
+  return async () => {
+    const dir = kokoroHome(home);
+    // Resolve each package's `exports` entry from <home>/kokoro so kokoro-js's own import of
+    // @huggingface/transformers is the same module instance whose `env` is configured here.
+    const transformers = await import(Bun.resolveSync("@huggingface/transformers", dir));
+    transformers.env.cacheDir = join(dir, "hf");
+    transformers.env.allowRemoteModels = opts.allowRemoteModels ?? false;
+    const { KokoroTTS } = await import(Bun.resolveSync("kokoro-js", dir));
+    return (await KokoroTTS.from_pretrained(KOKORO_MODEL, {
+      dtype: KOKORO_DTYPE,
+      device: "cpu",
+    })) as KokoroEngine;
+  };
+}
+
+export interface KokoroProviderOptions {
+  /** Default voice (`provider.kokoro.voice`). */
+  voice: string;
+  load: KokoroLoader;
+  log?: Logger;
+}
+
+/** Free local TTS (US-019). The engine loads lazily on first use; one WAV per `generate()` call. */
+export class KokoroProvider implements TtsProvider {
+  readonly name = "kokoro";
+  /** `generate()` truncates past ~510 tokens. */
+  readonly maxCharsPerRequest = 400;
+  readonly pricePerMillionChars = 0;
+  readonly cacheKey: string;
+  #engine: Promise<KokoroEngine> | undefined;
+  #loadFailureLogged = false;
+
+  constructor(private readonly opts: KokoroProviderOptions) {
+    this.cacheKey = `${opts.voice}\0${KOKORO_DTYPE}`;
+  }
+
+  async synthesize(text: string, options: SynthesizeOptions = {}): Promise<AudioClip> {
+    options.signal?.throwIfAborted();
+    const engine = await this.#load();
+    options.signal?.throwIfAborted();
+    // A voice from another provider in the chain (or a typo) is not a Kokoro voice: use ours.
+    const voice = options.voice && VOICE_IDS.has(options.voice) ? options.voice : this.opts.voice;
+    const audio = await engine.generate(text, { voice });
+    options.signal?.throwIfAborted();
+    return { format: "wav", chunks: singleChunk(new Uint8Array(audio.toWav())) };
+  }
+
+  /** Loads the engine and renders a short phrase so the first real item is fast. Never throws. */
+  async warmUp(): Promise<void> {
+    let engine: KokoroEngine;
+    try {
+      engine = await this.#load();
+    } catch {
+      return; // already logged as kokoro_load_failed
+    }
+    try {
+      await engine.generate("Ready.", { voice: this.opts.voice });
+    } catch (error) {
+      this.opts.log?.({ level: "warn", msg: "kokoro_warmup_failed", error: String(error) });
+    }
+  }
+
+  async listVoices(): Promise<VoiceInfo[]> {
+    return KOKORO_VOICES.map((v) => ({ ...v }));
+  }
+
+  /** Memoized load; a failure clears the memo so the next call retries, and is logged once. */
+  #load(): Promise<KokoroEngine> {
+    if (!this.#engine) {
+      const attempt = (async () => this.opts.load())(); // a sync throw becomes a rejection
+      this.#engine = attempt;
+      attempt.then(
+        () => {
+          this.#loadFailureLogged = false;
+        },
+        (error) => {
+          if (this.#engine === attempt) this.#engine = undefined;
+          if (this.#loadFailureLogged) return;
+          this.#loadFailureLogged = true;
+          this.opts.log?.({ level: "warn", msg: "kokoro_load_failed", error: String(error) });
+        },
+      );
+    }
+    return this.#engine;
+  }
+}
