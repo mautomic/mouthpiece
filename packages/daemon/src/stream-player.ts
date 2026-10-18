@@ -155,7 +155,15 @@ export class StreamPlayer implements Player {
   /** Starts the player if it isn't running; false when it can't be used for this clip. */
   #start(): Promise<boolean> {
     if (this.#ready) return this.#ready;
-    const proc = (this.opts.spawn ?? ((binary) => spawnPlayer([binary])))(this.opts.binary);
+    let proc: PlayerProcess;
+    try {
+      proc = (this.opts.spawn ?? ((binary) => spawnPlayer([binary])))(this.opts.binary);
+    } catch (error) {
+      // E.g. a binary that exists but can't run: count it like an exit, and fall back for this clip.
+      this.opts.log({ level: "warn", msg: "player_start_failed", error: String(error) });
+      this.#failed();
+      return Promise.resolve(false);
+    }
     this.#proc = proc;
     let settle: (ok: boolean) => void = () => {};
     const ready = new Promise<boolean>((resolve) => {
@@ -188,9 +196,14 @@ export class StreamPlayer implements Player {
   }
 
   #exited(code: number): void {
+    this.opts.log({ level: "warn", msg: "player_exited", code });
+    this.#failed();
+  }
+
+  /** An exit or a failed start; MAX_EXITS within EXIT_WINDOW_MS turn the player off. */
+  #failed(): void {
     const now = (this.opts.now ?? Date.now)();
     this.#exits = [...this.#exits.filter((t) => now - t < EXIT_WINDOW_MS), now];
-    this.opts.log({ level: "warn", msg: "player_exited", code });
     if (this.#exits.length >= MAX_EXITS && !this.#disabled) {
       this.#disabled = true;
       this.opts.log({

@@ -334,3 +334,26 @@ test("createPlayer: the stream player when it's built, afplay when it isn't or i
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("a player that can't be started counts as an exit, and the clip plays through the fallback", async () => {
+  const fallback = new RecordingPlayer();
+  const logs: Record<string, unknown>[] = [];
+  const player = new StreamPlayer({
+    binary: "/fake/mouthpiece-player",
+    fallback,
+    log: (r) => logs.push(r),
+    spawn: () => {
+      throw new Error("EACCES: permission denied, posix_spawn");
+    },
+  });
+  for (let i = 0; i < 3; i++) await player.play(wavClip(), new AbortController().signal);
+  expect(fallback.played).toEqual(["wav", "wav", "wav"]);
+  expect(logs).toContainEqual(
+    expect.objectContaining({
+      level: "warn",
+      msg: "player_start_failed",
+      error: expect.stringContaining("EACCES"),
+    }),
+  );
+  expect(player.gapless).toBe(false); // 3 failed starts, like 3 exits, turn it off
+});
