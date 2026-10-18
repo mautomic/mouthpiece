@@ -3,8 +3,11 @@ import { type AudioClip, collectChunks, delay, type Player } from "@mouthpiece/c
 /** Test player: records decoded clip text when playback starts, then "plays" for durationMs. */
 export class FakePlayer implements Player {
   readonly played: string[] = [];
+  readonly gapless: boolean;
 
-  constructor(private readonly opts: { durationMs?: number } = {}) {}
+  constructor(private readonly opts: { durationMs?: number; gapless?: boolean } = {}) {
+    this.gapless = opts.gapless ?? false;
+  }
 
   async play(clip: AudioClip, signal: AbortSignal): Promise<void> {
     const text = new TextDecoder().decode(await collectChunks(clip.chunks));

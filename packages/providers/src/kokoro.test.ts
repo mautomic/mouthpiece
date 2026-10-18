@@ -290,7 +290,9 @@ test("the configured speed reaches every render, warm-up included, and is part o
   expect(harness({ speed: 1 }).provider.cacheKey).toBe(harness().provider.cacheKey);
 });
 
-test("Kokoro packs the first chunk too, so a summary is one clip with no breaks", () => {
-  const { chunking } = harness().provider;
-  expect(chunking).toEqual({ firstChars: 400, targetChars: 400 });
+test("Kokoro packs long clips for a player with breaks, and sentences for the gap-free player", () => {
+  expect(harness().provider.chunking).toEqual({
+    withBreaks: { firstChars: 400, targetChars: 400 },
+    gapless: { targetChars: 150 },
+  });
 });

@@ -66,14 +66,33 @@ test("cleans markdown, prefixes the label when asked, and plays chunk by chunk",
   );
 });
 
-test("a provider's chunking hint packs the first chunk instead of leaving its sentence alone", async () => {
-  const provider = new FakeProvider({ chunking: { firstChars: 40, targetChars: 30 } });
-  const player = new FakePlayer();
-  await createSpeaker({ provider, player, log: () => {}, prepare })(
-    item("I fixed it. Tests pass. Check is green. Docs updated too.", { format: "plain" }),
+test("a provider's chunking hint: withBreaks for a player with breaks, gapless for the stream player", async () => {
+  const chunking = {
+    withBreaks: { firstChars: 40, targetChars: 30 },
+    gapless: { targetChars: 30 },
+  };
+  const text = "I fixed it. Tests pass. Check is green. Docs updated too.";
+  const withBreaks = new FakeProvider({ chunking });
+  await createSpeaker({ provider: withBreaks, player: new FakePlayer(), log: () => {}, prepare })(
+    item(text, { format: "plain" }),
     ctx(),
   );
-  expect(provider.calls).toEqual(["I fixed it. Tests pass. Check is green.", "Docs updated too."]);
+  expect(withBreaks.calls).toEqual([
+    "I fixed it. Tests pass. Check is green.",
+    "Docs updated too.",
+  ]);
+
+  const gapless = new FakeProvider({ chunking });
+  const player = new FakePlayer({ gapless: true });
+  await createSpeaker({ provider: gapless, player, log: () => {}, prepare })(
+    item(text, { format: "plain" }),
+    ctx(),
+  );
+  expect(gapless.calls).toEqual([
+    "I fixed it.",
+    "Tests pass. Check is green.",
+    "Docs updated too.",
+  ]);
 });
 
 test("plain format skips cleaning", async () => {
