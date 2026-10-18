@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ClaudeCliSummarizer } from "./claude-cli.ts";
-import { SUMMARY_SYSTEM_PROMPT } from "./prompt.ts";
+import { summaryPrompt } from "./prompt.ts";
 
 let dir: string;
 beforeEach(async () => {
@@ -51,7 +51,7 @@ echo "I need your call on interrupts. I fixed the race. Everything passes now."`
     "--setting-sources",
     "",
     "--system-prompt",
-    ...SUMMARY_SYSTEM_PROMPT.split("\n"),
+    ...summaryPrompt(60).split("\n"), // the prompt states the configured maxChars
     "",
   ]);
   expect(await readFile(join(dir, "child"), "utf8")).toBe("1");

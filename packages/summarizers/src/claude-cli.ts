@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import type { Env, Summarizer } from "@mouthpiece/core";
-import { SUMMARY_SYSTEM_PROMPT, wrapMessage } from "./prompt.ts";
+import { summaryPrompt, wrapMessage } from "./prompt.ts";
 import { trimToSentences } from "./trim.ts";
 
 export interface ClaudeCliOptions {
@@ -38,7 +38,7 @@ export class ClaudeCliSummarizer implements Summarizer {
       "--setting-sources",
       "",
       "--system-prompt",
-      SUMMARY_SYSTEM_PROMPT,
+      summaryPrompt(this.opts.maxChars),
     ];
     const proc = Bun.spawn(args, {
       cwd: this.opts.cwd,

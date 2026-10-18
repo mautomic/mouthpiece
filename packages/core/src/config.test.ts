@@ -63,9 +63,9 @@ test("phase 2 defaults", () => {
     backend: "claude-cli",
     command: "claude",
     model: "haiku",
-    timeoutMs: 6000,
+    timeoutMs: 8000,
     thresholdChars: 300,
-    maxChars: 350,
+    maxChars: 400,
   });
   expect(DEFAULT_CONFIG.hotkeys).toEqual({
     enabled: true,
