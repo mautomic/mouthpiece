@@ -39,6 +39,13 @@ synthesizes it, so pin it only when the chain's providers share voice ids; the p
 When `say` is given a voice it does not have (e.g. another provider's id after a fallback), it speaks in the system voice
 instead of failing.
 
+Label announcement, decided when an item starts playing (a resumed item keeps its decision):
+1. `[profiles."<source>"] announce = "never" | "auto" | "always"` in the config, when set;
+2. else the event's `announce` (default `auto`).
+
+`never` speaks no label. `always` speaks `"<label>: "` first whenever the event has a `label`. `auto` speaks it only when 2+
+conversations spoke within `queue.labelWindowMs`.
+
 ## POST /v1/interrupt
 Body `{ "source": "claude-code", "conversationId": "abc" }` (omit `conversationId` for the whole source).
 Stops that conversation's current item and drops its queued items. 200 `{ "stopped": true, "dropped": 1 }`

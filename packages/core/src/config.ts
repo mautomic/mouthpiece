@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { MODES, type Mode } from "./contracts.ts";
+import { ANNOUNCE_SETTINGS, type AnnounceSetting, MODES, type Mode } from "./contracts.ts";
 import { isRecord } from "./guards.ts";
 import type { Env } from "./home.ts";
 
@@ -26,7 +26,7 @@ export interface Config {
   queue: { expireAfterMs: number; labelWindowMs: number };
   fallback: { firstByteTimeoutMs: number };
   modes: { default: Mode };
-  profiles: Record<string, { mode?: Mode }>;
+  profiles: Record<string, { mode?: Mode; announce?: AnnounceSetting }>;
   summarizer: {
     backend: "claude-cli" | "none";
     command: string;
@@ -434,7 +434,10 @@ function resolveProfiles(raw: unknown, base: Config["profiles"]): Config["profil
   const out: Config["profiles"] = {};
   for (const [source, value] of Object.entries(table(raw, "profiles"))) {
     const profile = table(value, `profiles.${source}`);
-    out[source] = { mode: optional(profile.mode, `profiles.${source}.mode`, oneOf(MODES)) };
+    out[source] = {
+      mode: optional(profile.mode, `profiles.${source}.mode`, oneOf(MODES)),
+      announce: optional(profile.announce, `profiles.${source}.announce`, oneOf(ANNOUNCE_SETTINGS)),
+    };
   }
   return out;
 }
