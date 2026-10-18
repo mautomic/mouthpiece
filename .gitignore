@@ -4,3 +4,4 @@ node_modules/
 bakeoff/
 .claude/worktrees/
 summary-eval.md
+.superpowers/
