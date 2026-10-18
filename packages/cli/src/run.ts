@@ -32,7 +32,7 @@ const USAGE = `usage: mouthpiece <command>
   replay [--full]
   usage [--month YYYY-MM]
   voices [--provider x]                   list each provider's voices
-  tail --format codex|gemini|lines [--path p] [--source s] [--label l]
+  tail --format codex|gemini|lines|margin [--path p] [--source s] [--label l]
                                           speak new messages from a session log
   install-hooks [--target claude-code|codex|gemini] [--idle-alerts]
   uninstall-hooks [--target claude-code|codex|gemini]

@@ -202,7 +202,7 @@ test("usage text shows every flag of say, voices, tail and the hook targets", as
     "--plain | --markdown",
     "--fallback-say",
     "voices [--provider x]",
-    "tail --format codex|gemini|lines [--path p]",
+    "tail --format codex|gemini|lines|margin [--path p]",
     "install-hooks [--target claude-code|codex|gemini] [--idle-alerts]",
     "uninstall-hooks [--target claude-code|codex|gemini]",
   ])
