@@ -377,6 +377,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       subscribeInbox: (listener) => inbox.subscribe(listener),
       reply: (r) => replies.reply(r),
       submitReply: (r) => replies.submit(r),
+      dismissInbox: (r) => {
+        if (r.all) return inbox.dismissAll();
+        const result = inbox.dismiss(r.id as string);
+        return result === "dismissed" ? 1 : result;
+      },
       stopAll: () => queue.stopAll(),
       skip: () => ({ skipped: queue.skip() }),
       getMode: () => modes.state(),

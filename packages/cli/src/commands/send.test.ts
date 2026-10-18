@@ -33,6 +33,7 @@ function harness(opts: { stdin?: string; tty?: boolean; results?: Partial<ExecRe
       inbox: unused,
       reply: unused,
       submitReply: unused,
+      dismissInbox: unused,
     },
     startDaemon: unused,
     env: {},

@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import {
   type HealthResponse,
+  type InboxDismissRequest,
   type InboxResponse,
   type InterruptRequest,
   type InterruptResult,
@@ -8,6 +9,7 @@ import {
   type ModeState,
   type NormalizedSpeakEvent,
   type PauseResponse,
+  parseInboxDismissRequest,
   parseInterruptRequest,
   parseModeRequest,
   parsePauseRequest,
@@ -73,6 +75,8 @@ export interface HandlerDeps {
   reply(req: ReplyRequest): Promise<ReplyResult>;
   /** POST /v1/reply/submit: Enter for a typed reply. */
   submitReply(req: ReplySubmitRequest): Promise<ReplyResult>;
+  /** POST /v1/inbox/dismiss: how many were removed, or why one wasn't. */
+  dismissInbox(req: InboxDismissRequest): number | "gone" | "in-flight";
 }
 
 type Method = "GET" | "POST";
@@ -224,6 +228,21 @@ export function createHandler(deps: HandlerDeps): (req: Request) => Promise<Resp
     "/v1/shutdown": { POST: { auth: true, run: () => json(200, deps.shutdown()) } },
     "/v1/inbox": { GET: { auth: true, run: () => json(200, deps.inbox()) } },
     "/v1/inbox/events": { GET: { auth: true, run: () => inboxEvents(deps) } },
+    "/v1/inbox/dismiss": {
+      POST: {
+        auth: true,
+        run: (body) => {
+          const parsed = parseInboxDismissRequest(body);
+          if (!parsed.ok) return json(400, { error: parsed.error, reason: "invalid" });
+          const result = deps.dismissInbox(parsed.value);
+          if (result === "gone") return json(404, { error: "no such inbox entry", reason: "gone" });
+          if (result === "in-flight") {
+            return json(409, { error: "a reply to it is in flight", reason: "in-flight" });
+          }
+          return json(200, { dismissed: result });
+        },
+      },
+    },
     "/v1/reply": {
       POST: {
         auth: true,

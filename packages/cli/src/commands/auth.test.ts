@@ -33,6 +33,7 @@ function harness(opts: { stdin?: string; tty?: boolean; code?: number } = {}) {
       inbox: unused,
       reply: unused,
       submitReply: unused,
+      dismissInbox: unused,
     },
     startDaemon: unused,
     env: {},

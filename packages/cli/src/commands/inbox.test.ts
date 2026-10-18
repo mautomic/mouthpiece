@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import type { InboxEntry, ReplyRequest, ReplySubmitRequest } from "@mouthpiece/core";
+import type {
+  InboxDismissRequest,
+  InboxEntry,
+  ReplyRequest,
+  ReplySubmitRequest,
+} from "@mouthpiece/core";
 import { run } from "../run.ts";
 import type { CliDeps, CliIO } from "../types.ts";
 
@@ -26,6 +31,7 @@ function harness(
   const err: string[] = [];
   const replies: ReplyRequest[] = [];
   const submits: ReplySubmitRequest[] = [];
+  const dismissals: InboxDismissRequest[] = [];
   let stdin = "";
   const io: CliIO = {
     out: (s) => out.push(s),
@@ -65,6 +71,10 @@ function harness(
         submits.push(r);
         return { status: "submitted" };
       },
+      dismissInbox: async (r) => {
+        dismissals.push(r);
+        return { dismissed: r.all ? entries.length : 1 };
+      },
     },
     startDaemon: async () => ({ url: "http://127.0.0.1:7317" }),
     env: {},
@@ -79,6 +89,7 @@ function harness(
     err,
     replies,
     submits,
+    dismissals,
     setStdin: (s: string) => {
       stdin = s;
     },
@@ -102,4 +113,26 @@ test("inbox prints one line per entry, then whether replies are on", async () =>
       "aaaaaaaa  web  waiting  5s  Shall I continue with the migration?\n" +
       "replies: on\n",
   );
+});
+
+test("inbox --dismiss removes one entry, by label or id prefix", async () => {
+  const h = harness([entry({}), entry({ id: "bbbbbbbb-2", conversationId: "s2", label: "api" })]);
+  expect(await run(["inbox", "--dismiss", "web"], h.io, h.deps)).toBe(0);
+  expect(await run(["inbox", "--dismiss", "bbbb"], h.io, h.deps)).toBe(0);
+  expect(h.dismissals).toEqual([{ id: "aaaaaaaa-1" }, { id: "bbbbbbbb-2" }]);
+  expect(h.out.join("")).toBe("dismissed web\ndismissed api\n");
+});
+
+test("inbox --dismiss refuses an ambiguous or unknown target", async () => {
+  const h = harness([entry({}), entry({ id: "cccccccc-3", conversationId: "s3" })]);
+  expect(await run(["inbox", "--dismiss", "web"], h.io, h.deps)).toBe(2);
+  expect(await run(["inbox", "--dismiss", "nope"], h.io, h.deps)).toBe(2);
+  expect(h.dismissals).toEqual([]);
+});
+
+test("inbox --clear removes every entry", async () => {
+  const h = harness([entry({}), entry({ id: "bbbbbbbb-2", conversationId: "s2" })]);
+  expect(await run(["inbox", "--clear"], h.io, h.deps)).toBe(0);
+  expect(h.dismissals).toEqual([{ all: true }]);
+  expect(h.out.join("")).toBe("dismissed 2\n");
 });

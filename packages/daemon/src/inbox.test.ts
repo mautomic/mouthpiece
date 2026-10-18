@@ -153,3 +153,25 @@ test("a response without a route does not inherit the previous one", () => {
   const id = inbox.record(event({ text: "Answered from elsewhere." })) as string;
   expect(inbox.get(id)?.route).toBeUndefined();
 });
+
+test("dismiss removes an entry with a remove change; the session's next response brings it back", () => {
+  const { inbox, changes } = setup();
+  const id = inbox.record(event({})) as string;
+  expect(inbox.dismiss(id)).toBe("dismissed");
+  expect(inbox.list()).toEqual([]);
+  expect(changes.at(-1)).toEqual({ type: "remove", id });
+  expect(inbox.dismiss(id)).toBe("gone");
+  const again = inbox.record(event({ text: "One more question?" })) as string;
+  expect(inbox.get(again)?.state).toBe("waiting");
+});
+
+test("dismiss refuses an entry with a reply in flight, and dismissAll skips it", () => {
+  const { inbox } = setup();
+  const sending = inbox.record(event({ conversationId: "a" })) as string;
+  inbox.record(event({ conversationId: "b" }));
+  inbox.record(event({ conversationId: "c" }));
+  inbox.setState(sending, "sending");
+  expect(inbox.dismiss(sending)).toBe("in-flight");
+  expect(inbox.dismissAll()).toBe(2);
+  expect(inbox.list().map((e) => e.id)).toEqual([sending]);
+});

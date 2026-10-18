@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  dismissInbox,
   getMode,
   getSettings,
   health,
@@ -194,4 +195,20 @@ test("a refused reply raises MouthpieceError with the status and reason", async 
 
 test("reply waits up to REPLY_TIMEOUT_MS by default", () => {
   expect(REPLY_TIMEOUT_MS).toBe(25_000);
+});
+
+test("dismissInbox posts the id to /v1/inbox/dismiss", async () => {
+  let seenBody = "";
+  let seenPath = "";
+  const fetchFake = (async (url: string, init: RequestInit) => {
+    seenPath = new URL(url).pathname;
+    seenBody = String(init.body);
+    return new Response(JSON.stringify({ dismissed: 1 }), { status: 200 });
+  }) as unknown as typeof fetch;
+  expect(
+    await dismissInbox({ id: "e1" }, { url: "http://x", token: "t", fetch: fetchFake }),
+  ).toEqual({
+    dismissed: 1,
+  });
+  expect([seenPath, seenBody]).toEqual(["/v1/inbox/dismiss", '{"id":"e1"}']);
 });

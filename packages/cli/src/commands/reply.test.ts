@@ -66,6 +66,7 @@ function harness(
         submits.push(r);
         return { status: "submitted" };
       },
+      dismissInbox: async () => ({ dismissed: 0 }),
     },
     startDaemon: async () => ({ url: "http://127.0.0.1:7317" }),
     env: {},

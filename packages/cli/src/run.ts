@@ -44,7 +44,7 @@ const USAGE = `usage: mouthpiece <command>
   auth <provider> [--delete]              read the API key from stdin
   kokoro install | status | uninstall     manage the free local Kokoro voice
   send --tmux <target> <text…>            type text into a tmux pane (conversation spike)
-  inbox                                   the latest response of each session
+  inbox [--dismiss <id|label> | --clear]  the latest response of each session; remove one or all
   reply <id|label> [text…] | --submit <id|label>
                                           type a reply into that session's terminal ([reply] enabled)
   build-hotkeys | build-helper            build the helper app (hotkeys, menubar, mic pause)`;

@@ -129,6 +129,11 @@ func carriedDraft(text: String, lastSent: String?) -> String? {
   return text
 }
 
+/** After the row at `removedAt` goes, the index of the row the cursor moves to (nil: none left). */
+func nextFocusIndex(removedAt: Int, remaining: Int) -> Int? {
+  remaining == 0 ? nil : min(removedAt, remaining - 1)
+}
+
 /** True when the rows that stay keep their order, so new rows can be inserted without moving any. */
 func keptInOrder(current: [String], desired: [String]) -> Bool {
   let wanted = Set(desired)
@@ -357,6 +362,11 @@ func runInboxSelfTest() -> Int32 {
   check(keptInOrder(current: ["a", "b"], desired: ["n", "a", "b"]), "rows: a new row on top keeps the others in place")
   check(keptInOrder(current: ["a", "b", "c"], desired: ["a", "c"]), "rows: a removal keeps the others in place")
   check(!keptInOrder(current: ["a", "b"], desired: ["b", "a"]), "rows: a swap needs a rebuild")
+
+  // ⌘⌫ removes a row: the cursor moves to the row that takes its place
+  check(nextFocusIndex(removedAt: 1, remaining: 3) == 1, "focus: the next row takes the removed row's place")
+  check(nextFocusIndex(removedAt: 3, remaining: 3) == 2, "focus: removing the last row moves to the one above")
+  check(nextFocusIndex(removedAt: 0, remaining: 0) == nil, "focus: nothing left, no focus")
 
   if failures.isEmpty {
     print("ok")

@@ -2,6 +2,8 @@ import {
   daemonUrl,
   type Env,
   type HealthResponse,
+  type InboxDismissRequest,
+  type InboxDismissResponse,
   type InboxResponse,
   type InterruptRequest,
   type InterruptResult,
@@ -148,3 +150,5 @@ export const submitReply = (req: ReplySubmitRequest, opts: ClientOptions = {}) =
     timeoutMs: REPLY_TIMEOUT_MS,
     ...opts,
   });
+export const dismissInbox = (req: InboxDismissRequest, opts: ClientOptions = {}) =>
+  request<InboxDismissResponse>("POST", "/v1/inbox/dismiss", req, opts);

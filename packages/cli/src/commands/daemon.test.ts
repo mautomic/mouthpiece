@@ -51,6 +51,7 @@ function harness(codes: Record<string, number> = {}, state = "running") {
       inbox: unused,
       reply: unused,
       submitReply: unused,
+      dismissInbox: unused,
     },
     startDaemon: unused,
     env: { MOUTHPIECE_LAUNCH_AGENTS_DIR: dir, MOUTHPIECE_HOME: join(dir, "home") },

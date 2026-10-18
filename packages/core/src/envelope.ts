@@ -2,6 +2,7 @@ import { isKokoroSpeed, KOKORO_SPEED_MAX, KOKORO_SPEED_MIN } from "./config.ts";
 import {
   ANNOUNCES,
   FORMATS,
+  type InboxDismissRequest,
   type InterruptRequest,
   KINDS,
   MODES,
@@ -137,6 +138,16 @@ export function parseReplyRequest(input: unknown): ParseResult<ReplyRequest> {
     const text = input.text;
     if (typeof text !== "string") fail("text must be a string");
     return { id: requiredId(input), text };
+  });
+}
+
+export function parseInboxDismissRequest(input: unknown): ParseResult<InboxDismissRequest> {
+  return parse(() => {
+    if (!isRecord(input)) fail("body must be a JSON object");
+    const all = input.all === true;
+    const hasId = input.id !== undefined;
+    if (all === hasId) fail("exactly one of id or all: true is required");
+    return all ? { all: true } : { id: requiredId(input) };
   });
 }
 
