@@ -25,6 +25,8 @@ export interface SpeakerDeps {
   /** Decides what to say (see createPreparer). */
   prepare(event: NormalizedSpeakEvent): Promise<Prepared>;
   onSpoken?(record: SpokenRecord): void;
+  /** Called just before each clip of `item` starts playing. */
+  onAudio?(item: QueueItem): void;
 }
 
 type Synthesis = { ok: true; clip: AudioClip } | { ok: false; error: unknown };
@@ -172,6 +174,7 @@ export function createSpeaker(deps: SpeakerDeps): PlayFn {
         }
         if (offset === 0 && !resumed)
           deps.log({ msg: "first_audio", id: item.id, latencyMs: now() - item.enqueuedAt });
+        deps.onAudio?.(item);
         try {
           await deps.player.play(result.clip, signal);
         } catch (error) {
@@ -194,6 +197,7 @@ export function createSpeaker(deps: SpeakerDeps): PlayFn {
       }
       if (i === startChunk && !resumed)
         deps.log({ msg: "first_audio", id: item.id, latencyMs: now() - item.enqueuedAt });
+      deps.onAudio?.(item);
       try {
         await deps.player.play(result.clip, signal);
       } catch (error) {

@@ -163,3 +163,38 @@ test("a summarized response's entry carries the summary", async () => {
   expect(entry.summary).toBe("The short version.");
   expect(entry.text).toBe(long);
 });
+
+const SPOKEN = "The migration ran and every table checks out. Shall I continue?";
+
+test("a spoken response's entry reports speech started", async () => {
+  await boot(new FakeDriver());
+  await speak({ text: SPOKEN, source: "agent", conversationId: "c1", reply: route }, o());
+  await daemon.queue.idle();
+  const [entry] = await entries();
+  expect(entry.speech).toBe("started");
+});
+
+test("a muted response's entry is never spoken", async () => {
+  await boot(new FakeDriver());
+  await call("POST", "/v1/mode", { mode: "off" });
+  await speak({ text: SPOKEN, source: "agent", conversationId: "c1", reply: route }, o());
+  const [entry] = await entries();
+  expect(entry.speech).toBe("none");
+});
+
+test("a response stopped before it plays is never spoken", async () => {
+  await boot(new FakeDriver());
+  await call("POST", "/v1/pause", { reason: "test" });
+  await speak({ text: SPOKEN, source: "agent", conversationId: "c1", reply: route }, o());
+  expect((await entries())[0].speech).toBe("pending");
+  await call("POST", "/v1/stop");
+  const [entry] = await entries();
+  expect(entry.speech).toBe("none");
+});
+
+test("a response too short to speak is never spoken", async () => {
+  await boot(new FakeDriver());
+  await speak({ text: "Done.", source: "agent", conversationId: "c1", reply: route }, o());
+  const [entry] = await entries();
+  expect(entry.speech).toBe("none");
+});

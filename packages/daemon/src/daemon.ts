@@ -234,6 +234,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
   const player = players.player;
   // Replays are not recorded, so history keeps the original full + summary (US-010, FR-7).
   const replays = new WeakSet<NormalizedSpeakEvent>();
+  // Queue item id → its inbox entry, so the panel can wait for the voice before popping up.
+  const entryFor = new Map<string, string>();
   const queue = new SpeechQueue({
     play: createSpeaker({
       provider,
@@ -243,6 +245,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       onSpoken: (r) => {
         if (!replays.has(r.event)) history.add(r);
       },
+      onAudio: (item) => {
+        const entryId = entryFor.get(item.id);
+        if (entryId !== undefined) inbox.speech(entryId, "started");
+      },
     }),
     expireAfterMs: config.queue.expireAfterMs,
     labelWindowMs: config.queue.labelWindowMs,
@@ -251,17 +257,25 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     maxPauseMs: config.micPause.maxPauseMs,
     onError: (error, item) =>
       log({ level: "error", msg: "play_failed", id: item.id, error: String(error) }),
+    onRetire: (item) => {
+      const entryId = entryFor.get(item.id);
+      entryFor.delete(item.id);
+      // Only while still pending: a response that played has `started` already.
+      if (entryId !== undefined) inbox.speech(entryId, "none");
+    },
   });
 
   const enqueue = (event: NormalizedSpeakEvent): SpeakResponse => {
     // Every response goes to the inbox, even muted or trivial ones: you may still answer it (US-025).
     const entryId = inbox.record(event);
-    if (event.kind === "response" && modes.resolve(event) === "off") {
-      return { id: null, skipped: "muted" };
-    }
-    if (deduper.isDuplicate(event)) return { id: null, skipped: "duplicate" };
+    const unspoken = (skipped: string): SpeakResponse => {
+      if (entryId !== undefined) inbox.speech(entryId, "none");
+      return { id: null, skipped };
+    };
+    if (event.kind === "response" && modes.resolve(event) === "off") return unspoken("muted");
+    if (deduper.isDuplicate(event)) return unspoken("duplicate");
     const reason = skipReason(event, config.filter);
-    if (reason) return { id: null, skipped: reason };
+    if (reason) return unspoken(reason);
     // Start summarizing now; it overlaps whatever is playing.
     const prepared = preparer.prepare(event);
     if (entryId !== undefined) {
@@ -272,7 +286,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
         })
         .catch(() => {});
     }
-    return { id: queue.enqueue(event).id };
+    const item = queue.enqueue(event);
+    if (entryId !== undefined) entryFor.set(item.id, entryId);
+    return { id: item.id };
   };
   notify = (text) => {
     // A conversation per notice, so a second notice never replaces a first one still queued.

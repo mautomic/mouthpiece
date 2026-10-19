@@ -41,15 +41,17 @@ function controllablePlay() {
 function setup(nowRef = { t: 0 }, announceFor?: SpeechQueueOptions["announceFor"]) {
   const p = controllablePlay();
   const errors: unknown[] = [];
+  const retired: string[] = [];
   const queue = new SpeechQueue({
     play: p.play,
     expireAfterMs: 5 * 60_000,
     labelWindowMs: 10 * 60_000,
     now: () => nowRef.t,
     onError: (e) => errors.push(e),
+    onRetire: (item) => retired.push(item.event.text),
     announceFor,
   });
-  return { queue, p, errors, nowRef };
+  return { queue, p, errors, nowRef, retired };
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -785,5 +787,56 @@ describe("SpeechQueue pause/resume (US-022)", () => {
     queue.pause("user");
     expect(queue.held).toBeNull();
     await queue.idle();
+  });
+});
+
+describe("SpeechQueue onRetire (an item leaves for good)", () => {
+  test("an item is retired once it finishes playing", async () => {
+    const { queue, p, retired } = setup();
+    queue.enqueue(event("a"));
+    expect(retired).toEqual([]);
+    p.started[0]?.release();
+    await queue.idle();
+    expect(retired).toEqual(["a"]);
+  });
+
+  test("dropped, stopped, replaced and expired items are retired without playing", async () => {
+    const nowRef = { t: 0 };
+    const { queue, p, retired } = setup(nowRef);
+    queue.enqueue(event("playing", { conversationId: "c0" }));
+    queue.enqueue(event("old", { conversationId: "c1" }));
+    queue.enqueue(event("new", { conversationId: "c1" }));
+    expect(retired).toEqual(["old"]);
+    queue.enqueue(event("interrupted", { conversationId: "c2" }));
+    queue.interrupt("test", "c2");
+    expect(retired).toEqual(["old", "interrupted"]);
+    nowRef.t = 6 * 60_000;
+    p.started[0]?.release();
+    await tick();
+    expect(retired).toEqual(["old", "interrupted", "playing", "new"]);
+    queue.enqueue(event("stopped", { conversationId: "c3" }));
+    queue.enqueue(event("queued", { conversationId: "c4" }));
+    queue.stopAll();
+    await queue.idle();
+    expect(retired.slice(4).sort()).toEqual(["queued", "stopped"]);
+  });
+
+  test("a paused item is not retired until it is skipped", async () => {
+    const { queue, retired } = setup();
+    queue.enqueue(event("held"));
+    queue.pause("mic");
+    await tick();
+    expect(retired).toEqual([]);
+    queue.skip();
+    expect(retired).toEqual(["held"]);
+  });
+
+  test("stopping right after a pause retires the item once", async () => {
+    const { queue, retired } = setup();
+    queue.enqueue(event("held"));
+    queue.pause("mic");
+    queue.stopAll();
+    await tick();
+    expect(retired).toEqual(["held"]);
   });
 });

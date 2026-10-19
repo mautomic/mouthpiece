@@ -229,6 +229,9 @@ export const INBOX_STATES = ["waiting", "busy", "sending", "typed"] as const;
 export type InboxState = (typeof INBOX_STATES)[number];
 
 /** GET /v1/inbox: the latest response of one conversation. */
+/** Whether a response's speech has begun: `none` when it won't be spoken (muted, skipped, dropped, failed). */
+export type InboxSpeech = "pending" | "started" | "none";
+
 export interface InboxEntry {
   id: string;
   source: string;
@@ -243,6 +246,8 @@ export interface InboxEntry {
   state: InboxState;
   /** When a reply was last sent from here; its text is never returned. */
   reply?: { at: number };
+  /** Absent from daemons before this field; treat that as `started`. */
+  speech?: InboxSpeech;
 }
 
 export interface InboxResponse {

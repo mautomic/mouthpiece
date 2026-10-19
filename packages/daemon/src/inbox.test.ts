@@ -44,6 +44,7 @@ test("a response creates a waiting entry with its route", () => {
       at: 1_000,
       route,
       state: "waiting",
+      speech: "pending",
     },
   ]);
   expect(changes).toHaveLength(1);
@@ -174,4 +175,27 @@ test("dismiss refuses an entry with a reply in flight, and dismissAll skips it",
   expect(inbox.dismiss(sending)).toBe("in-flight");
   expect(inbox.dismissAll()).toBe(2);
   expect(inbox.list().map((e) => e.id)).toEqual([sending]);
+});
+
+test("speech moves from pending to started or none once, with a change each time", () => {
+  const { inbox, changes } = setup();
+  const spoken = inbox.record(event({ conversationId: "a" })) as string;
+  const silent = inbox.record(event({ conversationId: "b" })) as string;
+  changes.length = 0;
+  inbox.speech(spoken, "started");
+  inbox.speech(spoken, "started");
+  inbox.speech(spoken, "none");
+  inbox.speech(silent, "none");
+  inbox.speech(silent, "started");
+  expect(inbox.get(spoken)?.speech).toBe("started");
+  expect(inbox.get(silent)?.speech).toBe("none");
+  expect(changes).toHaveLength(2);
+});
+
+test("speech for a replaced entry is ignored", () => {
+  const { inbox } = setup();
+  const first = inbox.record(event({})) as string;
+  inbox.record(event({ text: "Second." }));
+  inbox.speech(first, "started");
+  expect(inbox.list()[0]?.speech).toBe("pending");
 });
