@@ -41,22 +41,23 @@ else
   echo "swiftc not found; skipping build-helper (install Xcode Command Line Tools to enable)."
 fi
 
+say_step "Local Kokoro voice (the default voice)"
+# Installed unless you answer no; without a terminal it installs too. Until it is, macOS say speaks.
+a=y
+if [ -t 0 ] && [ "$DRY_RUN" != 1 ]; then
+  read -rp "Install the free local Kokoro voice (~500 MB)? [Y/n] " a
+fi
+case "$a" in
+  n|N|no|No|NO) echo "Skipped; macOS say speaks until you run: mouthpiece kokoro install" ;;
+  *) run "$MP" kokoro install || echo "Kokoro install failed; continuing with macOS say." ;;
+esac
+
 say_step "TTS provider key (optional)"
 if [ "$DRY_RUN" != 1 ] && [ -t 0 ]; then
-  read -rsp "Inworld API key (Enter to skip and use macOS say): " key; echo
+  read -rsp "Inworld API key (optional; Enter to skip): " key; echo
   if [ -n "$key" ]; then printf '%s' "$key" | "$MP" auth inworld; fi
 else
   echo "+ (skipped prompt) printf <key> | $MP auth inworld"
-fi
-
-say_step "Local Kokoro voice (optional)"
-if [ -t 0 ] && [ "$DRY_RUN" != 1 ]; then
-  read -rp "Install the free local Kokoro voice (~500 MB)? [y/N] " a
-  if [ "$a" = y ] || [ "$a" = Y ]; then
-    run "$MP" kokoro install || echo "Kokoro install failed; continuing with macOS say."
-  fi
-else
-  echo "+ (skipped prompt) $MP kokoro install"
 fi
 
 say_step "Claude Code hooks"

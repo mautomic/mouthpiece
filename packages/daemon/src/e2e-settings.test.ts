@@ -62,7 +62,7 @@ test("GET /v1/settings reports the chain, the Kokoro voice and speed, and every 
   const settings = await getSettings(o());
   expect(settings.chain).toEqual(["kokoro", "say"]);
   expect(settings.kokoro.voice).toBe("af_bella");
-  expect(settings.kokoro.speed).toBe(1);
+  expect(settings.kokoro.speed).toBe(1.3);
   expect(settings.kokoro.voices).toHaveLength(28);
   expect(settings.kokoro.voices).toContainEqual({
     id: "af_jessica",

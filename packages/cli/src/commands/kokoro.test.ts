@@ -73,7 +73,7 @@ async function fakeInstall(): Promise<void> {
   await writeFile(join(pkg, "package.json"), JSON.stringify({ version: "1.2.1" }));
 }
 
-test("install creates <home>/kokoro, adds kokoro-js there, warms up, and hints at the chain", async () => {
+test("install creates <home>/kokoro, adds kokoro-js there, warms up, and says to restart the daemon", async () => {
   const h = harness();
   expect(await kokoroCommand(["install"], h.io, h.deps)).toBe(0);
   const dir = join(home, "kokoro");
@@ -91,7 +91,8 @@ test("install creates <home>/kokoro, adds kokoro-js there, warms up, and hints a
   const out = h.out.join("");
   expect(out).toContain("312");
   expect(out).toContain("498");
-  expect(out).toContain('Add "kokoro" to [provider].chain in config.toml');
+  expect(out).toContain("Restart the daemon to use it");
+  expect(out).not.toContain('Add "kokoro"');
   expect(h.err).toEqual([]);
 });
 
@@ -109,7 +110,7 @@ test("install stops with the error when bun add fails", async () => {
   expect(await kokoroCommand(["install"], h.io, h.deps)).toBe(1);
   expect(h.calls).toHaveLength(1);
   expect(h.err.join("")).toContain("network down");
-  expect(h.out.join("")).not.toContain("[provider].chain");
+  expect(h.out.join("")).not.toContain("Restart the daemon");
 });
 
 test("install reports a failed warm-up", async () => {
@@ -135,7 +136,8 @@ test("a warm-up that printed its timing succeeds even when Bun then crashes on e
   expect(await kokoroCommand(["install"], h.io, h.deps)).toBe(0);
   const out = h.out.join("");
   expect(out).toContain("Kokoro is ready (load 301 ms, first phrase 455 ms)");
-  expect(out).toContain('Add "kokoro" to [provider].chain in config.toml');
+  expect(out).toContain("Restart the daemon to use it");
+  expect(out).not.toContain('Add "kokoro"');
   // The crash is still reported, as a note.
   expect(h.err.join("")).toContain("exit code 134");
   expect(h.err.join("")).toContain("A C++ exception occurred");
@@ -212,6 +214,8 @@ test("uninstall removes exactly <home>/kokoro", async () => {
   expect(await kokoroCommand(["uninstall"], h.io, h.deps)).toBe(0);
   expect(h.calls.map((c) => c.cmd)).toEqual([["rm", "-rf", join(home, "kokoro")]]);
   expect(h.out.join("")).toContain("Removed");
+  expect(h.out.join("")).toContain("falls back to macOS say");
+  expect(h.out.join("")).not.toContain("[provider].chain");
 });
 
 test("uninstall with the real exec deletes <home>/kokoro and nothing else", async () => {

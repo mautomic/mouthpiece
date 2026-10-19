@@ -4,7 +4,7 @@ Mouthpiece reads your AI coding assistant's output aloud, so you don't have to w
 
 When Claude Code (or Codex, Gemini CLI, or any script) finishes a response, Mouthpiece cleans it up, optionally condenses it into a short spoken summary, and speaks it. Multiple sessions share one queue, so voices never overlap, and each project announces its name when more than one is talking. Speech pauses while you dictate and picks up where it left off.
 
-It runs entirely on your Mac. The default voices are free: macOS `say`, or the local [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) model. Summaries use your Claude Code subscription through `claude -p`, so they don't add API charges.
+It runs entirely on your Mac. The default voice is free: the local [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) model (Heart, at 1.3×), with macOS `say` as the backup. Summaries use your Claude Code subscription through `claude -p`, so they don't add API charges.
 
 ```
  Claude Code ─┐  hooks
@@ -34,7 +34,8 @@ The installer is safe to re-run. It:
 
 1. installs dependencies and links the `mouthpiece` command into `~/.local/bin`,
 2. builds the helper app (hotkeys, menubar, mic pause, gap-free player),
-3. offers to store an Inworld API key and to install the local Kokoro voice (~500 MB),
+3. installs the local Kokoro voice (~500 MB; answer `n` to skip it and use macOS `say`), then offers to store an
+   optional Inworld API key,
 4. installs hooks for Claude Code, and for Codex and Gemini CLI if they're installed,
 5. starts the daemon as a launchd agent, so it runs at login,
 6. says "Mouthpiece is ready."
@@ -93,16 +94,17 @@ Speech goes through a **provider chain**: Mouthpiece uses the first provider, an
 
 API keys are stored in the macOS Keychain. A `<PROVIDER>_API_KEY` environment variable (e.g. `ELEVENLABS_API_KEY`) is used first when it's set.
 
-For example, to use Kokoro with `say` as the backup:
+The default chain is Kokoro with `say` as the backup. Until Kokoro is installed, it's skipped and `say` speaks.
+To change the voice or speed (the menubar's **Settings** does the same):
 
 ```toml
 # ~/.config/mouthpiece/config.toml
 [provider]
-chain = ["kokoro", "say"]
+chain = ["kokoro", "say"]   # the default
 
 [provider.kokoro]
-voice = "af_heart"   # `mouthpiece voices --provider kokoro` lists all 28
-speed = 1.2          # 0.5 to 2
+voice = "af_heart"   # the default; `mouthpiece voices --provider kokoro` lists all 28
+speed = 1.3          # the default; 0.5 to 2
 ```
 
 You can also give each project its own voice, keyed on the project's directory name:
@@ -127,7 +129,7 @@ Commonly changed settings:
 
 | Setting | Default | What it does |
 |---|---|---|
-| `provider.chain` | `["say"]` | Voices to try, in order |
+| `provider.chain` | `["kokoro", "say"]` | Voices to try, in order (an uninstalled Kokoro is skipped) |
 | `modes.default` | `"summary"` | `summary`, `full`, or `off` |
 | `summarizer.thresholdChars` | `300` | Responses shorter than this are spoken in full |
 | `summarizer.maxChars` | `700` | The longest a summary can be; each one is sized to its response (about 40% of its length) |

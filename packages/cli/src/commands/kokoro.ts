@@ -24,7 +24,7 @@ export const kokoroCommand: CommandFn = async (args, io, deps) => {
         io.err(`mouthpiece: removing ${dir} failed: ${r.stderr.trim()}\n`);
         return 1;
       }
-      io.out(`Removed ${dir}. Remove "kokoro" from [provider].chain in config.toml.\n`);
+      io.out(`Removed ${dir}. Mouthpiece falls back to macOS say after a daemon restart.\n`);
       return 0;
     }
     default:
@@ -69,7 +69,9 @@ async function install(io: CliIO, deps: CliDeps, home: string, dir: string): Pro
     );
   }
   io.out(`Kokoro is ready (load ${timing.loadMs} ms, first phrase ${timing.generateMs} ms).\n`);
-  io.out('Add "kokoro" to [provider].chain in config.toml, e.g. chain = ["kokoro", "say"].\n');
+  io.out(
+    'Restart the daemon to use it. (If your config.toml sets [provider].chain, keep "kokoro" in it.)\n',
+  );
   return 0;
 }
 

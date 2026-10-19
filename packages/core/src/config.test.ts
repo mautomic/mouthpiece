@@ -54,7 +54,7 @@ test("configPath honors MOUTHPIECE_CONFIG", () => {
 test("defaults are not shared mutable state", async () => {
   const a = await loadConfig(join(dir, "nope.toml"));
   a.provider.chain.push("mutated");
-  expect(DEFAULT_CONFIG.provider.chain).toEqual(["say"]);
+  expect(DEFAULT_CONFIG.provider.chain).toEqual(["kokoro", "say"]);
 });
 
 test("phase 2 defaults", () => {
@@ -181,7 +181,7 @@ test.each([
 });
 
 test("phase 4 defaults", () => {
-  expect(DEFAULT_CONFIG.provider.kokoro).toEqual({ voice: "af_heart", speed: 1 });
+  expect(DEFAULT_CONFIG.provider.kokoro).toEqual({ voice: "af_heart", speed: 1.3 });
   expect(DEFAULT_CONFIG.menubar).toEqual({ enabled: true });
   expect(DEFAULT_CONFIG.micPause).toEqual({
     enabled: true,
@@ -221,7 +221,7 @@ test("phase 4 TOML resolves and partial tables keep defaults", async () => {
   );
   const c = await loadConfig(path);
   expect(c.provider.chain).toEqual(["kokoro", "say"]);
-  expect(c.provider.kokoro).toEqual({ voice: "af_heart", speed: 1 });
+  expect(c.provider.kokoro).toEqual({ voice: "af_heart", speed: 1.3 });
   expect(c.menubar).toEqual({ enabled: true });
   expect(c.micPause).toEqual({ ...DEFAULT_CONFIG.micPause, ignoreBundleIds: ["us.zoom.xos"] });
 });
