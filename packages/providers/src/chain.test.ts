@@ -244,7 +244,7 @@ test("kokoro is built with the configured voice and the injected loader when ins
     const providers = createProviders(config, { ...d, home, kokoroLoader: async () => engine });
     expect(providers.map((p) => p.name)).toEqual(["kokoro", "say"]);
     expect(providers[0]).toBeInstanceOf(KokoroProvider);
-    expect(providers[0]?.cacheKey).toBe("bm_george\0q8");
+    expect(providers[0]?.cacheKey).toBe("bm_george\0q8\x001.3"); // the default speed, 1.3
     const clip = await createProviderChain(config, {
       ...d,
       home,

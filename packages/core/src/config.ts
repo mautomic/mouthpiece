@@ -92,13 +92,14 @@ export const MAX_PAUSE_MS = 86_400_000;
 
 export const DEFAULT_CONFIG: Config = {
   provider: {
-    chain: ["say"],
+    // Kokoro is skipped (with a warning) until `mouthpiece kokoro install`, so say speaks meanwhile.
+    chain: ["kokoro", "say"],
     say: {},
     inworld: { model: "inworld-tts-2-flash", voice: "Ashley" },
     elevenlabs: { model: "eleven_flash_v2_5", voice: "JBFqnCBsd6RMkjVDRZzb" },
     deepgram: { model: "aura-2-thalia-en" },
     openai: { model: "tts-1", voice: "alloy" },
-    kokoro: { voice: "af_heart", speed: 1 },
+    kokoro: { voice: "af_heart", speed: 1.3 },
   },
   voices: {},
   filter: { minChars: 20, trivial: ["done", "ok", "okay", "got it", "sounds good"] },

@@ -141,20 +141,21 @@ test("install.sh treats a failed helper build as non-fatal", async () => {
   expect(line).toMatch(/build-helper \|\| /);
 });
 
-test("install.sh dry run plans the optional Kokoro install without prompting (US-019)", async () => {
+test("install.sh dry run plans the Kokoro install, the default voice, before the optional key (US-019)", async () => {
   const r = await dryRun("install.sh");
   expect(r.code).toBe(0);
-  expect(r.out).toContain("Local Kokoro voice (optional)");
+  expect(r.out).toContain("Local Kokoro voice (the default voice)");
   const plan = r.out.split("\n").find((l) => l.includes("kokoro install"));
-  expect(plan).toBe(`+ (skipped prompt) ${home}/.local/bin/mouthpiece kokoro install`);
-  expect(r.out).not.toContain("[y/N]");
+  expect(plan).toBe(`+ ${home}/.local/bin/mouthpiece kokoro install`);
+  expect(r.out).not.toContain("[Y/n]");
+  expect(r.out.indexOf("kokoro install")).toBeLessThan(r.out.indexOf("TTS provider key"));
   expect(await readdir(home)).toEqual([]);
 });
 
-test("install.sh asks before installing Kokoro, and only on a terminal outside a dry run", async () => {
+test("install.sh installs Kokoro unless you answer no, asking only on a terminal outside a dry run", async () => {
   const script = await Bun.file(join(REPO, "install.sh")).text();
   expect(script).toContain('if [ -t 0 ] && [ "$DRY_RUN" != 1 ]; then');
-  expect(script).toContain("Install the free local Kokoro voice (~500 MB)? [y/N]");
+  expect(script).toContain("Install the free local Kokoro voice (~500 MB)? [Y/n]");
   const line = script.split("\n").find((l) => l.includes("kokoro install") && l.includes("run "));
   // A failed Kokoro install leaves the rest of the install (and macOS say) working.
   expect(line).toMatch(/kokoro install \|\| /);

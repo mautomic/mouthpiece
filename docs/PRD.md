@@ -419,7 +419,7 @@ Stories are grouped by phase. Each should fit in one focused session.
 
 - **US-017:** Global hotkeys for stop, skip, replay, and mode toggle (via `skhd`/Hammerspoon or a tiny Swift helper). **Moved to Phase 2** (2026-10-17): users need a one-key way to stop speech; interim workaround is a macOS Shortcuts hotkey running `mouthpiece stop`.
 - **US-018:** Menubar indicator: speaking, idle, or muted; queue depth; current provider. *Implemented.* Its Settings submenu changes the Kokoro voice and speed and saves them to the config file (`POST /v1/settings`).
-- **US-019:** Local high-quality TTS (Kokoro-82M) as a $0 provider. *Implemented* with `kokoro-js` (ONNX, q8), not MLX/Core ML.
+- **US-019:** Local high-quality TTS (Kokoro-82M) as a $0 provider. *Implemented* with `kokoro-js` (ONNX, q8), not MLX/Core ML. Since 2026-10-19 it's the default voice (Heart, `af_heart`, at 1.3×; chain `["kokoro", "say"]`), and `install.sh` installs it unless you answer no.
   - Installed by `mouthpiece kokoro install`.
   - Runs in a child process, so a render can be killed mid-way.
   - Has a configurable voice and speed.
