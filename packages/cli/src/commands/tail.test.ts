@@ -112,9 +112,17 @@ test("codex format speaks task_complete messages with the session id", async () 
   const done = tailCommand(["--format", "codex", "--path", sessions], h.io, h.deps);
   await until(() => h.err.join("").includes("waiting"));
   expect(h.err.join("")).toContain(`waiting for ${sessions}`);
-  const day = join(sessions, "2026", "10", "17");
+  // Today's folder: the tailer skips days before yesterday.
+  const now = new Date();
+  const [y, m, d] = [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((n) =>
+    String(n).padStart(2, "0"),
+  ) as [string, string, string];
+  const day = join(sessions, y, m, d);
   await mkdir(day, { recursive: true });
-  const file = join(day, "rollout-2026-10-17T12-00-00-0199f0aa-1234-7abc-8def-0123456789ab.jsonl");
+  const file = join(
+    day,
+    `rollout-${y}-${m}-${d}T12-00-00-0199f0aa-1234-7abc-8def-0123456789ab.jsonl`,
+  );
   await writeFile(
     file,
     `${JSON.stringify({

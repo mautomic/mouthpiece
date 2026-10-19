@@ -131,6 +131,7 @@ Pause semantics (US-022):
 | `route` | the reply route (`POST /v1/speak` `reply`), if any |
 | `state` | `waiting` (replyable), `busy` (a prompt was submitted), `sending`, `typed` (typed, not submitted) |
 | `reply` | `{ at }`: when a reply was last sent; its text is never returned |
+| `speech` | `pending` until the response's first audio plays, then `started`; `none` when it won't be spoken (muted, skipped, dropped from the queue, or nothing rendered). Set once. Absent from older daemons: treat as `started` |
 
 ## GET /v1/inbox/events
 `text/event-stream`. First `event: snapshot` with the `InboxResponse`, then `event: entry` (an `InboxEntry`) or

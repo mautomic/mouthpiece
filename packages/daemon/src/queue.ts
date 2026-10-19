@@ -60,6 +60,11 @@ export interface SpeechQueueOptions {
   /** Test seam: schedules the eager pause expiry. */
   timers?: QueueTimers;
   onError?: (error: unknown, item: QueueItem) => void;
+  /**
+   * An item left the queue for good: played through, or skipped, stopped, interrupted, replaced or
+   * expired. A paused item is not retired; it waits to resume.
+   */
+  onRetire?: (item: QueueItem) => void;
 }
 
 export interface SpeechQueueSettings {
@@ -182,7 +187,7 @@ export class SpeechQueue {
     // Every conversation counts as active (US-006), labeled or not: an approval alert from another
     // session carries its label in its text. Only the daemon's own notices are not conversations.
     if (event.source !== NOTICE_SOURCE) this.#lastSeen.set(key, now);
-    this.#pending = this.#pending.filter((p) => conversationKey(p.event) !== key);
+    this.#dropPending((p) => conversationKey(p.event) === key);
     const item: QueueItem = {
       id: `${now.toString(36)}-${(this.#seq++).toString(36)}`,
       event,
@@ -199,22 +204,20 @@ export class SpeechQueue {
   interrupt(source: string, conversationId?: string): InterruptResult {
     const matches = (e: NormalizedSpeakEvent) =>
       e.source === source && (conversationId === undefined || e.conversationId === conversationId);
-    const before = this.#pending.length;
-    this.#pending = this.#pending.filter((p) => !matches(p.event));
+    const dropped = this.#dropPending((p) => matches(p.event));
     const heldStopped = this.#held !== null && matches(this.#held.item.event);
-    if (heldStopped) this.#held = null;
+    if (heldStopped) this.#dropHeld();
     const current = this.#current;
     const playingStopped = current !== null && !current.pausing && matches(current.item.event);
     if (playingStopped) current.controller.abort();
     this.#settleIfIdle();
-    return { stopped: heldStopped || playingStopped, dropped: before - this.#pending.length };
+    return { stopped: heldStopped || playingStopped, dropped };
   }
 
   stopAll(): InterruptResult {
-    const dropped = this.#pending.length;
-    this.#pending = [];
+    const dropped = this.#dropPending(() => true);
     const heldStopped = this.#held !== null;
-    this.#held = null;
+    this.#dropHeld();
     const current = this.#current;
     const playingStopped = current !== null && !current.pausing;
     current?.controller.abort();
@@ -230,7 +233,7 @@ export class SpeechQueue {
       return true;
     }
     if (!this.#held) return false;
-    this.#held = null;
+    this.#dropHeld();
     this.#settleIfIdle();
     return true;
   }
@@ -238,6 +241,21 @@ export class SpeechQueue {
   idle(): Promise<void> {
     if (this.#isIdle()) return Promise.resolve();
     return new Promise((resolve) => this.#idleWaiters.push(resolve));
+  }
+
+  /** Removes the pending items `drop` matches and retires them; returns how many. */
+  #dropPending(drop: (item: QueueItem) => boolean): number {
+    const gone = this.#pending.filter(drop);
+    if (gone.length === 0) return 0;
+    this.#pending = this.#pending.filter((p) => !drop(p));
+    for (const item of gone) this.opts.onRetire?.(item);
+    return gone.length;
+  }
+
+  #dropHeld(): void {
+    const held = this.#held;
+    this.#held = null;
+    if (held) this.opts.onRetire?.(held.item);
   }
 
   #now(): number {
@@ -297,7 +315,7 @@ export class SpeechQueue {
   #pump(): void {
     if (this.#current || this.#reasons.size > 0) return;
     const now = this.#now();
-    this.#pending = this.#pending.filter((p) => now - p.enqueuedAt <= this.#expireAfterMs);
+    this.#dropPending((p) => now - p.enqueuedAt > this.#expireAfterMs);
     // A held item resumes first and never expires: it was already playing.
     const held = this.#held;
     this.#held = null;
@@ -339,6 +357,8 @@ export class SpeechQueue {
       })
       .finally(() => {
         this.#current = null;
+        // A paused item is held to resume (or retired when the hold is dropped); anything else ends here.
+        if (!playing.pausing) this.opts.onRetire?.(item);
         // While paused this does nothing; the held item waits for resume().
         this.#pump();
         this.#settleIfIdle();

@@ -579,3 +579,40 @@ test("rendering ahead, a chunk whose stream fails is skipped and nothing rejects
   );
   expect(unhandled).toEqual([]);
 });
+
+test("reports audio just before each clip plays, with or without the gap-free player", async () => {
+  const chunking = {
+    withBreaks: { firstChars: 40, targetChars: 30 },
+    gapless: { targetChars: 30 },
+  };
+  const text = "I fixed it. Tests pass. Check is green. Docs updated too.";
+  for (const gapless of [false, true]) {
+    const player = new FakePlayer({ gapless });
+    const playedBefore: number[] = [];
+    await createSpeaker({
+      provider: new FakeProvider({ chunking }),
+      player,
+      log: () => {},
+      prepare,
+      onAudio: (it) => {
+        expect(it.id).toBe("1");
+        playedBefore.push(player.played.length);
+      },
+    })(item(text, { format: "plain" }), ctx());
+    expect(playedBefore).toEqual(player.played.map((_, i) => i));
+    expect(playedBefore.length).toBeGreaterThan(1);
+  }
+});
+
+test("no audio is reported when nothing plays", async () => {
+  const provider = new FakeProvider({ failWith: new Error("down") });
+  let audio = 0;
+  await createSpeaker({
+    provider,
+    player: new FakePlayer(),
+    log: () => {},
+    prepare,
+    onAudio: () => audio++,
+  })(item("Nothing renders.", { format: "plain" }), ctx());
+  expect(audio).toBe(0);
+});

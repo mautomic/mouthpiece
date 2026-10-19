@@ -1,6 +1,7 @@
 import type {
   Config,
   InboxEntry,
+  InboxSpeech,
   InboxState,
   NormalizedSpeakEvent,
   ReplyRoute,
@@ -70,6 +71,7 @@ export class Inbox {
       ...(existing?.alert && { alert: existing.alert }),
       ...(route && { route }),
       state: "waiting",
+      speech: "pending",
     };
     if (existing) {
       this.#replaced.add(existing.id);
@@ -89,6 +91,14 @@ export class Inbox {
     const entry = this.get(id);
     if (!entry) return;
     entry.summary = summary;
+    this.#emit(entry);
+  }
+
+  /** Speech began, or won't happen: set once, from `pending`. */
+  speech(id: string, speech: Exclude<InboxSpeech, "pending">): void {
+    const entry = this.get(id);
+    if (entry?.speech !== "pending") return;
+    entry.speech = speech;
     this.#emit(entry);
   }
 

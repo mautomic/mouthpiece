@@ -58,8 +58,12 @@ struct InboxEntry: Decodable, Equatable {
   let at: Double
   let route: InboxRoute?
   let state: String
+  /// "pending" until the voice starts, then "started"; "none" when it won't be spoken. Absent from
+  /// older daemons, which counts as started.
+  var speech: String? = nil
 
   var name: String { label ?? source }
+  var speechPending: Bool { speech == "pending" }
 }
 
 private struct InboxSnapshot: Decodable {
@@ -75,11 +79,13 @@ private struct InboxRemoval: Decodable {
 final class InboxModel {
   private(set) var entries: [String: InboxEntry] = [:]
   private(set) var enabled = false
-  private var seen = Set<String>()
+  /// Ids already heard (or there before the first snapshot), so each pops up at most once.
+  private var announced = Set<String>()
   private var started = false
 
-  /// Applies one stream event. Returns the entries that are new: an id not seen before, arriving
-  /// after the first snapshot. A snapshot (start-up or reconnect) is never new.
+  /// Applies one stream event. Returns the entries that are new: an id not announced yet, arriving
+  /// after the first snapshot, once its speech is no longer pending (so a pop-up comes with the
+  /// voice, not ahead of it). A snapshot (start-up or reconnect) is never new itself.
   func apply(event: String, data: String) -> [InboxEntry] {
     let bytes = Data(data.utf8)
     let decoder = JSONDecoder()
@@ -88,7 +94,7 @@ final class InboxModel {
       guard let snapshot = try? decoder.decode(InboxSnapshot.self, from: bytes) else { return [] }
       enabled = snapshot.enabled
       entries = Dictionary(snapshot.entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-      seen.formUnion(entries.keys)
+      announced.formUnion(entries.values.filter { !$0.speechPending }.map(\.id))
       started = true
       return []
     case "entry":
@@ -98,8 +104,9 @@ final class InboxModel {
         $0.key == entry.id || $0.value.source != entry.source || $0.value.conversationId != entry.conversationId
       }
       entries[entry.id] = entry
-      let isNew = started && !seen.contains(entry.id)
-      seen.insert(entry.id)
+      if entry.speechPending && started { return [] }
+      let isNew = started && !announced.contains(entry.id)
+      announced.insert(entry.id)
       return isNew ? [entry] : []
     case "remove":
       guard let removal = try? decoder.decode(InboxRemoval.self, from: bytes) else { return [] }
@@ -321,9 +328,13 @@ func messagePreview(_ text: String) -> String? {
 struct MessageDisplay: Equatable {
   let text: String
   let toggle: String?
+  /// Shown in place of the text, dimmed: the reply isn't being read out yet.
+  var placeholder = false
 }
 
 func messageDisplay(_ entry: InboxEntry, expanded: Bool) -> MessageDisplay {
+  // No spoilers: the text shows once the voice starts reading it.
+  if entry.speechPending { return MessageDisplay(text: "Speaking soon…", toggle: nil, placeholder: true) }
   guard let preview = messagePreview(entry.text) else { return MessageDisplay(text: entry.text, toggle: nil) }
   return expanded
     ? MessageDisplay(text: entry.text, toggle: "Show less")
@@ -339,10 +350,10 @@ func runInboxSelfTest() -> Int32 {
 
   func entryJSON(
     _ id: String, conv: String = "c1", state: String = "waiting", route: Bool = true, at: Double = 1,
-    label: String? = "web"
+    label: String? = "web", speech: String? = nil
   ) -> String {
     let r = route ? ",\"route\":{\"via\":\"orca\",\"target\":\"term_a\",\"agent\":\"claude\"}" : ""
-    let l = label.map { ",\"label\":\"\($0)\"" } ?? ""
+    let l = (label.map { ",\"label\":\"\($0)\"" } ?? "") + (speech.map { ",\"speech\":\"\($0)\"" } ?? "")
     return "{\"id\":\"\(id)\",\"source\":\"claude-code\",\"conversationId\":\"\(conv)\"\(l),"
       + "\"text\":\"Shall I continue?\",\"at\":\(at),\"state\":\"\(state)\"\(r),\"alert\":{\"text\":\"x\",\"at\":1}}"
   }
@@ -385,6 +396,16 @@ func runInboxSelfTest() -> Int32 {
   check(model.ordered.map(\.id) == ["e7"], "model: a snapshot replaces the rows")
   check(model.apply(event: "entry", data: entryJSON("e7", conv: "c7", state: "busy")).isEmpty, "model: an id from a snapshot is not new")
   check(model.apply(event: "entry", data: "not json").isEmpty && model.apply(event: "other", data: "{}").isEmpty, "model: garbage is ignored")
+  // Pop-ups wait for the voice: a pending entry is new only once its speech starts (or won't happen)
+  check(model.apply(event: "entry", data: entryJSON("v1", conv: "v1", speech: "pending")).isEmpty, "model: a pending entry pops nothing yet")
+  check(model.ordered.contains { $0.id == "v1" }, "model: a pending entry still gets its tab")
+  check(model.apply(event: "entry", data: entryJSON("v1", conv: "v1", speech: "started")).map(\.id) == ["v1"], "model: it is new once its speech starts")
+  check(model.apply(event: "entry", data: entryJSON("v1", conv: "v1", state: "busy", speech: "started")).isEmpty, "model: and only once")
+  check(model.apply(event: "entry", data: entryJSON("v2", conv: "v2", speech: "none")).map(\.id) == ["v2"], "model: an unspoken entry is new at once")
+  _ = model.apply(event: "snapshot", data: snapshotJSON([entryJSON("v3", conv: "v3", speech: "pending")]))
+  check(model.apply(event: "entry", data: entryJSON("v3", conv: "v3", speech: "started")).map(\.id) == ["v3"], "model: a pending entry from a reconnect snapshot pops when its speech starts")
+  let pending = try! JSONDecoder().decode(InboxEntry.self, from: Data(entryJSON("v4", speech: "pending").utf8))
+  check(messageDisplay(pending, expanded: true) == MessageDisplay(text: "Speaking soon…", toggle: nil, placeholder: true), "message: a pending entry hides its text")
   let unlabeled = try? JSONDecoder().decode(InboxEntry.self, from: Data(entryJSON("e8", label: nil).utf8))
   check(unlabeled?.name == "claude-code", "model: name falls back to the source")
 

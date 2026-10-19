@@ -152,6 +152,7 @@ struct ConversationView: View {
           let shown = messageDisplay(entry, expanded: model.isExpanded(key))
           Text(markdown(shown.text))
             .font(.system(size: 13)).lineSpacing(2)
+            .foregroundStyle(shown.placeholder ? .secondary : .primary)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
           if let toggle = shown.toggle {

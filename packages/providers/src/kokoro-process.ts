@@ -245,7 +245,8 @@ export function processKokoroLoader(
     });
     ready.catch(() => {}); // generate() alone (without awaiting the load) must not leave it unhandled
     const proc = Bun.spawn({
-      cmd: [process.execPath, script, JSON.stringify(data)],
+      // --no-install: without it Bun fetches a missing kokoro-js from npm instead of failing to load.
+      cmd: [process.execPath, "--no-install", script, JSON.stringify(data)],
       stdin: "ignore",
       stdout: "ignore",
       stderr: "pipe",
