@@ -234,8 +234,8 @@ test("usage text shows every flag of say, voices, tail and the hook targets", as
     "--fallback-say",
     "voices [--provider x]",
     "tail --format codex|gemini|lines|margin [--path p]",
-    "install-hooks [--target claude-code|codex|gemini] [--idle-alerts]",
-    "uninstall-hooks [--target claude-code|codex|gemini]",
+    "install-hooks [--target claude-code|codex|gemini|devin] [--idle-alerts]",
+    "uninstall-hooks [--target claude-code|codex|gemini|devin]",
   ])
     expect(usage).toContain(flag);
 });

@@ -45,6 +45,7 @@ packages/listen     on-device speech-to-text prototype (conversation-mode spike;
 adapters/claude-code  Claude Code hooks
 adapters/codex      Codex CLI hooks
 adapters/gemini     Gemini CLI hooks
+adapters/devin      Devin CLI hooks
 adapters/file-tail  session-log tailers for tools without hooks (`mouthpiece tail`, `[[follow]]`), including Margin review logs
 adapters/tmux       TmuxDriver (ConversationDriver over `tmux send-keys`; `mouthpiece send`)
 adapters/orca       OrcaReplyDriver: types replies into Orca terminals (`mouthpiece reply`), with per-agent screen rules

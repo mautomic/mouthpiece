@@ -51,7 +51,7 @@ async function runFromProject(command: string) {
   };
 }
 
-const NAMES = ["claude-code", "codex", "gemini"] as const;
+const NAMES = ["claude-code", "codex", "gemini", "devin"] as const;
 
 test.each(NAMES)("%s hook ignores a project bunfig.toml whose preload logs", async (name) => {
   await writeFile(join(project, "bunfig.toml"), 'preload = ["./p.ts"]\n');

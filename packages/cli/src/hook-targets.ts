@@ -1,5 +1,5 @@
 // hook-targets.ts: where each hook-capable tool keeps its hooks, and the entries Mouthpiece adds
-// (US-011, US-014). All three tools share the {Event: [{matcher?, hooks: [...]}]} shape.
+// (US-011, US-014). All four tools share the {Event: [{matcher?, hooks: [...]}]} shape.
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Env } from "@mouthpiece/core";
@@ -13,7 +13,7 @@ export interface HookSpec {
 export type Group = Record<string, unknown> & { hooks: unknown[] };
 
 export interface HookTarget {
-  name: "claude-code" | "codex" | "gemini";
+  name: "claude-code" | "codex" | "gemini" | "devin";
   settingsPath(env: Env): string;
   /** Our entries are recognized by this path in their command. */
   marker: string;
@@ -118,10 +118,36 @@ const gemini: HookTarget = {
   afterInstall: "Gemini CLI hooks are enabled by default; manage them with /hooks panel.",
 };
 
+/**
+ * Devin CLI: the `"hooks"` key of `~/.config/devin/config.json`, timeouts in seconds. Devin also
+ * reads `~/.claude/settings.json`, but drops that whole file if it holds an event Devin doesn't
+ * know (e.g. Orca's `StopFailure`), so Mouthpiece installs its own entries here instead.
+ */
+const devin: HookTarget = {
+  name: "devin",
+  settingsPath: (env) =>
+    env.MOUTHPIECE_DEVIN_CONFIG || join(homedir(), ".config", "devin", "config.json"),
+  marker: markerFor("devin"),
+  groups(spec) {
+    const hook = (arg: string, timeout: number) => ({
+      type: "command",
+      command: commandLine(spec, arg),
+      timeout,
+    });
+    return {
+      Stop: [{ hooks: [hook("stop", 10)] }],
+      UserPromptSubmit: [{ hooks: [hook("prompt", 5)] }],
+      PermissionRequest: [{ hooks: [hook("permission", 5)] }],
+    };
+  },
+  afterInstall: "New Devin sessions will speak. Run /hooks in Devin to confirm they loaded.",
+};
+
 export const TARGETS: Record<TargetName, HookTarget> = {
   "claude-code": claudeCode,
   codex,
   gemini,
+  devin,
 };
 
 export function isTargetName(name: string): name is TargetName {

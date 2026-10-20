@@ -63,7 +63,7 @@ fi
 say_step "Claude Code hooks"
 run "$MP" install-hooks
 
-# Codex and Gemini CLI hooks, only for tools that are installed. A failure (e.g. a settings file
+# Codex, Gemini CLI and Devin hooks, only for tools that are installed. A failure (e.g. a settings file
 # that isn't plain JSON) is reported but doesn't stop the install.
 if command -v codex >/dev/null 2>&1; then
   say_step "Codex hooks"
@@ -73,6 +73,11 @@ fi
 if command -v gemini >/dev/null 2>&1; then
   say_step "Gemini CLI hooks"
   run "$MP" install-hooks --target gemini || echo "Gemini hook install failed; continuing."
+fi
+if command -v devin >/dev/null 2>&1; then
+  say_step "Devin hooks"
+  run "$MP" install-hooks --target devin || echo "Devin hook install failed; continuing."
+  echo "→ In Devin, run /hooks to confirm they loaded."
 fi
 
 say_step "Background daemon (launchd)"
