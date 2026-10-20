@@ -37,8 +37,8 @@ const USAGE = `usage: mouthpiece <command>
   voices [--provider x]                   list each provider's voices
   tail --format codex|gemini|lines|margin [--path p] [--source s] [--label l]
                                           speak new messages from a session log
-  install-hooks [--target claude-code|codex|gemini] [--idle-alerts]
-  uninstall-hooks [--target claude-code|codex|gemini]
+  install-hooks [--target claude-code|codex|gemini|devin] [--idle-alerts]
+  uninstall-hooks [--target claude-code|codex|gemini|devin]
   install-agent | uninstall-agent
   daemon start | stop | restart           control the installed daemon (stop lasts until next login)
   auth <provider> [--delete]              read the API key from stdin

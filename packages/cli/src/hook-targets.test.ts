@@ -18,7 +18,7 @@ test("hookMainFor points at the adapter's main.ts", () => {
 });
 
 test("each target's marker is its adapter's main.ts", () => {
-  for (const name of ["claude-code", "codex", "gemini"] as const) {
+  for (const name of ["claude-code", "codex", "gemini", "devin"] as const) {
     expect(TARGETS[name].name).toBe(name);
     expect(TARGETS[name].marker).toBe(`/adapters/${name}/src/main.ts`);
   }
@@ -27,6 +27,7 @@ test("each target's marker is its adapter's main.ts", () => {
 test("isTargetName accepts only known targets", () => {
   expect(isTargetName("codex")).toBe(true);
   expect(isTargetName("gemini")).toBe(true);
+  expect(isTargetName("devin")).toBe(true);
   expect(isTargetName("claude-code")).toBe(true);
   expect(isTargetName("nope")).toBe(false);
   expect(isTargetName("toString")).toBe(false);
@@ -51,6 +52,38 @@ test("gemini path precedence", () => {
   expect(p({ MOUTHPIECE_GEMINI_SETTINGS: "/t/s.json", GEMINI_HOME: "/gh" })).toBe("/t/s.json");
   expect(p({ GEMINI_HOME: "/gh" })).toBe("/gh/settings.json");
   expect(p({})).toEndWith("/.gemini/settings.json");
+});
+
+test("devin path precedence", () => {
+  const p = TARGETS.devin.settingsPath;
+  expect(p({ MOUTHPIECE_DEVIN_CONFIG: "/t/config.json" })).toBe("/t/config.json");
+  expect(p({})).toEndWith("/.config/devin/config.json");
+});
+
+test("devin groups: seconds, no async, no Interrupt event", () => {
+  const c = (arg: string, timeout: number) => ({
+    type: "command",
+    command: cmd("devin", arg),
+    timeout,
+  });
+  expect(TARGETS.devin.groups(specFor("devin"))).toEqual({
+    Stop: [{ hooks: [c("stop", 10)] }],
+    UserPromptSubmit: [{ hooks: [c("prompt", 5)] }],
+    PermissionRequest: [{ hooks: [c("permission", 5)] }],
+  });
+  expect(TARGETS.devin.afterInstall).toBe(
+    "New Devin sessions will speak. Run /hooks in Devin to confirm they loaded.",
+  );
+});
+
+test("devin: preserves a foreign Stop hook, is idempotent, and removes only ours", () => {
+  const foreign = { type: "command", command: "echo done" };
+  const original = { theme_mode: "dark", hooks: { Stop: [{ hooks: [foreign] }] } };
+  const once = mergeHooks(original, TARGETS.devin, specFor("devin"));
+  expect(mergeHooks(once, TARGETS.devin, specFor("devin"))).toEqual(once);
+  const { settings, removed } = removeHooks(once, TARGETS.devin);
+  expect(removed).toBe(3);
+  expect(settings).toEqual(original);
 });
 
 test("claude-code groups", () => {

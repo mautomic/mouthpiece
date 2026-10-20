@@ -51,6 +51,7 @@ function harness() {
       MOUTHPIECE_CLAUDE_SETTINGS: settingsPath,
       MOUTHPIECE_CODEX_HOOKS: join(dir, "codex", "hooks.json"),
       MOUTHPIECE_GEMINI_SETTINGS: join(dir, "gemini", "settings.json"),
+      MOUTHPIECE_DEVIN_CONFIG: join(dir, "devin", "config.json"),
     },
     exec: async () => {
       throw new Error("unexpected exec");
@@ -147,6 +148,27 @@ test("--target codex writes hooks.json only, preserves foreign hooks, and prints
 
   await installHooksCommand(["--target", "codex"], h.io, h.deps);
   expect(JSON.parse(await readFile(hooksPath, "utf8"))).toEqual(s);
+});
+
+test('--target devin merges into config.json under "hooks" and keeps unrelated keys', async () => {
+  const devinPath = join(dir, "devin", "config.json");
+  await mkdir(join(dir, "devin"));
+  const original = { version: 1, devin: { org_id: "org-x" }, agent: { model: "swe-2-high" } };
+  await writeFile(devinPath, JSON.stringify(original));
+  const h = harness();
+  expect(await installHooksCommand(["--target", "devin"], h.io, h.deps)).toBe(0);
+  const s = JSON.parse(await readFile(devinPath, "utf8")) as Settings & typeof original;
+  expect({ version: s.version, devin: s.devin, agent: s.agent }).toEqual(original);
+  expect(Object.keys(s.hooks).sort()).toEqual(["PermissionRequest", "Stop", "UserPromptSubmit"]);
+  expect(s.hooks.Stop?.[0]?.hooks[0]?.command).toBe(
+    '"/u/.bun/bin/bun" --config="/repo/bunfig.toml" --no-env-file "/repo/adapters/devin/src/main.ts" stop',
+  );
+  await expect(stat(settingsPath)).rejects.toThrow();
+  expect(h.out.join("")).toContain(devinPath);
+  expect(h.out.join("")).toContain("Run /hooks in Devin");
+
+  await installHooksCommand(["--target", "devin"], h.io, h.deps);
+  expect(JSON.parse(await readFile(devinPath, "utf8"))).toEqual(s);
 });
 
 test("--target gemini writes settings.json and keeps unrelated keys", async () => {

@@ -31,6 +31,15 @@
         "@mouthpiece/hook-kit": "workspace:*",
       },
     },
+    "adapters/devin": {
+      "name": "@mouthpiece/adapter-devin",
+      "version": "0.1.0",
+      "dependencies": {
+        "@mouthpiece/client": "workspace:*",
+        "@mouthpiece/core": "workspace:*",
+        "@mouthpiece/hook-kit": "workspace:*",
+      },
+    },
     "adapters/file-tail": {
       "name": "@mouthpiece/adapter-file-tail",
       "version": "0.1.0",
@@ -159,6 +168,8 @@
     "@mouthpiece/adapter-claude-code": ["@mouthpiece/adapter-claude-code@workspace:adapters/claude-code"],
 
     "@mouthpiece/adapter-codex": ["@mouthpiece/adapter-codex@workspace:adapters/codex"],
+
+    "@mouthpiece/adapter-devin": ["@mouthpiece/adapter-devin@workspace:adapters/devin"],
 
     "@mouthpiece/adapter-file-tail": ["@mouthpiece/adapter-file-tail@workspace:adapters/file-tail"],
 

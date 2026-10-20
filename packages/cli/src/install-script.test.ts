@@ -71,11 +71,17 @@ test("uninstall.sh deletes the Keychain key before removing the CLI link it runs
   expect(unlink).toBeGreaterThan(auth);
 });
 
-/** process.env.PATH without any directory that holds a `codex` or `gemini` (this machine may have them). */
+/** process.env.PATH without any directory that holds a `codex`, `gemini` or `devin` (this machine may have them). */
 function pathWithoutAgents(): string {
   return (process.env.PATH ?? "")
     .split(":")
-    .filter((d) => d && !existsSync(join(d, "codex")) && !existsSync(join(d, "gemini")))
+    .filter(
+      (d) =>
+        d &&
+        !existsSync(join(d, "codex")) &&
+        !existsSync(join(d, "gemini")) &&
+        !existsSync(join(d, "devin")),
+    )
     .join(":");
 }
 
@@ -117,9 +123,20 @@ test("install.sh installs Gemini hooks only when gemini is on PATH", async () =>
   expect(await readdir(home)).toEqual([]);
 });
 
-test("install.sh treats a failed Codex or Gemini hook install as non-fatal", async () => {
+test("install.sh installs Devin hooks only when devin is on PATH", async () => {
+  const withDevin = await dryRun("install.sh", await pathWith("devin"));
+  expect(withDevin.code).toBe(0);
+  expect(withDevin.out).toContain("install-hooks --target devin");
+  expect(withDevin.out).not.toContain("install-hooks --target codex");
+  expect(await readdir(home)).toEqual([]);
+
+  const without = await dryRun("install.sh", pathWithoutAgents());
+  expect(without.out).not.toContain("install-hooks --target devin");
+});
+
+test("install.sh treats a failed Codex, Gemini or Devin hook install as non-fatal", async () => {
   const script = await Bun.file(join(REPO, "install.sh")).text();
-  for (const target of ["codex", "gemini"]) {
+  for (const target of ["codex", "gemini", "devin"]) {
     const line = script
       .split("\n")
       .find((l) => l.includes(`install-hooks --target ${target}`) && l.includes("run "));
@@ -127,10 +144,10 @@ test("install.sh treats a failed Codex or Gemini hook install as non-fatal", asy
   }
 });
 
-test("uninstall.sh dry run removes hooks for all three targets", async () => {
+test("uninstall.sh dry run removes hooks for all four targets", async () => {
   const r = await dryRun("uninstall.sh", pathWithoutAgents());
   expect(r.code).toBe(0);
-  for (const target of ["claude-code", "codex", "gemini"])
+  for (const target of ["claude-code", "codex", "gemini", "devin"])
     expect(r.out).toContain(`uninstall-hooks --target ${target}`);
   expect(await readdir(home)).toEqual([]);
 });

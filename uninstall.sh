@@ -21,6 +21,7 @@ run "$MP uninstall-agent"
 run "$MP uninstall-hooks --target claude-code"
 run "$MP uninstall-hooks --target codex || echo 'Could not update Codex hooks; continuing.'"
 run "$MP uninstall-hooks --target gemini || echo 'Could not update Gemini hooks; continuing.'"
+run "$MP uninstall-hooks --target devin || echo 'Could not update Devin hooks; continuing.'"
 # Before the CLI link is removed: $MP may be that link.
 if ask "Delete the Inworld key from Keychain?"; then run "$MP auth inworld --delete"; fi
 run "rm -f '$HOME/.local/bin/mouthpiece' '$HOME/.mouthpiece/bin/mouthpiece-hotkeys'"

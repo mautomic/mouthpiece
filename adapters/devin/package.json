@@ -1,0 +1,14 @@
+{
+  "name": "@mouthpiece/adapter-devin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/hook.ts"
+  },
+  "dependencies": {
+    "@mouthpiece/core": "workspace:*",
+    "@mouthpiece/client": "workspace:*",
+    "@mouthpiece/hook-kit": "workspace:*"
+  }
+}

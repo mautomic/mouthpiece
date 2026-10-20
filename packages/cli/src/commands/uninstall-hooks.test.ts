@@ -52,6 +52,7 @@ function harness() {
       MOUTHPIECE_CLAUDE_SETTINGS: settingsPath,
       MOUTHPIECE_CODEX_HOOKS: join(dir, "codex", "hooks.json"),
       MOUTHPIECE_GEMINI_SETTINGS: join(dir, "gemini", "settings.json"),
+      MOUTHPIECE_DEVIN_CONFIG: join(dir, "devin", "config.json"),
     },
     exec: async () => {
       throw new Error("unexpected exec");
@@ -108,6 +109,7 @@ test("invalid JSON is refused and left untouched", async () => {
 test.each([
   ["codex", "codex/hooks.json"],
   ["gemini", "gemini/settings.json"],
+  ["devin", "devin/config.json"],
 ])("--target %s removes only that target's hooks", async (target, rel) => {
   const path = join(dir, rel);
   const h = harness();
