@@ -115,6 +115,19 @@ web = "bm_george"
 api = "af_bella"
 ```
 
+Or give each source its own voice. This is useful when several tools work in the same project:
+
+```toml
+[sourceVoices.kokoro]
+claude-code = "af_bella"
+codex = "am_adam"
+devin = "bm_george"
+```
+
+Source voices are provider-specific, so add an equivalent `[sourceVoices.say]` map if `say` is a
+regular fallback and you want it to remain distinct too. An event's explicit voice still wins, then
+the source mapping, then a project-label mapping.
+
 With the helper app built (`mouthpiece build-helper`), speech plays through a gap-free player.
 - **No pauses:** once speech starts, it never pauses mid-response.
 - **Start time:** Kokoro renders ahead and starts as soon as the rest is sure to keep up. That's usually right after the first sentence, a little later when the response opens with a very short one.

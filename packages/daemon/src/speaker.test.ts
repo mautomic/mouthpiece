@@ -224,7 +224,7 @@ test("abort while preparing plays nothing", async () => {
   expect(player.played).toEqual([]);
 });
 
-test("passes the event's voice and label to the provider with every chunk", async () => {
+test("passes the event's source, voice and label to the provider with every chunk", async () => {
   const provider = new FakeProvider({ maxCharsPerRequest: 12 });
   await createSpeaker({ provider, player: new FakePlayer(), log: () => {}, prepare })(
     item("First one. Second one.", { format: "plain", voice: "Samantha", label: "api" }),
@@ -232,7 +232,7 @@ test("passes the event's voice and label to the provider with every chunk", asyn
   );
   expect(provider.options).toHaveLength(2);
   for (const options of provider.options) {
-    expect(options).toMatchObject({ voice: "Samantha", label: "api", tag: "test" });
+    expect(options).toMatchObject({ source: "test", voice: "Samantha", label: "api", tag: "test" });
     expect(options.signal).toBeInstanceOf(AbortSignal);
   }
 });

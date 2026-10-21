@@ -121,6 +121,14 @@ test("[voices.say] in TOML resolves", async () => {
   expect((await loadConfig(path)).voices).toEqual({ say: { web: "Samantha" } });
 });
 
+test("source voice maps resolve separately from project-label voice maps", async () => {
+  const path = join(dir, "config.toml");
+  await writeFile(path, '[sourceVoices.kokoro]\ncodex = "am_adam"\n');
+  expect((await loadConfig(path)).sourceVoices).toEqual({
+    kokoro: { codex: "am_adam" },
+  });
+});
+
 test("profiles and quotas are open-keyed tables", () => {
   const c = resolveConfig({
     profiles: { "claude-code": { mode: "full" }, cron: {} },
@@ -167,6 +175,7 @@ test.each([
   [{ voices: { say: "x" } }, "voices.say"],
   [{ voices: { say: { web: "" } } }, "voices.say.web"],
   [{ voices: { say: { web: 3 } } }, "voices.say.web"],
+  [{ sourceVoices: { kokoro: { codex: "" } } }, "sourceVoices.kokoro.codex"],
   [{ usage: { warnAt: 1.2 } }, "usage.warnAt"],
   [{ usage: { warnAt: 0 } }, "usage.warnAt"],
   [{ usage: { warnAt: 1 } }, "usage.warnAt"],

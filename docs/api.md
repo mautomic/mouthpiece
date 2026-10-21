@@ -32,11 +32,12 @@ A new event replaces any not-yet-playing item from the same `source` + `conversa
 
 Voice selection, for whichever provider synthesizes the event (first match wins):
 1. the event's `voice`;
-2. `[voices.<provider>] "<label>" = "<voice>"` in the config, matched on the event's `label` (e.g. the project name);
-3. the provider's configured default (`provider.<name>.voice`; for Deepgram the voice is `provider.deepgram.model`).
+2. `[sourceVoices.<provider>] "<source>" = "<voice>"` in the config, matched on the event's `source` (e.g. `codex`);
+3. `[voices.<provider>] "<label>" = "<voice>"` in the config, matched on the event's `label` (e.g. the project name);
+4. the provider's configured default (`provider.<name>.voice`; for Deepgram the voice is `provider.deepgram.model`).
 
 Voice ids are provider-specific (`mouthpiece voices` lists them). The event's `voice` is passed to whichever provider
-synthesizes it, so pin it only when the chain's providers share voice ids; the per-label map is looked up per provider.
+synthesizes it, so pin it only when the chain's providers share voice ids; both config maps are looked up per provider.
 When `say` is given a voice it does not have (e.g. another provider's id after a fallback), it speaks in the system voice
 instead of failing.
 

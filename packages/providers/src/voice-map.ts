@@ -8,9 +8,9 @@ import type {
 } from "@mouthpiece/core";
 
 /**
- * Picks a per-label voice (`[voices.<provider>]`, e.g. one voice per project) when the event names
- * no voice itself. Selection order: the event's voice, then the label's mapped voice, then the
- * provider's configured default (US-015).
+ * Picks a configured source or label voice when the event names no voice itself. Selection order:
+ * the event's voice, source's mapped voice, label's mapped voice, then the provider's configured
+ * default (US-015).
  */
 export class VoiceMapProvider implements TtsProvider {
   readonly name: string;
@@ -23,7 +23,8 @@ export class VoiceMapProvider implements TtsProvider {
 
   constructor(
     private readonly inner: TtsProvider,
-    private readonly map: Record<string, string>,
+    private readonly labelMap: Record<string, string>,
+    private readonly sourceMap: Record<string, string> = {},
   ) {
     this.name = inner.name;
     this.maxCharsPerRequest = inner.maxCharsPerRequest;
@@ -36,9 +37,11 @@ export class VoiceMapProvider implements TtsProvider {
   }
 
   synthesize(text: string, opts: SynthesizeOptions = {}): Promise<AudioClip> {
-    const { label } = opts;
-    if (opts.voice !== undefined || label === undefined || !Object.hasOwn(this.map, label))
-      return this.inner.synthesize(text, opts);
-    return this.inner.synthesize(text, { ...opts, voice: this.map[label] });
+    if (opts.voice !== undefined) return this.inner.synthesize(text, opts);
+    if (opts.source !== undefined && Object.hasOwn(this.sourceMap, opts.source))
+      return this.inner.synthesize(text, { ...opts, voice: this.sourceMap[opts.source] });
+    if (opts.label !== undefined && Object.hasOwn(this.labelMap, opts.label))
+      return this.inner.synthesize(text, { ...opts, voice: this.labelMap[opts.label] });
+    return this.inner.synthesize(text, opts);
   }
 }

@@ -110,8 +110,8 @@ function createPaid(name: PaidProviderName, apiKey: string, config: Config): Tts
 }
 
 /**
- * Wraps each provider (`deps.wrap`, then the per-label voice map outermost so caches key on the
- * mapped voice) and chains them with fallback (FR-8).
+ * Wraps each provider (`deps.wrap`, then the per-source and per-label voice maps outermost so
+ * caches key on the mapped voice) and chains them with fallback (FR-8).
  */
 export function chainProviders(
   providers: readonly TtsProvider[],
@@ -120,7 +120,14 @@ export function chainProviders(
 ): FallbackProvider {
   const wrap = deps.wrap ?? ((p: TtsProvider) => p);
   return new FallbackProvider(
-    providers.map((p) => new VoiceMapProvider(wrap(p), config.voices[p.name] ?? {})),
+    providers.map(
+      (p) =>
+        new VoiceMapProvider(
+          wrap(p),
+          config.voices[p.name] ?? {},
+          config.sourceVoices[p.name] ?? {},
+        ),
+    ),
     {
       firstByteTimeoutMs: config.fallback.firstByteTimeoutMs,
       timeoutFor: (name, text) =>

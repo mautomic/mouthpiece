@@ -142,6 +142,8 @@ export interface SynthesizeOptions {
   signal?: AbortSignal;
   /** Attribution for usage metering (the event's source). */
   tag?: string;
+  /** The event's source; selects a per-source voice from `[sourceVoices.<provider>]`. */
+  source?: string;
   /** The event's label (e.g. a project name); selects a per-label voice from `[voices.<provider>]`. */
   label?: string;
 }

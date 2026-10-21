@@ -142,6 +142,7 @@ export function createSpeaker(deps: SpeakerDeps): PlayFn {
         .synthesize(chunk, {
           signal,
           tag: item.event.source,
+          source: item.event.source,
           voice: item.event.voice,
           label: item.event.label,
         })

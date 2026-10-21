@@ -31,6 +31,8 @@ export interface Config {
   };
   /** `[voices.<provider>] "<label>" = "<voice>"`: per-label (e.g. per-project) voice for each provider. */
   voices: Record<string, Record<string, string>>;
+  /** `[sourceVoices.<provider>] "<source>" = "<voice>"`: per-source voice for each provider. */
+  sourceVoices: Record<string, Record<string, string>>;
   filter: { minChars: number; trivial: string[] };
   queue: { expireAfterMs: number; labelWindowMs: number };
   fallback: { firstByteTimeoutMs: number };
@@ -102,6 +104,7 @@ export const DEFAULT_CONFIG: Config = {
     kokoro: { voice: "af_heart", speed: 1.3 },
   },
   voices: {},
+  sourceVoices: {},
   filter: { minChars: 20, trivial: ["done", "ok", "okay", "got it", "sounds good"] },
   queue: { expireAfterMs: 5 * 60_000, labelWindowMs: 10 * 60_000 },
   fallback: { firstByteTimeoutMs: 3000 },
@@ -232,6 +235,7 @@ export function resolveConfig(raw: unknown, base: Config = DEFAULT_CONFIG): Conf
       },
     },
     voices: resolveVoices(root.voices, base.voices),
+    sourceVoices: resolveSourceVoices(root.sourceVoices, base.sourceVoices),
     filter: {
       minChars:
         optional(filter.minChars, "filter.minChars", nonNegativeInt) ?? base.filter.minChars,
@@ -524,13 +528,21 @@ function resolveOpenAi(
 }
 
 function resolveVoices(raw: unknown, base: Config["voices"]): Config["voices"] {
+  return resolveVoiceMap(raw, base, "voices");
+}
+
+function resolveSourceVoices(raw: unknown, base: Config["sourceVoices"]): Config["sourceVoices"] {
+  return resolveVoiceMap(raw, base, "sourceVoices");
+}
+
+function resolveVoiceMap(raw: unknown, base: Record<string, Record<string, string>>, name: string) {
   if (raw === undefined) return base;
   const out: Config["voices"] = {};
-  for (const [provider, value] of Object.entries(table(raw, "voices"))) {
-    if (!isRecord(value)) throw new ConfigError(`voices.${provider} must be a table`);
+  for (const [provider, value] of Object.entries(table(raw, name))) {
+    if (!isRecord(value)) throw new ConfigError(`${name}.${provider} must be a table`);
     const map: Record<string, string> = {};
-    for (const [label, voice] of Object.entries(value)) {
-      map[label] = nonEmptyString(voice, `voices.${provider}.${label}`);
+    for (const [key, voice] of Object.entries(value)) {
+      map[key] = nonEmptyString(voice, `${name}.${provider}.${key}`);
     }
     out[provider] = map;
   }

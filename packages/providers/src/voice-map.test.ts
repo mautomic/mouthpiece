@@ -4,6 +4,7 @@ import { FakeProvider } from "./fake.ts";
 import { VoiceMapProvider } from "./voice-map.ts";
 
 const map = { web: "V-web", api: "V-api" };
+const sourceMap = { codex: "V-codex", devin: "V-devin" };
 
 test("a mapped label selects the mapped voice", async () => {
   const inner = new FakeProvider();
@@ -14,6 +15,24 @@ test("a mapped label selects the mapped voice", async () => {
 test("an explicit voice wins over the map", async () => {
   const inner = new FakeProvider();
   await new VoiceMapProvider(inner, map).synthesize("x", { label: "web", voice: "Explicit" });
+  expect(inner.options[0]?.voice).toBe("Explicit");
+});
+
+test("a mapped source selects its voice ahead of the label map", async () => {
+  const inner = new FakeProvider();
+  await new VoiceMapProvider(inner, map, sourceMap).synthesize("x", {
+    label: "web",
+    source: "codex",
+  });
+  expect(inner.options[0]).toMatchObject({ voice: "V-codex", label: "web", source: "codex" });
+});
+
+test("an explicit voice wins over the source map", async () => {
+  const inner = new FakeProvider();
+  await new VoiceMapProvider(inner, map, sourceMap).synthesize("x", {
+    source: "codex",
+    voice: "Explicit",
+  });
   expect(inner.options[0]?.voice).toBe("Explicit");
 });
 

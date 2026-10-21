@@ -153,6 +153,20 @@ test("the voices config maps the event label to a voice per provider", async () 
   expect(fake.options.map((o) => o.voice)).toEqual(["Ava", undefined, "Explicit"]);
 });
 
+test("the source voice map wins over labels and falls back to labels when unmapped", async () => {
+  const fake = new FakeProvider({ name: "say" });
+  const config = resolveConfig({
+    provider: { chain: ["say"] },
+    voices: { say: { web: "Ava" } },
+    sourceVoices: { say: { codex: "Fred" } },
+  });
+  const chain = createProviderChain(config, { ...deps().deps, wrap: () => fake });
+  await chain.synthesize("x", { source: "codex", label: "web" });
+  await chain.synthesize("x", { source: "devin", label: "web" });
+  await chain.synthesize("x", { source: "codex", label: "web", voice: "Explicit" });
+  expect(fake.options.map((o) => o.voice)).toEqual(["Fred", "Ava", "Explicit"]);
+});
+
 test("the voice map sits outside wrap, so wrapped providers see the mapped voice", async () => {
   const seen: (string | undefined)[] = [];
   const config = resolveConfig({ provider: { chain: ["say"] }, voices: { say: { web: "Ava" } } });
