@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { setTomlValue } from "./config-edit.ts";
+import { setTomlValue, unsetTomlKey } from "./config-edit.ts";
 
 test("replaces a key in its table and keeps everything else as written", () => {
   const before = [
@@ -64,4 +64,35 @@ test("escapes strings as TOML basic strings", () => {
   expect(Bun.TOML.parse(setTomlValue("", "t", "k", 'say "hi"\\'))).toEqual({
     t: { k: 'say "hi"\\' },
   });
+});
+
+test("unsetTomlKey removes the key's line and keeps every other line", () => {
+  const before = [
+    "[sourceVoices.kokoro]",
+    'codex = "am_adam"   # the deep one',
+    'devin = "af_bella"',
+    "",
+    "[modes]",
+    'default = "full"',
+    "",
+  ].join("\n");
+  expect(unsetTomlKey(before, "sourceVoices.kokoro", "codex")).toBe(
+    '[sourceVoices.kokoro]\ndevin = "af_bella"\n\n[modes]\ndefault = "full"\n',
+  );
+  expect(Bun.TOML.parse(unsetTomlKey(before, "sourceVoices.kokoro", "codex"))).toEqual({
+    sourceVoices: { kokoro: { devin: "af_bella" } },
+    modes: { default: "full" },
+  });
+});
+
+test("unsetTomlKey matches a quoted key, and leaves the table header behind", () => {
+  const before = '[sourceVoices.kokoro]\n"my.tool" = "am_adam"\n';
+  expect(unsetTomlKey(before, "sourceVoices.kokoro", '"my.tool"')).toBe("[sourceVoices.kokoro]\n");
+});
+
+test("unsetTomlKey ignores the same key in other tables and missing tables or keys", () => {
+  const before = '[voices.kokoro]\ncodex = "x"\n[sourceVoices.kokoro]\ndevin = "y"\n';
+  expect(unsetTomlKey(before, "sourceVoices.kokoro", "codex")).toBe(before);
+  expect(unsetTomlKey(before, "other.table", "devin")).toBe(before);
+  expect(unsetTomlKey("", "sourceVoices.kokoro", "codex")).toBe("");
 });

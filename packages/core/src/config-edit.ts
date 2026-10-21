@@ -37,6 +37,31 @@ export function setTomlValue(
   return lines.join(eol);
 }
 
+/** A TOML key for `name`: bare when safe, a quoted basic string otherwise (e.g. `"my.tool"`). */
+export function tomlKey(name: string): string {
+  return /^[A-Za-z0-9_-]+$/.test(name) ? name : literal(name);
+}
+
+/**
+ * Removes the `key = value` line from `[table]` and leaves every other line as written. A missing
+ * table or key leaves the document unchanged; an emptied table's header stays.
+ */
+export function unsetTomlKey(source: string, table: string, key: string): string {
+  const eol = source.includes("\r\n") ? "\r\n" : "\n";
+  const lines = source === "" ? [] : source.split(/\r?\n/);
+  const start = lines.findIndex((line) => headerName(line) === table);
+  if (start === -1) return source;
+  let end = lines.findIndex((line, i) => i > start && /^\s*\[/.test(line));
+  if (end === -1) end = lines.length;
+  const keyPattern = new RegExp(`^(\\s*)${escapeRegExp(key)}\\s*=`);
+  for (let i = start + 1; i < end; i++) {
+    if (!keyPattern.test(lines[i] ?? "")) continue;
+    lines.splice(i, 1);
+    return lines.join(eol);
+  }
+  return source;
+}
+
 /** `provider.kokoro` for `[provider.kokoro]` or `[ provider . kokoro ]  # x`; undefined otherwise. */
 function headerName(line: string): string | undefined {
   const match = /^\s*\[([^[\]]+)\]\s*(#.*)?$/.exec(line);

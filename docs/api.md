@@ -86,18 +86,27 @@ Under launchd (`dev.mouthpiece.daemon`) it exits cleanly, so it stays stopped un
 ```json
 { "chain": ["kokoro", "say"],
   "kokoro": { "voice": "af_heart", "speed": 1,
-              "voices": [{ "id": "af_heart", "name": "Heart", "language": "en-US" }, …] } }
+              "voices": [{ "id": "af_heart", "name": "Heart", "language": "en-US" }, …],
+              "sourceVoices": { "codex": "am_adam" } },
+  "sources": ["codex", "devin", "lambda"] }
 ```
 
-`kokoro.voices` lists every Kokoro voice. The Kokoro settings are used while `kokoro` is in `chain`.
+`kokoro.voices` lists every Kokoro voice; `kokoro.sourceVoices` is the `[sourceVoices.kokoro]` map.
+`sources` is every source the daemon knows — seen this run, metered in usage, or named in the
+config (`[profiles]`, any `[sourceVoices.<provider>]`) — sorted. The Kokoro settings are used while
+`kokoro` is in `chain`.
 
 ## POST /v1/settings
-Body `{ "kokoro": { "voice": "af_jessica", "speed": 1.3 } }`; at least one of `voice` and `speed`.
-`voice` must be one of `kokoro.voices`; `speed` is 0.5 to 2.
+Body `{ "kokoro": { "voice": "af_jessica", "speed": 1.3, "sourceVoices": { "codex": "am_adam", "devin": null } } }`;
+at least one of `voice`, `speed` and a non-empty `sourceVoices`. `voice` and every `sourceVoices`
+value must be one of `kokoro.voices`; `speed` is 0.5 to 2. A `sourceVoices` key must match the
+`source` pattern of `POST /v1/speak`; a null voice removes that source's mapping.
 
-The change is written to the config file under `[provider.kokoro]` (the key is replaced in place, or added;
-comments and the rest of the file are kept) and applied at once. 200 `SettingsResponse` with the new values.
-- 400: an unknown voice or a speed out of range.
+The change is written to the config file (`[provider.kokoro]`, and `[sourceVoices.kokoro]` for the
+source map — the key is replaced in place or added, quoted when the source name needs it, e.g.
+`"my.tool"`; comments and the rest of the file are kept) and applied at once. 200 `SettingsResponse`
+with the new values.
+- 400: an unknown voice, a bad source name, or a speed out of range.
 - 409: the config file has an error, or a layout the change can't be written into (e.g. `kokoro = { … }`
   as an inline table). The file is left unchanged; the error says what to fix.
 

@@ -70,6 +70,14 @@ test("metered provider records billed chars, cost, and cache hits by source", as
   expect(report.quotas[0]?.projectedChars).toBeGreaterThan(1000);
 });
 
+test("sources() lists every distinct metered source, sorted", () => {
+  expect(store.sources()).toEqual([]);
+  store.record({ provider: "say", source: "devin", chars: 1, cached: false, costUsd: 0 });
+  store.record({ provider: "say", source: "codex", chars: 1, cached: false, costUsd: 0 });
+  store.record({ provider: "kokoro", source: "codex", chars: 1, cached: true, costUsd: 0 });
+  expect(store.sources()).toEqual(["codex", "devin"]);
+});
+
 test("untagged synthesis is attributed to 'unknown'", async () => {
   await collectChunks(
     (await new MeteredProvider(new FakeProvider(), store).synthesize("hi")).chunks,

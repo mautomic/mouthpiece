@@ -247,11 +247,37 @@ describe("parseSettingsUpdate", () => {
     });
   });
 
+  test("accepts a source voice map, with null clearing a mapping", () => {
+    expect(
+      parseSettingsUpdate({ kokoro: { sourceVoices: { codex: "am_adam", devin: null } } }),
+    ).toEqual({
+      ok: true,
+      value: { kokoro: { sourceVoices: { codex: "am_adam", devin: null } } },
+    });
+    expect(parseSettingsUpdate({ kokoro: { sourceVoices: { "my.tool": "af_bella" } } })).toEqual({
+      ok: true,
+      value: { kokoro: { sourceVoices: { "my.tool": "af_bella" } } },
+    });
+  });
+
+  test.each([
+    [{ kokoro: { sourceVoices: "codex" } }, "kokoro.sourceVoices must be an object"],
+    [{ kokoro: { sourceVoices: { "Bad Source": "am_adam" } } }, "not a valid source"],
+    [{ kokoro: { sourceVoices: { codex: "" } } }, "kokoro.sourceVoices.codex"],
+    [{ kokoro: { sourceVoices: { codex: 1 } } }, "kokoro.sourceVoices.codex"],
+    [{ kokoro: { sourceVoices: { codex: "x".repeat(101) } } }, "kokoro.sourceVoices.codex"],
+    [{ kokoro: { sourceVoices: {} } }, "kokoro needs voice, speed, or sourceVoices"],
+  ])("rejects %p", (input, error) => {
+    const result = parseSettingsUpdate(input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain(error);
+  });
+
   test.each([
     [null, "body must be a JSON object"],
     [{}, "kokoro must be an object"],
-    [{ kokoro: {} }, "kokoro needs voice or speed"],
-    [{ kokoro: { voice: "" } }, "kokoro needs voice or speed"],
+    [{ kokoro: {} }, "kokoro needs voice, speed, or sourceVoices"],
+    [{ kokoro: { voice: "" } }, "kokoro needs voice, speed, or sourceVoices"],
     [{ kokoro: { voice: 1 } }, "voice must be a string"],
     [{ kokoro: { speed: 0.4 } }, "kokoro.speed must be a number from 0.5 to 2"],
     [{ kokoro: { speed: 2.5 } }, "kokoro.speed"],

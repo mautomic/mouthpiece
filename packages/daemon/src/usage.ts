@@ -119,6 +119,14 @@ export class UsageStore {
     return row.used ?? 0;
   }
 
+  /** Every distinct source ever metered, sorted. */
+  sources(): string[] {
+    const rows = this.#db.query("SELECT DISTINCT source FROM synth ORDER BY source").all() as {
+      source: string;
+    }[];
+    return rows.map((r) => r.source);
+  }
+
   /** Estimated cost across all providers in [from, to). */
   spentUsd(from: Date, to: Date): number {
     const row = this.#db

@@ -128,6 +128,9 @@ Source voices are provider-specific, so add an equivalent `[sourceVoices.say]` m
 regular fallback and you want it to remain distinct too. An event's explicit voice still wins, then
 the source mapping, then a project-label mapping.
 
+The menubar's Settings ▸ Source voices menu edits the same `[sourceVoices.kokoro]` map: it lists
+every source the daemon knows, and a pick is written to the config file and heard right away.
+
 With the helper app built (`mouthpiece build-helper`), speech plays through a gap-free player.
 - **No pauses:** once speech starts, it never pauses mid-response.
 - **Start time:** Kokoro renders ahead and starts as soon as the rest is sure to keep up. That's usually right after the first sentence, a little later when the response opens with a very short one.

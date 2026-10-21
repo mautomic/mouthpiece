@@ -120,12 +120,25 @@ export interface SettingsResponse {
   /** `provider.chain`, in order. */
   chain: string[];
   /** The local Kokoro voice (`[provider.kokoro]`); it is used while `kokoro` is in the chain. */
-  kokoro: { voice: string; speed: number; voices: VoiceInfo[] };
+  kokoro: {
+    voice: string;
+    speed: number;
+    voices: VoiceInfo[];
+    /** `[sourceVoices.kokoro]`: a per-source Kokoro voice, by source. */
+    sourceVoices: Record<string, string>;
+  };
+  /** Every source the daemon knows: seen this run, metered, or named in the config. Sorted. */
+  sources: string[];
 }
 
 /** POST /v1/settings: the settings to change; at least one is required. */
 export interface SettingsUpdate {
-  kokoro: { voice?: string; speed?: number };
+  kokoro: {
+    voice?: string;
+    speed?: number;
+    /** Write `[sourceVoices.kokoro]` entries; a null voice removes the source's mapping. */
+    sourceVoices?: Record<string, string | null>;
+  };
 }
 
 export type AudioFormat = "aiff" | "mp3" | "wav";

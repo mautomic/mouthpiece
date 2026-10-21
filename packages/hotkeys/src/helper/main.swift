@@ -239,9 +239,13 @@ struct DaemonSettings: Decodable {
     let voice: String
     let speed: Double
     let voices: [Voice]
+    /// `[sourceVoices.kokoro]`; absent from daemons before the field.
+    let sourceVoices: [String: String]?
   }
   let chain: [String]
   let kokoro: Kokoro
+  /// Every source the daemon knows; absent from daemons before the field.
+  let sources: [String]?
 }
 
 /// JSON for a request body; the values here are always serializable.
@@ -432,6 +436,55 @@ final class Menubar: NSObject, NSMenuDelegate {
     }
   }
 
+  /// Saves a source's Kokoro voice ("" clears its `[sourceVoices.kokoro]` mapping), then previews it.
+  @objc func chooseSourceVoice(_ sender: NSMenuItem) {
+    guard let pick = sender.representedObject as? [String: String],
+          let source = pick["source"], let voice = pick["voice"] else { return }
+    let mapping: [String: Any] = [source: voice.isEmpty ? NSNull() : voice]
+    post("/v1/settings", jsonBody(["kokoro": ["sourceVoices": mapping]])) { [weak self] data in
+      guard let self else { return }
+      guard let data, let next = try? JSONDecoder().decode(DaemonSettings.self, from: data) else {
+        self.refreshSettings()
+        return
+      }
+      self.settings = next
+      self.renderSettings()
+      let spoken = voice.isEmpty ? next.kokoro.voice : voice
+      let name = next.kokoro.voices.first { $0.id == spoken }?.name ?? spoken
+      let text = voice.isEmpty
+        ? "\(source) is back to the default voice."
+        : "Hi, I'm \(name), the voice of \(source)."
+      let event: [String: Any] = [
+        "text": text, "source": "menubar", "kind": "info",
+        "format": "plain", "mode": "full", "priority": "high", "voice": spoken,
+      ]
+      post("/v1/speak", jsonBody(event))
+    }
+  }
+
+  /// Adds the grouped voice items to `menu`; each item's representedObject is `payload(voice.id)`.
+  func addVoiceItems(
+    to menu: NSMenu, voices: [DaemonSettings.Voice], selected: String?,
+    action: Selector, payload: (String) -> Any
+  ) {
+    for (prefix, title) in Menubar.voiceGroups {
+      let group = voices.filter { $0.id.hasPrefix(prefix + "_") }
+      if group.isEmpty { continue }
+      if menu.numberOfItems > 0 { menu.addItem(NSMenuItem.separator()) }
+      let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+      header.isEnabled = false
+      menu.addItem(header)
+      for voice in group {
+        let entry = NSMenuItem(title: voice.name, action: action, keyEquivalent: "")
+        entry.target = self
+        entry.representedObject = payload(voice.id)
+        entry.state = voice.id == selected ? .on : .off
+        entry.indentationLevel = 1
+        menu.addItem(entry)
+      }
+    }
+  }
+
   @objc func chooseSpeed(_ sender: NSMenuItem) {
     guard let speed = sender.representedObject as? Double else { return }
     changeKokoro(["speed": speed]) { _ in "This is how fast I talk now." }
@@ -456,26 +509,44 @@ final class Menubar: NSObject, NSMenuDelegate {
 
     let voiceMenu = NSMenu()
     voiceMenu.autoenablesItems = false
-    for (prefix, title) in Menubar.voiceGroups {
-      let voices = kokoro.voices.filter { $0.id.hasPrefix(prefix + "_") }
-      if voices.isEmpty { continue }
-      if voiceMenu.numberOfItems > 0 { voiceMenu.addItem(NSMenuItem.separator()) }
-      let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-      header.isEnabled = false
-      voiceMenu.addItem(header)
-      for voice in voices {
-        let entry = NSMenuItem(title: voice.name, action: #selector(chooseVoice(_:)), keyEquivalent: "")
-        entry.target = self
-        entry.representedObject = voice.id
-        entry.state = voice.id == kokoro.voice ? .on : .off
-        entry.indentationLevel = 1
-        voiceMenu.addItem(entry)
-      }
-    }
+    addVoiceItems(
+      to: voiceMenu, voices: kokoro.voices, selected: kokoro.voice,
+      action: #selector(chooseVoice(_:))
+    ) { $0 }
     let current = kokoro.voices.first { $0.id == kokoro.voice }?.name ?? kokoro.voice
     let voiceItem = NSMenuItem(title: "Voice: \(current)", action: nil, keyEquivalent: "")
     voiceItem.submenu = voiceMenu
     settingsMenu.addItem(voiceItem)
+
+    // Per-source voices ([sourceVoices.kokoro]): one submenu per source the daemon knows.
+    if let sources = s.sources, !sources.isEmpty {
+      let mapped = kokoro.sourceVoices ?? [:]
+      let sourcesMenu = NSMenu()
+      sourcesMenu.autoenablesItems = false
+      for source in sources {
+        let voiceId = mapped[source]
+        let voiceName = voiceId.flatMap { id in kokoro.voices.first { $0.id == id }?.name } ?? voiceId
+        let entry = NSMenuItem(
+          title: "\(source): \(voiceName ?? "Default")", action: nil, keyEquivalent: "")
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let def = NSMenuItem(
+          title: "Default", action: #selector(chooseSourceVoice(_:)), keyEquivalent: "")
+        def.target = self
+        def.representedObject = ["source": source, "voice": ""]
+        def.state = voiceId == nil ? .on : .off
+        menu.addItem(def)
+        addVoiceItems(
+          to: menu, voices: kokoro.voices, selected: voiceId,
+          action: #selector(chooseSourceVoice(_:))
+        ) { ["source": source, "voice": $0] }
+        entry.submenu = menu
+        sourcesMenu.addItem(entry)
+      }
+      let sourcesItem = NSMenuItem(title: "Source voices", action: nil, keyEquivalent: "")
+      sourcesItem.submenu = sourcesMenu
+      settingsMenu.addItem(sourcesItem)
+    }
 
     let speedMenu = NSMenu()
     speedMenu.autoenablesItems = false

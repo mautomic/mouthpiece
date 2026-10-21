@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getSettings, MouthpieceError, status, updateSettings } from "@mouthpiece/client";
+import { getSettings, MouthpieceError, speak, status, updateSettings } from "@mouthpiece/client";
 import type { SettingsUpdate } from "@mouthpiece/core";
 import { FakeProvider } from "@mouthpiece/providers";
 import { type RunningDaemon, startDaemon } from "./daemon.ts";
@@ -128,6 +128,47 @@ test("a config file with an error, or a layout the editor can't change, is left 
     message: expect.stringContaining("edit it by hand"),
   });
   expect(await readFile(configPath, "utf8")).toBe(inline);
+});
+
+test("GET /v1/settings reports source voices and every source it knows", async () => {
+  await boot('[sourceVoices.kokoro]\ncodex = "am_adam"\n\n[profiles.lambda]\nmode = "full"\n');
+  daemon.usage.record({ provider: "say", source: "my.tool", chars: 1, cached: false, costUsd: 0 });
+  await speak({ text: "a short reply", source: "devin" }, o());
+  const settings = await getSettings(o());
+  expect(settings.kokoro.sourceVoices).toEqual({ codex: "am_adam" });
+  expect(settings.sources).toEqual(["codex", "devin", "lambda", "my.tool"]);
+});
+
+test("POST /v1/settings writes [sourceVoices.kokoro] entries, quoting dotted sources", async () => {
+  await boot(MINE);
+  const reply = await updateSettings(
+    { kokoro: { sourceVoices: { codex: "am_adam", "my.tool": "af_bella" } } },
+    o(),
+  );
+  expect(reply.kokoro.sourceVoices).toEqual({ codex: "am_adam", "my.tool": "af_bella" });
+  const text = await readFile(configPath, "utf8");
+  expect(text).toContain("[sourceVoices.kokoro]");
+  expect(text).toContain('codex = "am_adam"');
+  expect(text).toContain('"my.tool" = "af_bella"');
+  expect(text).toContain("# my settings");
+
+  const cleared = await updateSettings({ kokoro: { sourceVoices: { codex: null } } }, o());
+  expect(cleared.kokoro.sourceVoices).toEqual({ "my.tool": "af_bella" });
+  const after = await readFile(configPath, "utf8");
+  expect(after).not.toContain("codex");
+  expect(after).toContain('"my.tool" = "af_bella"');
+});
+
+test("a bad source name or an unknown source voice is rejected with 400", async () => {
+  await boot(MINE);
+  expect(await rejected({ kokoro: { sourceVoices: { codex: "nope" } } })).toMatchObject({
+    status: 400,
+    message: expect.stringContaining("nope is not a Kokoro voice"),
+  });
+  expect(await rejected({ kokoro: { sourceVoices: { "Bad Source": "af_bella" } } })).toMatchObject({
+    status: 400,
+  });
+  expect(await readFile(configPath, "utf8")).toBe(MINE);
 });
 
 test("a symlinked config file is written through, so the link stays a link", async () => {

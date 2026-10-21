@@ -203,11 +203,38 @@ export function parseSettingsUpdate(input: unknown): ParseResult<SettingsUpdate>
     if (speed !== undefined && !isKokoroSpeed(speed)) {
       fail(`kokoro.speed must be a number from ${KOKORO_SPEED_MIN} to ${KOKORO_SPEED_MAX}`);
     }
-    if (voice === undefined && speed === undefined) fail("kokoro needs voice or speed");
+    const sourceVoices = parseSourceVoiceUpdates(kokoro.sourceVoices);
+    if (voice === undefined && speed === undefined && sourceVoices === undefined) {
+      fail("kokoro needs voice, speed, or sourceVoices");
+    }
     return {
-      kokoro: { ...(voice !== undefined && { voice }), ...(speed !== undefined && { speed }) },
+      kokoro: {
+        ...(voice !== undefined && { voice }),
+        ...(speed !== undefined && { speed }),
+        ...(sourceVoices !== undefined && { sourceVoices }),
+      },
     };
   });
+}
+
+/** `kokoro.sourceVoices`: a source→voice map; null removes the source's mapping. */
+function parseSourceVoiceUpdates(input: unknown): Record<string, string | null> | undefined {
+  if (input === undefined) return undefined;
+  if (!isRecord(input)) fail("kokoro.sourceVoices must be an object");
+  const entries = Object.entries(input);
+  if (entries.length === 0) return undefined;
+  const out: Record<string, string | null> = {};
+  for (const [source, value] of entries) {
+    if (!SOURCE_PATTERN.test(source)) fail(`kokoro.sourceVoices: ${source} is not a valid source`);
+    if (value === null) {
+      out[source] = null;
+    } else if (typeof value !== "string" || value === "" || value.length > MAX_VOICE_CHARS) {
+      fail(`kokoro.sourceVoices.${source} must be a voice id (at most ${MAX_VOICE_CHARS}) or null`);
+    } else {
+      out[source] = value;
+    }
+  }
+  return out;
 }
 
 /** POST /v1/pause and /v1/resume. An absent reason means `user`. */

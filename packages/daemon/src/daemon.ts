@@ -265,7 +265,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
     },
   });
 
+  /** Sources seen this run; the Settings menu offers a voice for each (with metered + configured ones). */
+  const seenSources = new Set<string>();
   const enqueue = (event: NormalizedSpeakEvent): SpeakResponse => {
+    seenSources.add(event.source);
     // Every response goes to the inbox, even muted or trivial ones: you may still answer it (US-025).
     const entryId = inbox.record(event);
     const unspoken = (skipped: string): SpeakResponse => {
@@ -439,7 +442,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
       status,
       pause: (reason) => queue.pause(reason),
       resume: (reason) => queue.resume(reason),
-      settings: () => settingsOf(config),
+      settings: () => settingsOf(config, [...seenSources, ...usage.sources()]),
       shutdown: () => {
         log({ msg: "shutdown_requested" });
         // After this reply has gone out.

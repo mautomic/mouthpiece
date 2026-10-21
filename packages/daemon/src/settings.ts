@@ -6,6 +6,8 @@ import {
   type SettingsResponse,
   type SettingsUpdate,
   setTomlValue,
+  tomlKey,
+  unsetTomlKey,
 } from "@mouthpiece/core";
 import { KOKORO_VOICES } from "@mouthpiece/providers";
 
@@ -13,14 +15,24 @@ export type SaveResult =
   | { ok: true; config: Config }
   | { ok: false; status: 400 | 409; error: string };
 
-export function settingsOf(config: Config): SettingsResponse {
+/**
+ * What the menubar's Settings menu shows. `seen` adds sources the daemon learned at runtime (seen
+ * events, metered usage); the config's profiles and voice maps always name their sources.
+ */
+export function settingsOf(config: Config, seen: Iterable<string> = []): SettingsResponse {
+  const sources = new Set<string>([...seen, ...Object.keys(config.profiles)]);
+  for (const map of Object.values(config.sourceVoices)) {
+    for (const source of Object.keys(map)) sources.add(source);
+  }
   return {
     chain: [...config.provider.chain],
     kokoro: {
       voice: config.provider.kokoro.voice,
       speed: config.provider.kokoro.speed,
       voices: KOKORO_VOICES.map((v) => ({ ...v })),
+      sourceVoices: { ...(config.sourceVoices.kokoro ?? {}) },
     },
+    sources: [...sources].sort(),
   };
 }
 
@@ -30,9 +42,15 @@ export function settingsOf(config: Config): SettingsResponse {
  * parses and holds the new values; otherwise it is left alone (409).
  */
 export async function saveSettings(path: string, update: SettingsUpdate): Promise<SaveResult> {
-  const { voice, speed } = update.kokoro;
-  if (voice !== undefined && !KOKORO_VOICES.some((v) => v.id === voice)) {
+  const { voice, speed, sourceVoices } = update.kokoro;
+  const known = (id: string) => KOKORO_VOICES.some((v) => v.id === id);
+  if (voice !== undefined && !known(voice)) {
     return { ok: false, status: 400, error: `${voice} is not a Kokoro voice` };
+  }
+  for (const v of Object.values(sourceVoices ?? {})) {
+    if (v !== null && !known(v)) {
+      return { ok: false, status: 400, error: `${v} is not a Kokoro voice` };
+    }
   }
   let text = "";
   try {
@@ -48,6 +66,12 @@ export async function saveSettings(path: string, update: SettingsUpdate): Promis
   let next = text;
   if (voice !== undefined) next = setTomlValue(next, "provider.kokoro", "voice", voice);
   if (speed !== undefined) next = setTomlValue(next, "provider.kokoro", "speed", speed);
+  for (const [source, v] of Object.entries(sourceVoices ?? {})) {
+    next =
+      v === null
+        ? unsetTomlKey(next, "sourceVoices.kokoro", tomlKey(source))
+        : setTomlValue(next, "sourceVoices.kokoro", tomlKey(source), v);
+  }
   let config: Config | undefined;
   try {
     config = parseConfig(next, path);
@@ -55,15 +79,20 @@ export async function saveSettings(path: string, update: SettingsUpdate): Promis
     // Reported below: the file's layout (e.g. an inline table) is one the editor can't change.
   }
   const kokoro = config?.provider.kokoro;
+  const mapped = config?.sourceVoices.kokoro ?? {};
+  const applied = Object.entries(sourceVoices ?? {}).every(([source, v]) =>
+    v === null ? mapped[source] === undefined : mapped[source] === v,
+  );
   if (
     !config ||
     (voice !== undefined && kokoro?.voice !== voice) ||
-    (speed !== undefined && kokoro?.speed !== speed)
+    (speed !== undefined && kokoro?.speed !== speed) ||
+    !applied
   ) {
     return {
       ok: false,
       status: 409,
-      error: `couldn't change [provider.kokoro] in ${path}; edit it by hand`,
+      error: `couldn't change the settings in ${path}; edit it by hand`,
     };
   }
   await mkdir(dirname(path), { recursive: true });

@@ -290,7 +290,13 @@ test("status and pause reject the wrong method", async () => {
 
 const SETTINGS: SettingsResponse = {
   chain: ["kokoro", "say"],
-  kokoro: { voice: "af_heart", speed: 1, voices: [{ id: "af_heart", name: "Heart" }] },
+  kokoro: {
+    voice: "af_heart",
+    speed: 1,
+    voices: [{ id: "af_heart", name: "Heart" }],
+    sourceVoices: { codex: "am_adam" },
+  },
+  sources: ["codex", "devin"],
 };
 
 test("GET /v1/settings returns the settings; both routes need the token", async () => {
