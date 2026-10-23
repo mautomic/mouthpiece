@@ -200,6 +200,37 @@ test("install.sh installs the committed dependency graph", async () => {
   expect(script).toContain('run "$BUN" install --frozen-lockfile');
 });
 
+test("install.sh writes a commented config template only when none exists", async () => {
+  const r = await runInstall("/usr/bin:/bin", await fakeBun("1.4.2"));
+  expect(r.code).toBe(0);
+  const cfg = join(home, ".config", "mouthpiece", "config.toml");
+  // The template is comments only, so it parses to the defaults — nothing is pinned.
+  expect(Bun.TOML.parse(await readFile(cfg, "utf8"))).toEqual({});
+
+  await writeFile(cfg, '# mine\n[modes]\ndefault = "full"\n');
+  const again = await runInstall("/usr/bin:/bin", await fakeBun("1.4.2"));
+  expect(again.code).toBe(0);
+  expect(await readFile(cfg, "utf8")).toBe('# mine\n[modes]\ndefault = "full"\n');
+});
+
+test("install.sh honors MOUTHPIECE_CONFIG for the template", async () => {
+  const cfg = join(home, "elsewhere.toml");
+  const proc = Bun.spawn(["bash", join(REPO, "install.sh")], {
+    env: {
+      PATH: "/usr/bin:/bin",
+      HOME: home,
+      BUN: await fakeBun("1.4.2"),
+      MOUTHPIECE_DRY_RUN: "0",
+      MOUTHPIECE_CONFIG: cfg,
+    },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect(await proc.exited).toBe(0);
+  expect(Bun.TOML.parse(await readFile(cfg, "utf8"))).toEqual({});
+});
+
 test("install.sh works when HOME contains spaces and apostrophes", async () => {
   const base = home;
   home = join(base, "Mau's tools");

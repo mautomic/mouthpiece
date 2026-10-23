@@ -31,6 +31,43 @@ done
 run() { printf '+ '; printf '%q ' "$@"; printf '\n'; if [ "$DRY_RUN" != 1 ]; then "$@"; fi; }
 say_step() { echo; echo "==> $*"; }
 
+# Comments only, so nothing is pinned against future defaults — and an existing config is never touched.
+write_default_config() {
+  local cfg="${MOUTHPIECE_CONFIG:-$HOME/.config/mouthpiece/config.toml}"
+  echo "+ write default config to $cfg"
+  if [ "$DRY_RUN" = 1 ]; then return; fi
+  if [ -f "$cfg" ]; then
+    echo "  (exists; left as-is)"
+    return
+  fi
+  mkdir -p "$(dirname "$cfg")"
+  cat > "$cfg" <<'TOML'
+# Mouthpiece configuration. Every key is optional — this file is comments only, so the daemon
+# runs on its defaults. The file hot-reloads on save. See README.md and docs/api.md for every
+# option; delete this file to go back to all defaults.
+
+# The provider chain: the first provider that can synthesize speaks; the rest are fallbacks.
+# [provider]
+# chain = ["kokoro", "say"]
+
+# The local Kokoro voice (install with `mouthpiece kokoro install`; list voices with
+# `mouthpiece voices --provider kokoro`):
+# [provider.kokoro]
+# voice = "af_heart"
+# speed = 1.3   # 0.5 to 2
+
+# A voice per project label, or per source (or edit these from the menubar's Settings menu):
+# [voices.kokoro]
+# my-project = "am_adam"
+# [sourceVoices.kokoro]
+# codex = "am_adam"
+
+# Speech mode: "summary" | "full" | "off"
+# [modes]
+# default = "summary"
+TOML
+}
+
 write_cli_wrapper() {
   echo "+ write CLI wrapper to $MP"
   if [ "$DRY_RUN" != 1 ]; then
@@ -87,6 +124,7 @@ if [ "$DRY_RUN" != 1 ]; then
   esac
 fi
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "Note: add $BIN_DIR to your PATH." ;; esac
+write_default_config
 
 if [ "$WITH_HELPER" = 1 ]; then
   say_step "Building helper (hotkeys, menubar, mic pause)"
@@ -133,7 +171,6 @@ fi
 
 if [ "$WITH_AGENT" = 1 ]; then
   say_step "Background daemon (launchd)"
-  run mkdir -p "$HOME/.config/mouthpiece"
   run "$MP" install-agent || echo "Agent install failed; the daemon still runs with \`mouthpiece start\`."
 fi
 

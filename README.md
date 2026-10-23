@@ -59,8 +59,9 @@ To update later, run `git pull && ./install.sh`.
 ### What installation changes
 
 The default installer uses an existing Bun (`$BUN`, or the first `bun` on your PATH — e.g. from Homebrew) or
-downloads one if none is found, installs the locked JavaScript dependencies, and creates
-`~/.local/bin/mouthpiece`. It does not start a background process, install hooks, download Kokoro, play audio, or
+downloads one if none is found, installs the locked JavaScript dependencies, creates
+`~/.local/bin/mouthpiece`, and writes a commented template at `~/.config/mouthpiece/config.toml` when none
+exists. It does not start a background process, install hooks, download Kokoro, play audio, or
 request an API key.
 
 Each optional flag has a deliberate side effect:
