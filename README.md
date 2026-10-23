@@ -30,15 +30,17 @@ git clone https://github.com/mautomic/mouthpiece.git
 # Or, if you use GitHub SSH:
 git clone git@github.com:mautomic/mouthpiece.git
 cd mouthpiece
-./install.sh
+./install.sh --with-kokoro
 ```
 
-The default install is a minimal local CLI setup: it installs dependencies and links `mouthpiece` into
-`~/.local/bin`. Start it in the foreground with `mouthpiece start`.
+`--with-kokoro` downloads the local Kokoro voice (~500 MB), a much better sounding voice than the
+macOS `say` fallback — recommended unless you're short on disk or bandwidth. Start the daemon in the
+foreground with `mouthpiece start`.
 
 Add only the integrations you want:
 
 ```sh
+./install.sh                # minimal local CLI setup only (macOS say voice)
 ./install.sh --with-helper  # hotkeys, menubar, mic pause, gap-free player
 ./install.sh --with-kokoro  # downloads the local Kokoro voice (~500 MB)
 ./install.sh --with-hooks   # Claude Code hooks, plus installed Codex/Gemini/Devin hooks
