@@ -176,7 +176,9 @@ test("install.sh requires Apple Silicon", async () => {
 
 test("install.sh smoke-checks the CLI wrapper it writes", async () => {
   const script = await Bun.file(join(REPO, "install.sh")).text();
-  expect(script).toContain('grep -q "usage: mouthpiece"');
+  // `--help` exits 2 by design; the check must match its output, not its status.
+  expect(script).toContain('"$MP" --help');
+  expect(script).toContain("usage: mouthpiece");
 });
 
 test("install.sh treats a failed Claude Code hook install as non-fatal", async () => {
@@ -310,6 +312,12 @@ test("uninstall.sh's CLI fallback pins the repo's bunfig.toml and skips .env fil
     expect(line).toContain(`--config=${REPO}/bunfig.toml`);
     expect(line).toContain("--no-env-file");
   }
+});
+
+test("install.sh treats a failed agent install as non-fatal", async () => {
+  const script = await Bun.file(join(REPO, "install.sh")).text();
+  const line = script.split("\n").find((l) => l.includes("install-agent") && l.includes("run "));
+  expect(line).toMatch(/install-agent \|\| /);
 });
 
 test("install.sh treats a failed helper build as non-fatal", async () => {

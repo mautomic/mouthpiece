@@ -78,8 +78,13 @@ say_step "Linking the mouthpiece CLI into $BIN_DIR"
 run mkdir -p "$BIN_DIR"
 # Pin the repo's bunfig.toml and skip .env so a project's own bunfig.toml can't break the CLI.
 write_cli_wrapper
-if [ "$DRY_RUN" != 1 ] && ! "$MP" --help 2>&1 | grep -q "usage: mouthpiece"; then
-  echo "warning: $MP did not run as expected; try it directly to see the error."
+# `--help` exits 2 by design, so capture its output instead of piping under pipefail.
+if [ "$DRY_RUN" != 1 ]; then
+  help_out="$("$MP" --help 2>&1 || true)"
+  case "$help_out" in
+    *"usage: mouthpiece"*) ;;
+    *) echo "warning: $MP did not run as expected; try it directly to see the error." ;;
+  esac
 fi
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "Note: add $BIN_DIR to your PATH." ;; esac
 
@@ -129,7 +134,7 @@ fi
 if [ "$WITH_AGENT" = 1 ]; then
   say_step "Background daemon (launchd)"
   run mkdir -p "$HOME/.config/mouthpiece"
-  run "$MP" install-agent
+  run "$MP" install-agent || echo "Agent install failed; the daemon still runs with \`mouthpiece start\`."
 fi
 
 cat <<EOF

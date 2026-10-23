@@ -25,7 +25,7 @@ ask() {
   [ -t 0 ] && { read -rp "$1 [y/N] " a; [ "$a" = y ] || [ "$a" = Y ]; }
 }
 
-mp uninstall-agent
+mp uninstall-agent || echo "Could not remove the launchd agent; continuing."
 # Each is idempotent ("No Mouthpiece hooks found." when there is nothing to remove).
 mp uninstall-hooks --target claude-code || echo "Could not update Claude Code hooks; continuing."
 mp uninstall-hooks --target codex || echo "Could not update Codex hooks; continuing."
