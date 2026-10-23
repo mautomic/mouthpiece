@@ -12,7 +12,8 @@ mp() {
   if [ -x "$MP" ]; then
     run "$MP" "$@"
   else
-    run "$BUN" "$REPO/packages/cli/src/main.ts" "$@"
+    # Same pins as the installed wrapper: a cwd's own bunfig.toml or .env must not reach the CLI.
+    run "$BUN" --config="$REPO/bunfig.toml" --no-env-file "$REPO/packages/cli/src/main.ts" "$@"
   fi
 }
 # A dry run answers yes to every question (run only prints then), so the plan shows every step.

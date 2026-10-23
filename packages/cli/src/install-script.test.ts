@@ -84,13 +84,14 @@ test("uninstall.sh deletes the Keychain key before removing the CLI link it runs
   expect(unlink).toBeGreaterThan(auth);
 });
 
-/** process.env.PATH without any directory that holds a `codex`, `gemini` or `devin` (this machine may have them). */
+/** process.env.PATH without any directory that holds a `claude`, `codex`, `gemini` or `devin` (this machine may have them). */
 function pathWithoutAgents(): string {
   return (process.env.PATH ?? "")
     .split(":")
     .filter(
       (d) =>
         d &&
+        !existsSync(join(d, "claude")) &&
         !existsSync(join(d, "codex")) &&
         !existsSync(join(d, "gemini")) &&
         !existsSync(join(d, "devin")),
@@ -168,9 +169,23 @@ test("install.sh installs Codex hooks only when codex is on PATH", async () => {
     "--with-hooks",
   ]);
   expect(without.code).toBe(0);
-  expect(without.out).not.toContain("install-hooks --target codex");
-  expect(without.out).not.toContain("install-hooks --target gemini");
-  expect(without.out).toContain("install-hooks");
+  expect(without.out).not.toContain("install-hooks");
+});
+
+test("install.sh installs Claude Code hooks only when claude is on PATH", async () => {
+  const withClaude = await dryRun("install.sh", await pathWith("claude"), process.execPath, [
+    "--with-hooks",
+  ]);
+  expect(withClaude.code).toBe(0);
+  expect(withClaude.out).toContain("Claude Code hooks");
+  const plan = withClaude.out.split("\n").find((l) => l.includes("install-hooks"));
+  expect(plan?.trim()).toBe(`+ ${home}/.local/bin/mouthpiece install-hooks`);
+
+  const without = await dryRun("install.sh", pathWithoutAgents(), process.execPath, [
+    "--with-hooks",
+  ]);
+  expect(without.code).toBe(0);
+  expect(without.out).not.toContain("install-hooks");
 });
 
 test("install.sh installs Gemini hooks only when gemini is on PATH", async () => {
@@ -214,6 +229,18 @@ test("uninstall.sh dry run removes hooks for all four targets", async () => {
   for (const target of ["claude-code", "codex", "gemini", "devin"])
     expect(r.out).toContain(`uninstall-hooks --target ${target}`);
   expect(await readdir(home)).toEqual([]);
+});
+
+test("uninstall.sh's CLI fallback pins the repo's bunfig.toml and skips .env files", async () => {
+  // The temp home has no ~/.local/bin/mouthpiece, so every mp() call plans the Bun fallback.
+  const r = await dryRun("uninstall.sh");
+  expect(r.code).toBe(0);
+  const lines = r.out.split("\n").filter((l) => l.includes("packages/cli/src/main.ts"));
+  expect(lines.length).toBeGreaterThan(0);
+  for (const line of lines) {
+    expect(line).toContain(`--config=${REPO}/bunfig.toml`);
+    expect(line).toContain("--no-env-file");
+  }
 });
 
 test("install.sh treats a failed helper build as non-fatal", async () => {
