@@ -37,6 +37,10 @@ cd mouthpiece
 macOS `say` fallback — recommended unless you're short on disk or bandwidth. Start the daemon in the
 foreground with `mouthpiece start`.
 
+The menubar icon, hotkeys, mic pause and gap-free playback come from the helper app — add
+`--with-helper` (needs Xcode Command Line Tools) or build it later with `mouthpiece build-helper`
+and restart the daemon.
+
 Add only the integrations you want:
 
 ```sh

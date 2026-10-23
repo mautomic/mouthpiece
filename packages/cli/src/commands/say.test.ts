@@ -94,10 +94,24 @@ test("--mode, --voice and --priority end up in the event", async () => {
   });
 });
 
-test("omitted flags are not sent", async () => {
+test("omitted flags are not sent, except verbatim so the utterance is never trivial", async () => {
   const h = harness();
   expect(await run(["say", "hi"], h.io, h.deps)).toBe(0);
-  expect(Object.keys(h.spoken[0] ?? {}).sort()).toEqual(["format", "kind", "source", "text"]);
+  expect(Object.keys(h.spoken[0] ?? {}).sort()).toEqual([
+    "format",
+    "kind",
+    "source",
+    "text",
+    "verbatim",
+  ]);
+  expect(h.spoken[0]?.verbatim).toBe(true);
+});
+
+test("an explicit --mode opts into the pipeline instead of verbatim", async () => {
+  const h = harness();
+  expect(await run(["say", "hi", "--mode", "summary"], h.io, h.deps)).toBe(0);
+  expect(h.spoken[0]?.verbatim).toBeUndefined();
+  expect(h.spoken[0]?.mode).toBe("summary");
 });
 
 test.each([

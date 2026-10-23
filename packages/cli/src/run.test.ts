@@ -76,6 +76,7 @@ test("say joins positional args", async () => {
     label: "web",
     kind: "response",
     format: "markdown",
+    verbatim: true,
   });
   expect(h.out.join("")).toContain("abc");
 });

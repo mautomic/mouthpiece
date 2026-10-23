@@ -77,7 +77,9 @@ export const sayCommand: CommandFn = async (args, io, deps) => {
     ...(values.label ? { label: values.label } : {}),
     kind: values.kind as Kind,
     format,
-    ...(values.mode ? { mode: values.mode as Mode } : {}),
+    // Text the user asked to be spoken is never trivial; an explicit --mode opts into the
+    // summarization pipeline instead.
+    ...(values.mode ? { mode: values.mode as Mode } : { verbatim: true }),
     ...(values.voice ? { voice: values.voice } : {}),
     ...(values.priority ? { priority: values.priority as Priority } : {}),
   };
