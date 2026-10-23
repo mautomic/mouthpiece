@@ -4,16 +4,19 @@ set -euo pipefail
 
 DRY_RUN="${MOUTHPIECE_DRY_RUN:-0}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUN="${BUN:-$HOME/.bun/bin/bun}"
+# An explicit $BUN wins; otherwise a Bun on PATH; otherwise the default install path.
+BUN="${BUN:-$(command -v bun 2>/dev/null || echo "$HOME/.bun/bin/bun")}"
 MP="$HOME/.local/bin/mouthpiece"
 
 run() { printf '+ '; printf '%q ' "$@"; printf '\n'; if [ "$DRY_RUN" != 1 ]; then "$@"; fi; }
 mp() {
   if [ -x "$MP" ]; then
     run "$MP" "$@"
-  else
+  elif [ -x "$BUN" ]; then
     # Same pins as the installed wrapper: a cwd's own bunfig.toml or .env must not reach the CLI.
     run "$BUN" --config="$REPO/bunfig.toml" --no-env-file "$REPO/packages/cli/src/main.ts" "$@"
+  else
+    echo "mouthpiece CLI and Bun are both gone; skipping: $*"
   fi
 }
 # A dry run answers yes to every question (run only prints then), so the plan shows every step.
@@ -24,7 +27,7 @@ ask() {
 
 mp uninstall-agent
 # Each is idempotent ("No Mouthpiece hooks found." when there is nothing to remove).
-mp uninstall-hooks --target claude-code
+mp uninstall-hooks --target claude-code || echo "Could not update Claude Code hooks; continuing."
 mp uninstall-hooks --target codex || echo "Could not update Codex hooks; continuing."
 mp uninstall-hooks --target gemini || echo "Could not update Gemini hooks; continuing."
 mp uninstall-hooks --target devin || echo "Could not update Devin hooks; continuing."

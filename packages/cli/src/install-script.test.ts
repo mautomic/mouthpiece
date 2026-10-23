@@ -17,16 +17,17 @@ afterEach(async () => {
 async function dryRun(
   script: string,
   path = process.env.PATH ?? "",
-  bun = process.execPath,
+  bun: string | null = process.execPath,
   args: string[] = [],
 ) {
+  const env: Record<string, string> = {
+    PATH: path,
+    HOME: home,
+    MOUTHPIECE_DRY_RUN: "1",
+  };
+  if (bun !== null) env.BUN = bun;
   const proc = Bun.spawn(["bash", join(REPO, script), ...args], {
-    env: {
-      PATH: path,
-      HOME: home,
-      BUN: bun,
-      MOUTHPIECE_DRY_RUN: "1",
-    },
+    env,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -84,19 +85,17 @@ test("uninstall.sh deletes the Keychain key before removing the CLI link it runs
   expect(unlink).toBeGreaterThan(auth);
 });
 
-/** process.env.PATH without any directory that holds a `claude`, `codex`, `gemini` or `devin` (this machine may have them). */
-function pathWithoutAgents(): string {
+/** process.env.PATH without any directory that holds one of `tools` (this machine may have them). */
+function pathWithout(...tools: string[]): string {
   return (process.env.PATH ?? "")
     .split(":")
-    .filter(
-      (d) =>
-        d &&
-        !existsSync(join(d, "claude")) &&
-        !existsSync(join(d, "codex")) &&
-        !existsSync(join(d, "gemini")) &&
-        !existsSync(join(d, "devin")),
-    )
+    .filter((d) => d && !tools.some((t) => existsSync(join(d, t))))
     .join(":");
+}
+
+/** process.env.PATH without any directory that holds a `claude`, `codex`, `gemini` or `devin`. */
+function pathWithoutAgents(): string {
+  return pathWithout("claude", "codex", "gemini", "devin");
 }
 
 /** A temp dir holding fake executables, prepended to the agent-free PATH. */
@@ -114,22 +113,30 @@ afterEach(async () => {
   for (const bin of fakeBins.splice(0)) await rm(bin, { recursive: true, force: true });
 });
 
+const FAKE_BUN_SCRIPT = (version: string) => `#!/bin/sh
+case "$2" in
+  *Bun.version*) printf '%s\\n' '${version}' ;;
+  *) printf '%s\\n' arm64 ;;
+esac
+`;
+
 /** A fake native Bun that reports the supplied version. */
 async function fakeBun(version: string): Promise<string> {
   const bin = await mkdtemp(join(tmpdir(), "mp-fakebun-"));
   fakeBins.push(bin);
   const bun = join(bin, "bun");
-  await writeFile(
-    bun,
-    `#!/bin/sh
-case "$2" in
-  *Bun.version*) printf '%s\\n' '${version}' ;;
-  *) printf '%s\\n' arm64 ;;
-esac
-`,
-  );
+  await writeFile(bun, FAKE_BUN_SCRIPT(version));
   await chmod(bun, 0o755);
   return bun;
+}
+
+/** A PATH whose first entry holds a fake `bun` reporting the supplied version. */
+async function pathWithFakeBun(version: string): Promise<string> {
+  const bin = await mkdtemp(join(tmpdir(), "mp-fakebun-"));
+  fakeBins.push(bin);
+  await writeFile(join(bin, "bun"), FAKE_BUN_SCRIPT(version));
+  await chmod(join(bin, "bun"), 0o755);
+  return `${bin}:${pathWithoutAgents()}`;
 }
 
 test("install.sh rejects Bun older than 1.2 before changing the user's home", async () => {
@@ -137,6 +144,53 @@ test("install.sh rejects Bun older than 1.2 before changing the user's home", as
   expect(r.code).toBe(1);
   expect(r.err).toContain("requires Bun 1.2 or later");
   expect(await readdir(home)).toEqual([]);
+});
+
+test("install.sh uses a Bun already on PATH instead of installing one", async () => {
+  const r = await dryRun("install.sh", await pathWithFakeBun("1.4.2"), null);
+  expect(r.code).toBe(0);
+  expect(r.out).not.toContain("bun.sh/install");
+  expect(r.out).toContain("install --frozen-lockfile");
+});
+
+test("install.sh plans the Bun download only when no Bun is found", async () => {
+  const r = await dryRun("install.sh", pathWithout("bun"), null);
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("Bun not found");
+  expect(r.out).toContain("bun.sh/install");
+});
+
+test("install.sh requires Apple Silicon", async () => {
+  const bin = await mkdtemp(join(tmpdir(), "mp-fake-uname-"));
+  fakeBins.push(bin);
+  await writeFile(
+    join(bin, "uname"),
+    '#!/bin/sh\ncase "$1" in -s) echo Darwin ;; -m) echo x86_64 ;; *) echo x86_64 ;; esac\n',
+  );
+  await chmod(join(bin, "uname"), 0o755);
+  const r = await dryRun("install.sh", `${bin}:/usr/bin:/bin`, null);
+  expect(r.code).toBe(1);
+  expect(r.err).toContain("Apple Silicon");
+  expect(await readdir(home)).toEqual([]);
+});
+
+test("install.sh smoke-checks the CLI wrapper it writes", async () => {
+  const script = await Bun.file(join(REPO, "install.sh")).text();
+  expect(script).toContain('grep -q "usage: mouthpiece"');
+});
+
+test("install.sh treats a failed Claude Code hook install as non-fatal", async () => {
+  const script = await Bun.file(join(REPO, "install.sh")).text();
+  const line = script
+    .split("\n")
+    .find((l) => l.includes('run "$MP" install-hooks') && !l.includes("--target"));
+  expect(line).toMatch(/install-hooks \|\| /);
+});
+
+test("install.sh --with-hooks says when no supported tool is on PATH", async () => {
+  const r = await dryRun("install.sh", pathWithoutAgents(), process.execPath, ["--with-hooks"]);
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("No supported tools");
 });
 
 test("install.sh installs the committed dependency graph", async () => {
@@ -221,6 +275,21 @@ test("install.sh treats a failed Codex, Gemini or Devin hook install as non-fata
       .find((l) => l.includes(`install-hooks --target ${target}`) && l.includes("run "));
     expect(line).toMatch(new RegExp(`--target ${target} \\|\\| `));
   }
+});
+
+test("uninstall.sh treats a failed Claude Code hook removal as non-fatal", async () => {
+  const script = await Bun.file(join(REPO, "uninstall.sh")).text();
+  const line = script.split("\n").find((l) => l.includes("uninstall-hooks --target claude-code"));
+  expect(line).toMatch(/\|\| /);
+});
+
+test("uninstall.sh still removes files when neither the CLI link nor Bun exists", async () => {
+  const script = await Bun.file(join(REPO, "uninstall.sh")).text();
+  expect(script).toMatch(/elif \[ -x "\$BUN" \]/);
+  const r = await dryRun("uninstall.sh", pathWithout("bun"), "/nonexistent/bun");
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("skipping");
+  expect(r.out).toContain("rm -rf");
 });
 
 test("uninstall.sh dry run removes hooks for all four targets", async () => {
