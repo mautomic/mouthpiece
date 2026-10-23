@@ -89,8 +89,10 @@ if [ "$WITH_KOKORO" = 1 ]; then
 fi
 
 if [ "$WITH_HOOKS" = 1 ]; then
-  say_step "Claude Code hooks"
-  run "$MP" install-hooks
+  if command -v claude >/dev/null 2>&1; then
+    say_step "Claude Code hooks"
+    run "$MP" install-hooks
+  fi
   if command -v codex >/dev/null 2>&1; then
     say_step "Codex hooks"
     run "$MP" install-hooks --target codex || echo "Codex hook install failed; continuing."
