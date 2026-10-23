@@ -15,8 +15,8 @@ It runs entirely on your Mac. The default voice is free: the local [Kokoro](http
 
 ## Requirements
 
-- macOS. Apple Silicon is recommended for the local Kokoro voice.
-- [Bun](https://bun.sh) 1.2 or later, the native arm64 build on Apple Silicon. `install.sh` installs it if it's missing.
+- macOS on Apple Silicon. Intel Macs are not supported.
+- [Bun](https://bun.sh) 1.2 or later, the native arm64 build. `install.sh` installs it if it's missing and rejects an older or Rosetta Bun.
 - Optional:
   - [Claude Code](https://claude.com/claude-code), for spoken responses and for summaries (`claude -p`, using your subscription).
   - Xcode Command Line Tools (`xcode-select --install`), to build the helper app that provides the hotkeys, menubar icon, pause-while-dictating, and gap-free playback.
@@ -25,6 +25,9 @@ It runs entirely on your Mac. The default voice is free: the local [Kokoro](http
 ## Install
 
 ```sh
+# HTTPS
+git clone https://github.com/mautomic/mouthpiece.git
+# Or, if you use GitHub SSH:
 git clone git@github.com:mautomic/mouthpiece.git
 cd mouthpiece
 ./install.sh

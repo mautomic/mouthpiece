@@ -14,12 +14,12 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true });
 });
 
-async function dryRun(script: string, path = process.env.PATH ?? "") {
+async function dryRun(script: string, path = process.env.PATH ?? "", bun = process.execPath) {
   const proc = Bun.spawn(["bash", join(REPO, script)], {
     env: {
       PATH: path,
       HOME: home,
-      BUN: process.execPath,
+      BUN: bun,
       MOUTHPIECE_DRY_RUN: "1",
     },
     stdin: "ignore",
@@ -98,6 +98,31 @@ async function pathWith(...tools: string[]): Promise<string> {
 const fakeBins: string[] = [];
 afterEach(async () => {
   for (const bin of fakeBins.splice(0)) await rm(bin, { recursive: true, force: true });
+});
+
+/** A fake native Bun that reports the supplied version. */
+async function fakeBun(version: string): Promise<string> {
+  const bin = await mkdtemp(join(tmpdir(), "mp-fakebun-"));
+  fakeBins.push(bin);
+  const bun = join(bin, "bun");
+  await writeFile(
+    bun,
+    `#!/bin/sh
+case "$2" in
+  *Bun.version*) printf '%s\\n' '${version}' ;;
+  *) printf '%s\\n' arm64 ;;
+esac
+`,
+  );
+  await chmod(bun, 0o755);
+  return bun;
+}
+
+test("install.sh rejects Bun older than 1.2 before changing the user's home", async () => {
+  const r = await dryRun("install.sh", process.env.PATH ?? "", await fakeBun("1.1.99"));
+  expect(r.code).toBe(1);
+  expect(r.err).toContain("requires Bun 1.2 or later");
+  expect(await readdir(home)).toEqual([]);
 });
 
 test("install.sh installs Codex hooks only when codex is on PATH", async () => {

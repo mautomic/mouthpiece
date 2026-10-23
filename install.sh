@@ -19,6 +19,15 @@ if [ ! -x "$BUN" ]; then
   run bash -c 'curl -fsSL https://bun.sh/install | bash'
 fi
 if [ "$DRY_RUN" != 1 ] || [ -x "$BUN" ]; then
+  version="$("$BUN" -e 'console.log(Bun.version)')"
+  if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+)\. ]]; then
+    echo "Could not determine Bun version at $BUN: $version" >&2; exit 1
+  fi
+  major="${BASH_REMATCH[1]}"
+  minor="${BASH_REMATCH[2]}"
+  if [ "$major" -lt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -lt 2 ]; }; then
+    echo "Bun at $BUN is $version; Mouthpiece requires Bun 1.2 or later." >&2; exit 1
+  fi
   arch="$("$BUN" -e 'console.log(process.arch)')"
   if [ "$(uname -m)" = arm64 ] && [ "$arch" != arm64 ]; then
     echo "Bun at $BUN is $arch (Rosetta). Install native arm64 Bun first." >&2; exit 1
