@@ -76,7 +76,7 @@ The documented `Stop` stdin JSON includes `last_assistant_message`, so **no tran
 {
   "session_id": "abc123",
   "transcript_path": "~/.claude/projects/<proj>/<session>.jsonl",
-  "cwd": "/Users/Mau/code/projects/foo",
+  "cwd": "/Users/me/code/projects/foo",
   "permission_mode": "default",
   "hook_event_name": "Stop",
   "stop_hook_active": false,
@@ -261,7 +261,7 @@ Stories are grouped by phase. Each should fit in one focused session.
 **Acceptance Criteria:**
 - [ ] Removes markdown syntax: headers, emphasis, links (keeps the link text), and table pipes
 - [ ] Fenced code blocks become "*(code block, N lines)*". Inline code is kept unless it is longer than 40 characters.
-- [ ] Long absolute paths are shortened to their basename ("`/Users/Mau/code/x/src/foo.ts`" → "foo.ts")
+- [ ] Long absolute paths are shortened to their basename ("`/Users/me/code/x/src/foo.ts`" → "foo.ts")
 - [ ] Bare URLs become their domain ("link to github.com")
 - [ ] Golden-file tests cover at least 10 real Claude Code responses captured in US-001
 
@@ -589,7 +589,7 @@ Claude Code is the first source, not a special one. **Everything source-specific
 - extra cleaning rules (Discord: `<@123>` mentions → names, `:emoji:` dropped)
 - voice, priority, and mute settings
 
-*2026-10-18:* two envelope fields let a source shape how it's heard, with no source-specific code in the core: `verbatim` (speak the text as given, never summarized; mute still applies) and `announce: "always" | "auto"` (speak the label every time, or only when several conversations are active). A source profile's `announce = "never" | "auto" | "always"` overrides the event. The first user is lambda-ai, which speaks its own Go-written headlines (spec `docs/superpowers/specs/2026-10-18-lambda-ai-speech-design.md`).
+*2026-10-18:* two envelope fields let a source shape how it's heard, with no source-specific code in the core: `verbatim` (speak the text as given, never summarized; mute still applies) and `announce: "always" | "auto"` (speak the label every time, or only when several conversations are active). A source profile's `announce = "never" | "auto" | "always"` overrides the event.
 
 **Adapters run locally and pull.** A source on another machine, like a Discord bot hosted elsewhere, is handled by a small local adapter that connects *out* to Discord's gateway and forwards events to the loopback daemon. The daemon never opens an inbound port beyond `127.0.0.1`.
 
@@ -599,7 +599,7 @@ Claude Code is the first source, not a special one. **Everything source-specific
 
 | Extension point | Interface | v1 implementations |
 |---|---|---|
-| **Sources / adapters** | Generic envelope over `POST /v1/speak` and `/v1/interrupt` | Claude Code, CLI/pipe, Codex, Gemini; log tailers (`mouthpiece tail`, `[[follow]]`) incl. Margin; lambda-ai posts directly |
+| **Sources / adapters** | Generic envelope over `POST /v1/speak` and `/v1/interrupt` | Claude Code, CLI/pipe, Codex, Gemini; log tailers (`mouthpiece tail`, `[[follow]]`) incl. Margin; other local tools can post directly |
 | **TTS providers** | `TtsProvider` | `say`, Kokoro (local), Inworld, ElevenLabs, Deepgram, OpenAI |
 | **Summarizers** | `Summarizer`: `summarize(text, profile) → string` | `claude -p`, first-sentences fallback |
 | **Source profiles** | Config: prompt, cleaning rules, mode, voice | Claude Code, default |
@@ -785,7 +785,7 @@ Either way, the summarizer is negligible next to TTS, and it cuts TTS spend by a
 | Remote Control | Anthropic's relay into the same session | — | **Not chosen.** There is no local API, and it needs claude.ai login. |
 | iTerm2, Terminal.app, Ghostty | AppleScript `write text` or synthetic keystrokes | `ITERM_SESSION_ID`; nothing for Ghostty | **Not chosen.** It needs Automation or Accessibility permission, and keystrokes go to whatever has focus. |
 | **Margin** | Reply in Margin's page. The inbox shows "Open in Margin" | — | A user comment needs the page's private token (Margin internals, §8.3 note). |
-| **Any source with its own loopback server** (e.g. lambda-ai) | The daemon POSTs `{conversationId, text}` to a URL the source gave | The event's `reply` | Generic. lambda-ai would need a small endpoint that posts into its Discord thread. |
+| **Any source with its own loopback server** | The daemon POSTs `{conversationId, text}` to a URL the source gave | The event's `reply` | Generic: the source provides a loopback endpoint that accepts the response. |
 
 Codex, Gemini and opencode sessions in Orca or tmux use the same terminal routes, with no extra work.
 
