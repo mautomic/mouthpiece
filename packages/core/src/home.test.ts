@@ -56,4 +56,10 @@ test("daemonUrl precedence: MOUTHPIECE_URL > MOUTHPIECE_PORT > default", () => {
 
 test("daemonUrl refuses a non-loopback endpoint", () => {
   expect(() => daemonUrl({ MOUTHPIECE_URL: "https://example.com" })).toThrow("loopback");
+  expect(() => daemonUrl({ MOUTHPIECE_URL: "http://127.0.0.1.evil.com" })).toThrow("loopback");
+});
+
+test("daemonUrl accepts localhost and [::1] as loopback", () => {
+  expect(daemonUrl({ MOUTHPIECE_URL: "http://localhost:7317" })).toBe("http://localhost:7317");
+  expect(daemonUrl({ MOUTHPIECE_URL: "http://[::1]:7317" })).toBe("http://[::1]:7317");
 });

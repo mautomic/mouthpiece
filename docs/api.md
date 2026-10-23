@@ -1,6 +1,8 @@
 # Mouthpiece HTTP API (v1)
 
-Base URL: `http://127.0.0.1:7317` (port via `MOUTHPIECE_PORT`). The daemon binds loopback only.
+Base URL: `http://127.0.0.1:7317` (port via `MOUTHPIECE_PORT`, full override via `MOUTHPIECE_URL`).
+The daemon binds loopback only, and the client refuses a `MOUTHPIECE_URL` that isn't an HTTP loopback
+address (`127.0.0.1`, `localhost`, or `[::1]`) so the token is never sent elsewhere.
 Auth: every endpoint except `GET /v1/health` requires `Authorization: Bearer <token>`, where the token is the
 contents of `$MOUTHPIECE_HOME/token` (default `~/.mouthpiece/token`).
 Versioning: changes within `/v1` are additive only; unknown request fields are ignored.

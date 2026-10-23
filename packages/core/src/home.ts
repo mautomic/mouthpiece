@@ -52,11 +52,15 @@ export async function readOrCreateToken(home: string): Promise<string> {
   return token;
 }
 
+/** Loopback hosts a daemon URL may use. */
+const LOOPBACK_HOSTS = ["127.0.0.1", "::1", "localhost"] as const;
+
 export function localDaemonUrl(value: string): string {
   const url = new URL(value);
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
-  if (url.protocol !== "http:" || (hostname !== "127.0.0.1" && hostname !== "::1"))
+  if (url.protocol !== "http:" || !(LOOPBACK_HOSTS as readonly string[]).includes(hostname)) {
     throw new Error("Mouthpiece daemon URL must use an HTTP loopback address");
+  }
   return value;
 }
 
