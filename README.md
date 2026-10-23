@@ -30,12 +30,13 @@ git clone https://github.com/mautomic/mouthpiece.git
 # Or, if you use GitHub SSH:
 git clone git@github.com:mautomic/mouthpiece.git
 cd mouthpiece
-./install.sh --with-kokoro
+./install.sh --with-kokoro --with-hooks
 ```
 
 `--with-kokoro` downloads the local Kokoro voice (~500 MB), a much better sounding voice than the
-macOS `say` fallback — recommended unless you're short on disk or bandwidth. Start the daemon in the
-foreground with `mouthpiece start`.
+macOS `say` fallback — recommended unless you're short on disk or bandwidth. `--with-hooks` installs
+hooks for the supported tools on your PATH (Claude Code, Codex, Gemini, Devin) — that's how they
+speak through Mouthpiece. Start the daemon in the foreground with `mouthpiece start`.
 
 The menubar icon, hotkeys, mic pause and gap-free playback come from the helper app — add
 `--with-helper` (needs Xcode Command Line Tools) or build it later with `mouthpiece build-helper`
