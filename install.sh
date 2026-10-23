@@ -65,7 +65,7 @@ fi
 say_step "Installing dependencies"
 (
   cd "$REPO"
-  run "$BUN" install
+  run "$BUN" install --frozen-lockfile
 )
 
 say_step "Linking the mouthpiece CLI into $BIN_DIR"

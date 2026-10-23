@@ -138,6 +138,11 @@ test("install.sh rejects Bun older than 1.2 before changing the user's home", as
   expect(await readdir(home)).toEqual([]);
 });
 
+test("install.sh installs the committed dependency graph", async () => {
+  const script = await Bun.file(join(REPO, "install.sh")).text();
+  expect(script).toContain('run "$BUN" install --frozen-lockfile');
+});
+
 test("install.sh works when HOME contains spaces and apostrophes", async () => {
   const base = home;
   home = join(base, "Mau's tools");
