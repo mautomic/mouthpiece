@@ -14,8 +14,13 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true });
 });
 
-async function dryRun(script: string, path = process.env.PATH ?? "", bun = process.execPath) {
-  const proc = Bun.spawn(["bash", join(REPO, script)], {
+async function dryRun(
+  script: string,
+  path = process.env.PATH ?? "",
+  bun = process.execPath,
+  args: string[] = [],
+) {
+  const proc = Bun.spawn(["bash", join(REPO, script), ...args], {
     env: {
       PATH: path,
       HOME: home,
@@ -51,18 +56,12 @@ test.each(["install.sh", "uninstall.sh"])("%s parses", async (script) => {
   expect(await Bun.spawn(["bash", "-n", join(REPO, script)]).exited).toBe(0);
 });
 
-test("install.sh dry run plans every step and writes nothing", async () => {
+test("install.sh defaults to a local CLI setup without integrations", async () => {
   const r = await dryRun("install.sh");
   expect(r.code).toBe(0);
-  for (const step of [
-    "install",
-    "Building helper (hotkeys, menubar, mic pause)",
-    "build-helper",
-    "install-hooks",
-    "install-agent",
-    "==> Testing",
-  ])
-    expect(r.out).toContain(step);
+  expect(r.out).toContain("Installing dependencies");
+  for (const integration of ["build-helper", "kokoro install", "install-hooks", "install-agent"])
+    expect(r.out).not.toContain(integration);
   expect(await readdir(home)).toEqual([]);
 });
 
@@ -151,14 +150,18 @@ test("install.sh works when HOME contains spaces and apostrophes", async () => {
 });
 
 test("install.sh installs Codex hooks only when codex is on PATH", async () => {
-  const withCodex = await dryRun("install.sh", await pathWith("codex"));
+  const withCodex = await dryRun("install.sh", await pathWith("codex"), process.execPath, [
+    "--with-hooks",
+  ]);
   expect(withCodex.code).toBe(0);
   expect(withCodex.out).toContain("install-hooks --target codex");
   expect(withCodex.out).toContain("/hooks");
   expect(withCodex.out).not.toContain("install-hooks --target gemini");
   expect(await readdir(home)).toEqual([]);
 
-  const without = await dryRun("install.sh", pathWithoutAgents());
+  const without = await dryRun("install.sh", pathWithoutAgents(), process.execPath, [
+    "--with-hooks",
+  ]);
   expect(without.code).toBe(0);
   expect(without.out).not.toContain("install-hooks --target codex");
   expect(without.out).not.toContain("install-hooks --target gemini");
@@ -166,7 +169,9 @@ test("install.sh installs Codex hooks only when codex is on PATH", async () => {
 });
 
 test("install.sh installs Gemini hooks only when gemini is on PATH", async () => {
-  const r = await dryRun("install.sh", await pathWith("gemini"));
+  const r = await dryRun("install.sh", await pathWith("gemini"), process.execPath, [
+    "--with-hooks",
+  ]);
   expect(r.code).toBe(0);
   expect(r.out).toContain("install-hooks --target gemini");
   expect(r.out).not.toContain("install-hooks --target codex");
@@ -174,13 +179,17 @@ test("install.sh installs Gemini hooks only when gemini is on PATH", async () =>
 });
 
 test("install.sh installs Devin hooks only when devin is on PATH", async () => {
-  const withDevin = await dryRun("install.sh", await pathWith("devin"));
+  const withDevin = await dryRun("install.sh", await pathWith("devin"), process.execPath, [
+    "--with-hooks",
+  ]);
   expect(withDevin.code).toBe(0);
   expect(withDevin.out).toContain("install-hooks --target devin");
   expect(withDevin.out).not.toContain("install-hooks --target codex");
   expect(await readdir(home)).toEqual([]);
 
-  const without = await dryRun("install.sh", pathWithoutAgents());
+  const without = await dryRun("install.sh", pathWithoutAgents(), process.execPath, [
+    "--with-hooks",
+  ]);
   expect(without.out).not.toContain("install-hooks --target devin");
 });
 
@@ -208,21 +217,19 @@ test("install.sh treats a failed helper build as non-fatal", async () => {
   expect(line).toMatch(/build-helper \|\| /);
 });
 
-test("install.sh dry run plans the Kokoro install, the default voice, before the optional key (US-019)", async () => {
-  const r = await dryRun("install.sh");
+test("install.sh plans the Kokoro download only when requested (US-019)", async () => {
+  const r = await dryRun("install.sh", process.env.PATH ?? "", process.execPath, ["--with-kokoro"]);
   expect(r.code).toBe(0);
-  expect(r.out).toContain("Local Kokoro voice (the default voice)");
+  expect(r.out).toContain("Local Kokoro voice");
   const plan = r.out.split("\n").find((l) => l.includes("kokoro install"));
   expect(plan?.trim()).toBe(`+ ${home}/.local/bin/mouthpiece kokoro install`);
   expect(r.out).not.toContain("[Y/n]");
-  expect(r.out.indexOf("kokoro install")).toBeLessThan(r.out.indexOf("TTS provider key"));
   expect(await readdir(home)).toEqual([]);
 });
 
-test("install.sh installs Kokoro unless you answer no, asking only on a terminal outside a dry run", async () => {
+test("install.sh installs Kokoro only when explicitly requested", async () => {
   const script = await Bun.file(join(REPO, "install.sh")).text();
-  expect(script).toContain('if [ -t 0 ] && [ "$DRY_RUN" != 1 ]; then');
-  expect(script).toContain("Install the free local Kokoro voice (~500 MB)? [Y/n]");
+  expect(script).toContain('if [ "$WITH_KOKORO" = 1 ]; then');
   const line = script.split("\n").find((l) => l.includes("kokoro install") && l.includes("run "));
   // A failed Kokoro install leaves the rest of the install (and macOS say) working.
   expect(line).toMatch(/kokoro install \|\| /);

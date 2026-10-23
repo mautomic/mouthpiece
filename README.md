@@ -33,15 +33,22 @@ cd mouthpiece
 ./install.sh
 ```
 
-The installer is safe to re-run. It:
+The default install is a minimal local CLI setup: it installs dependencies and links `mouthpiece` into
+`~/.local/bin`. Start it in the foreground with `mouthpiece start`.
 
-1. installs dependencies and links the `mouthpiece` command into `~/.local/bin`,
-2. builds the helper app (hotkeys, menubar, mic pause, gap-free player),
-3. installs the local Kokoro voice (~500 MB; answer `n` to skip it and use macOS `say`), then offers to store an
-   optional Inworld API key,
-4. installs hooks for Claude Code, and for Codex and Gemini CLI if they're installed,
-5. starts the daemon as a launchd agent, so it runs at login,
-6. says "Mouthpiece is ready."
+Add only the integrations you want:
+
+```sh
+./install.sh --with-helper  # hotkeys, menubar, mic pause, gap-free player
+./install.sh --with-kokoro  # downloads the local Kokoro voice (~500 MB)
+./install.sh --with-hooks   # Claude Code hooks, plus installed Codex/Gemini/Devin hooks
+./install.sh --with-agent   # start at login through launchd
+```
+
+You can combine flags, for example: `./install.sh --with-helper --with-kokoro --with-hooks --with-agent`.
+
+API keys are deliberately not requested during installation. If you choose a cloud provider later, run
+`pbpaste | mouthpiece auth <provider>`.
 
 To preview the steps without changing anything, run `MOUTHPIECE_DRY_RUN=1 ./install.sh`.
 
