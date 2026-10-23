@@ -174,9 +174,14 @@ if [ "$WITH_AGENT" = 1 ]; then
   run "$MP" install-agent || echo "Agent install failed; the daemon still runs with \`mouthpiece start\`."
 fi
 
+if [ "$WITH_AGENT" = 1 ]; then
+  NEXT="The daemon is running through launchd and starts at login (manage: mouthpiece daemon start|stop|restart)."
+else
+  NEXT="Start the daemon with: mouthpiece start   (or install it as a login service: ./install.sh --with-agent)"
+fi
 cat <<EOF
 
-Done. Start the daemon in this terminal with: mouthpiece start
+Done. $NEXT
 Optional integrations: rerun ./install.sh with --with-helper, --with-hooks, --with-agent, or --with-kokoro.
 Config: ~/.config/mouthpiece/config.toml
 EOF

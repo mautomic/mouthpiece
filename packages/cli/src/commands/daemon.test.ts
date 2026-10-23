@@ -21,7 +21,11 @@ const plist = () => join(dir, "dev.mouthpiece.daemon.plist");
  * `codes` maps a launchctl subcommand (print, bootout, bootstrap, kickstart) to its exit code;
  * `state` is what `launchctl print` reports for a loaded service.
  */
-function harness(codes: Record<string, number> = {}, state = "running") {
+function harness(
+  codes: Record<string, number> = {},
+  state = "running",
+  health: "up" | "down" = "down",
+) {
   const out: string[] = [];
   const err: string[] = [];
   const calls: string[][] = [];
@@ -39,7 +43,12 @@ function harness(codes: Record<string, number> = {}, state = "running") {
       speak: unused,
       stop: unused,
       skip: unused,
-      health: unused,
+      health:
+        health === "up"
+          ? async () => ({ ok: true, version: "0.4.0", provider: "say", queueDepth: 0 })
+          : async () => {
+              throw new Error("unreachable");
+            },
       getMode: unused,
       setMode: unused,
       replay: unused,
@@ -69,6 +78,22 @@ function harness(codes: Record<string, number> = {}, state = "running") {
   const run = (...args: string[]) => daemonCommand(args, io, deps);
   return { run, out, err, calls };
 }
+
+test("start refuses when another daemon already owns the port", async () => {
+  await writeFile(plist(), "<plist/>");
+  const h = harness({ print: 113 }, "not running", "up");
+  expect(await h.run("start")).toBe(1);
+  expect(h.err.join("")).toContain("already listening");
+  expect(h.calls.map((c) => c[1])).not.toContain("bootstrap");
+});
+
+test("restart refuses when a non-agent daemon owns the port", async () => {
+  await writeFile(plist(), "<plist/>");
+  const h = harness({ print: 113 }, "not running", "up");
+  expect(await h.run("restart")).toBe(1);
+  expect(h.err.join("")).toContain("already listening");
+  expect(h.calls.map((c) => c[1])).not.toContain("bootstrap");
+});
 
 test("stop boots a running daemon out of launchd", async () => {
   const h = harness();

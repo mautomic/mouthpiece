@@ -36,6 +36,20 @@ export const daemonCommand: CommandFn = async (args, io, deps) => {
     io.out("Daemon stopped. It starts again at login, or with `mouthpiece daemon start`.\n");
     return 0;
   }
+  // The agent is stopped but something else owns the port: a foreground `mouthpiece start` or a
+  // stale daemon. Starting the agent against it would crash-loop on the same port.
+  if (!running) {
+    const listening = await deps.client.health().then(
+      () => true,
+      () => false,
+    );
+    if (listening) {
+      io.err(
+        "mouthpiece: a daemon is already listening, but not through launchd; stop it first (e.g. Ctrl-C on `mouthpiece start`).\n",
+      );
+      return 1;
+    }
+  }
   if (sub === "restart" && loaded) {
     if (!(await launchctl(deps, io, ["kickstart", "-k", service]))) return 1;
     io.out("Daemon restarted.\n");
