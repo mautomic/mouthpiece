@@ -4,7 +4,8 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRY_RUN="${MOUTHPIECE_DRY_RUN:-0}"
-BUN="${BUN:-$HOME/.bun/bin/bun}"
+# An explicit $BUN wins; otherwise a Bun on PATH (brew, mise, …); otherwise the default install path.
+BUN="${BUN:-$(command -v bun 2>/dev/null || echo "$HOME/.bun/bin/bun")}"
 BIN_DIR="$HOME/.local/bin"
 MP="$BIN_DIR/mouthpiece"
 WITH_HELPER=0
@@ -40,11 +41,16 @@ write_cli_wrapper() {
 }
 
 [ "$(uname -s)" = Darwin ] || { echo "Mouthpiece requires macOS." >&2; exit 1; }
+[ "$(uname -m)" = arm64 ] || { echo "Mouthpiece requires Apple Silicon (arm64); Intel Macs are not supported." >&2; exit 1; }
 
 say_step "Checking Bun"
 if [ ! -x "$BUN" ]; then
   echo "Bun not found at $BUN."
   run bash -c 'curl -fsSL https://bun.sh/install | bash'
+  if [ ! -x "$BUN" ] && [ "$DRY_RUN" != 1 ]; then
+    echo "Bun is still not at $BUN. Install it (e.g. brew install oven-sh/bun/bun) or set BUN=/path/to/bun." >&2
+    exit 1
+  fi
 fi
 if [ "$DRY_RUN" != 1 ] || [ -x "$BUN" ]; then
   version="$("$BUN" -e 'console.log(Bun.version)')"
@@ -72,6 +78,9 @@ say_step "Linking the mouthpiece CLI into $BIN_DIR"
 run mkdir -p "$BIN_DIR"
 # Pin the repo's bunfig.toml and skip .env so a project's own bunfig.toml can't break the CLI.
 write_cli_wrapper
+if [ "$DRY_RUN" != 1 ] && ! "$MP" --help 2>&1 | grep -q "usage: mouthpiece"; then
+  echo "warning: $MP did not run as expected; try it directly to see the error."
+fi
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "Note: add $BIN_DIR to your PATH." ;; esac
 
 if [ "$WITH_HELPER" = 1 ]; then
@@ -89,23 +98,31 @@ if [ "$WITH_KOKORO" = 1 ]; then
 fi
 
 if [ "$WITH_HOOKS" = 1 ]; then
+  HOOKED=0
   if command -v claude >/dev/null 2>&1; then
     say_step "Claude Code hooks"
-    run "$MP" install-hooks
+    run "$MP" install-hooks || echo "Claude Code hook install failed; continuing."
+    HOOKED=1
   fi
   if command -v codex >/dev/null 2>&1; then
     say_step "Codex hooks"
     run "$MP" install-hooks --target codex || echo "Codex hook install failed; continuing."
     echo "→ In Codex, run /hooks to trust them."
+    HOOKED=1
   fi
   if command -v gemini >/dev/null 2>&1; then
     say_step "Gemini CLI hooks"
     run "$MP" install-hooks --target gemini || echo "Gemini hook install failed; continuing."
+    HOOKED=1
   fi
   if command -v devin >/dev/null 2>&1; then
     say_step "Devin hooks"
     run "$MP" install-hooks --target devin || echo "Devin hook install failed; continuing."
     echo "→ In Devin, run /hooks to confirm they loaded."
+    HOOKED=1
+  fi
+  if [ "$HOOKED" = 0 ]; then
+    echo "No supported tools found on PATH (claude, codex, gemini, devin); no hooks installed."
   fi
 fi
 
