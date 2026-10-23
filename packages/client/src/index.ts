@@ -7,6 +7,7 @@ import {
   type InboxResponse,
   type InterruptRequest,
   type InterruptResult,
+  localDaemonUrl,
   type ModeRequest,
   type ModeState,
   mouthpieceHome,
@@ -56,7 +57,7 @@ async function request<T>(
   opts: ClientOptions,
 ): Promise<T> {
   const env = opts.env ?? process.env;
-  const base = opts.url ?? daemonUrl(env);
+  const base = localDaemonUrl(opts.url ?? daemonUrl(env));
   const token =
     opts.token ?? env.MOUTHPIECE_TOKEN ?? (await readToken(opts.home ?? mouthpieceHome(env)));
   const headers: Record<string, string> = { "Content-Type": "application/json" };

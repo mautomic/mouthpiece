@@ -53,3 +53,7 @@ test("daemonUrl precedence: MOUTHPIECE_URL > MOUTHPIECE_PORT > default", () => {
   expect(daemonUrl({ MOUTHPIECE_PORT: "8000" })).toBe("http://127.0.0.1:8000");
   expect(daemonUrl({})).toBe("http://127.0.0.1:7317");
 });
+
+test("daemonUrl refuses a non-loopback endpoint", () => {
+  expect(() => daemonUrl({ MOUTHPIECE_URL: "https://example.com" })).toThrow("loopback");
+});

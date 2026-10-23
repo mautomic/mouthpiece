@@ -104,6 +104,21 @@ test("unreachable daemon is a MouthpieceError", async () => {
   ).rejects.toThrow("unreachable");
 });
 
+test("an explicit non-loopback URL is refused before the token can be sent", async () => {
+  let called = false;
+  const fetchFake = (async () => {
+    called = true;
+    return Response.json({ id: "x" }, { status: 202 });
+  }) as unknown as typeof fetch;
+  await expect(
+    speak(
+      { text: "hi", source: "cli" },
+      { url: "https://example.com", token: "t", fetch: fetchFake },
+    ),
+  ).rejects.toThrow("loopback");
+  expect(called).toBe(false);
+});
+
 test("timeoutMs bounds the call", async () => {
   const started = performance.now();
   await expect(
@@ -181,10 +196,9 @@ test("a refused reply raises MouthpieceError with the status and reason", async 
     new Response(JSON.stringify({ error: "the prompt is not empty", reason: "draft" }), {
       status: 409,
     })) as unknown as typeof fetch;
-  const error = await reply(
-    { id: "e1", text: "go" },
-    { url: "http://x", token: "t", fetch: fetchFake },
-  ).catch((e) => e);
+  const error = await reply({ id: "e1", text: "go" }, { url, token: "t", fetch: fetchFake }).catch(
+    (e) => e,
+  );
   expect(error).toBeInstanceOf(MouthpieceError);
   expect([error.status, error.reason, error.message]).toEqual([
     409,
@@ -205,9 +219,7 @@ test("dismissInbox posts the id to /v1/inbox/dismiss", async () => {
     seenBody = String(init.body);
     return new Response(JSON.stringify({ dismissed: 1 }), { status: 200 });
   }) as unknown as typeof fetch;
-  expect(
-    await dismissInbox({ id: "e1" }, { url: "http://x", token: "t", fetch: fetchFake }),
-  ).toEqual({
+  expect(await dismissInbox({ id: "e1" }, { url, token: "t", fetch: fetchFake })).toEqual({
     dismissed: 1,
   });
   expect([seenPath, seenBody]).toEqual(["/v1/inbox/dismiss", '{"id":"e1"}']);

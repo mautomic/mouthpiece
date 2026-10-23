@@ -52,6 +52,16 @@ export async function readOrCreateToken(home: string): Promise<string> {
   return token;
 }
 
+export function localDaemonUrl(value: string): string {
+  const url = new URL(value);
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  if (url.protocol !== "http:" || (hostname !== "127.0.0.1" && hostname !== "::1"))
+    throw new Error("Mouthpiece daemon URL must use an HTTP loopback address");
+  return value;
+}
+
 export function daemonUrl(env: Env = process.env): string {
-  return env.MOUTHPIECE_URL || `http://127.0.0.1:${env.MOUTHPIECE_PORT || DEFAULT_PORT}`;
+  return localDaemonUrl(
+    env.MOUTHPIECE_URL || `http://127.0.0.1:${env.MOUTHPIECE_PORT || DEFAULT_PORT}`,
+  );
 }
