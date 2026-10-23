@@ -47,7 +47,8 @@ Add only the integrations you want:
 ./install.sh                # minimal local CLI setup only (macOS say voice)
 ./install.sh --with-helper  # hotkeys, menubar, mic pause, gap-free player
 ./install.sh --with-kokoro  # downloads the local Kokoro voice (~500 MB)
-./install.sh --with-hooks   # Claude Code hooks, plus installed Codex/Gemini/Devin hooks
+./install.sh --with-hooks   # Claude Code hooks, plus installed Codex/Gemini/Devin hooks —
+                            # hooks are how your tools speak; without them the daemon hears nothing
 ./install.sh --with-agent   # start at login through launchd
 ```
 

@@ -61,8 +61,13 @@ test("install.sh defaults to a local CLI setup without integrations", async () =
   const r = await dryRun("install.sh");
   expect(r.code).toBe(0);
   expect(r.out).toContain("Installing dependencies");
+  // No integration step is planned; the closing hints may still name them.
+  const steps = r.out
+    .split("\n")
+    .filter((l) => l.startsWith("+ "))
+    .join("\n");
   for (const integration of ["build-helper", "kokoro install", "install-hooks", "install-agent"])
-    expect(r.out).not.toContain(integration);
+    expect(steps).not.toContain(integration);
   expect(await readdir(home)).toEqual([]);
 });
 

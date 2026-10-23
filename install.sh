@@ -179,9 +179,16 @@ if [ "$WITH_AGENT" = 1 ]; then
 else
   NEXT="Start the daemon with: mouthpiece start   (or install it as a login service: ./install.sh --with-agent)"
 fi
+HOOKS="Hooks are how Claude Code, Codex and friends speak through Mouthpiece."
+if [ "$WITH_HOOKS" = 1 ]; then
+  HOOKS="$HOOKS Installed for the tools found on PATH."
+else
+  HOOKS="$HOOKS Install them with: mouthpiece install-hooks   (or ./install.sh --with-hooks)"
+fi
 cat <<EOF
 
 Done. $NEXT
+$HOOKS
 Optional integrations: rerun ./install.sh with --with-helper, --with-hooks, --with-agent, or --with-kokoro.
 Config: ~/.config/mouthpiece/config.toml
 EOF
