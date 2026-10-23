@@ -54,6 +54,26 @@ To preview the steps without changing anything, run `MOUTHPIECE_DRY_RUN=1 ./inst
 
 To update later, run `git pull && ./install.sh`.
 
+### What installation changes
+
+The default installer may download Bun if it is missing, installs the locked JavaScript dependencies, and creates
+`~/.local/bin/mouthpiece`. It does not start a background process, install hooks, download Kokoro, play audio, or
+request an API key.
+
+Each optional flag has a deliberate side effect:
+
+| Flag | Change |
+| --- | --- |
+| `--with-helper` | Builds MouthpieceHelper and the audio player under `~/.mouthpiece`. macOS may ask for permissions needed by the enabled helper features. |
+| `--with-kokoro` | Downloads the Kokoro model and package into `~/.mouthpiece/kokoro` (~500 MB). |
+| `--with-hooks` | Adds only Mouthpiece hook entries to the settings files of installed supported tools; the installer keeps a backup before it changes one. |
+| `--with-agent` | Writes `~/Library/LaunchAgents/dev.mouthpiece.daemon.plist` and starts the local daemon at login. |
+
+The daemon listens only on loopback and protects every endpoint except its health check with a token stored at
+`~/.mouthpiece/token` (owner-readable only). It uses the network only to install requested dependencies/models, to
+call a cloud TTS provider you configure, or to run Claude Code summaries when enabled. See [SECURITY.md](SECURITY.md)
+for responsible disclosure.
+
 ## Everyday use
 
 Start a new Claude Code session. Responses are spoken as summaries:
