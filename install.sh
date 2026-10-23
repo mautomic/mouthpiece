@@ -8,8 +8,17 @@ BUN="${BUN:-$HOME/.bun/bin/bun}"
 BIN_DIR="$HOME/.local/bin"
 MP="$BIN_DIR/mouthpiece"
 
-run() { echo "+ $*"; if [ "$DRY_RUN" != 1 ]; then "$@"; fi; }
+run() { printf '+ '; printf '%q ' "$@"; printf '\n'; if [ "$DRY_RUN" != 1 ]; then "$@"; fi; }
 say_step() { echo; echo "==> $*"; }
+
+write_cli_wrapper() {
+  echo "+ write CLI wrapper to $MP"
+  if [ "$DRY_RUN" != 1 ]; then
+    printf '#!/usr/bin/env bash\nexec "%s" --config="%s" --no-env-file "%s" "$@"\n' \
+      "$BUN" "$REPO/bunfig.toml" "$REPO/packages/cli/src/main.ts" > "$MP"
+    chmod +x "$MP"
+  fi
+}
 
 [ "$(uname -s)" = Darwin ] || { echo "Mouthpiece requires macOS." >&2; exit 1; }
 
@@ -35,12 +44,15 @@ if [ "$DRY_RUN" != 1 ] || [ -x "$BUN" ]; then
 fi
 
 say_step "Installing dependencies"
-run bash -c "cd '$REPO' && '$BUN' install"
+(
+  cd "$REPO"
+  run "$BUN" install
+)
 
 say_step "Linking the mouthpiece CLI into $BIN_DIR"
 run mkdir -p "$BIN_DIR"
 # Pin the repo's bunfig.toml and skip .env so a project's own bunfig.toml can't break the CLI.
-run bash -c "printf '#!/usr/bin/env bash\nexec \"%s\" --config=\"%s\" --no-env-file \"%s\" \"\$@\"\n' '$BUN' '$REPO/bunfig.toml' '$REPO/packages/cli/src/main.ts' > '$MP' && chmod +x '$MP'"
+write_cli_wrapper
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "Note: add $BIN_DIR to your PATH." ;; esac
 
 say_step "Building helper (hotkeys, menubar, mic pause)"

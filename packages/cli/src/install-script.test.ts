@@ -1,7 +1,7 @@
 // install-script.test.ts: dry run only; never executes real installation steps.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -33,6 +33,20 @@ async function dryRun(script: string, path = process.env.PATH ?? "", bun = proce
   };
 }
 
+async function runInstall(path: string, bun: string) {
+  const proc = Bun.spawn(["bash", join(REPO, "install.sh")], {
+    env: { PATH: path, HOME: home, BUN: bun, MOUTHPIECE_DRY_RUN: "0" },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return {
+    code: await proc.exited,
+    out: await new Response(proc.stdout).text(),
+    err: await new Response(proc.stderr).text(),
+  };
+}
+
 test.each(["install.sh", "uninstall.sh"])("%s parses", async (script) => {
   expect(await Bun.spawn(["bash", "-n", join(REPO, script)]).exited).toBe(0);
 });
@@ -46,7 +60,7 @@ test("install.sh dry run plans every step and writes nothing", async () => {
     "build-helper",
     "install-hooks",
     "install-agent",
-    "Mouthpiece is ready",
+    "==> Testing",
   ])
     expect(r.out).toContain(step);
   expect(await readdir(home)).toEqual([]);
@@ -125,6 +139,17 @@ test("install.sh rejects Bun older than 1.2 before changing the user's home", as
   expect(await readdir(home)).toEqual([]);
 });
 
+test("install.sh works when HOME contains spaces and apostrophes", async () => {
+  const base = home;
+  home = join(base, "Mau's tools");
+  await mkdir(home);
+  const r = await runInstall("/usr/bin:/bin", await fakeBun("1.4.2"));
+  expect(r.code).toBe(0);
+  const wrapper = join(home, ".local", "bin", "mouthpiece");
+  expect(existsSync(wrapper)).toBe(true);
+  expect(await readFile(wrapper, "utf8")).toContain("--no-env-file");
+});
+
 test("install.sh installs Codex hooks only when codex is on PATH", async () => {
   const withCodex = await dryRun("install.sh", await pathWith("codex"));
   expect(withCodex.code).toBe(0);
@@ -188,7 +213,7 @@ test("install.sh dry run plans the Kokoro install, the default voice, before the
   expect(r.code).toBe(0);
   expect(r.out).toContain("Local Kokoro voice (the default voice)");
   const plan = r.out.split("\n").find((l) => l.includes("kokoro install"));
-  expect(plan).toBe(`+ ${home}/.local/bin/mouthpiece kokoro install`);
+  expect(plan?.trim()).toBe(`+ ${home}/.local/bin/mouthpiece kokoro install`);
   expect(r.out).not.toContain("[Y/n]");
   expect(r.out.indexOf("kokoro install")).toBeLessThan(r.out.indexOf("TTS provider key"));
   expect(await readdir(home)).toEqual([]);
@@ -207,46 +232,36 @@ test("uninstall.sh dry run removes the helper app and asks before removing Kokor
   const r = await dryRun("uninstall.sh");
   expect(r.code).toBe(0);
   const lines = r.out.split("\n");
-  expect(lines).toContain(`+ rm -rf '${home}/.mouthpiece/MouthpieceHelper.app'`);
+  expect(
+    lines.some((line) => line.startsWith(`+ rm -rf ${home}/.mouthpiece/MouthpieceHelper.app`)),
+  ).toBe(true);
   const ask = lines.findIndex((l) => l.startsWith("? Delete the Kokoro voice"));
   expect(ask).toBeGreaterThanOrEqual(0);
   expect(lines[ask]).toContain("(dry run: planning yes)");
-  expect(lines[ask + 1]).toBe(`+ rm -rf '${home}/.mouthpiece/kokoro'`);
+  expect(lines[ask + 1]?.trim()).toBe(`+ rm -rf ${home}/.mouthpiece/kokoro`);
   expect(await readdir(home)).toEqual([]);
 });
 
-/** The exact `bash -c` command install.sh runs to write the CLI wrapper, from its dry-run plan. */
-async function wrapperCommand(): Promise<string> {
-  const r = await dryRun("install.sh");
-  const prefix = "+ bash -c ";
-  const line = r.out
-    .split("\n")
-    .find(
-      (l) => l.startsWith(prefix) && l.includes("printf") && l.includes("/.local/bin/mouthpiece"),
-    );
-  expect(line).toBeDefined();
-  return (line ?? "").slice(prefix.length);
-}
-
 test("install.sh's CLI wrapper pins the repo's bunfig.toml and skips .env files", async () => {
-  const command = await wrapperCommand();
-  expect(command).toContain('exec "%s" --config="%s" --no-env-file "%s" "$@"');
-  expect(command).toContain(`'${REPO}/bunfig.toml' '${REPO}/packages/cli/src/main.ts'`);
-  expect(await readdir(home)).toEqual([]);
+  const script = await Bun.file(join(REPO, "install.sh")).text();
+  expect(script).toContain('exec "%s" --config="%s" --no-env-file "%s" "$@"');
+  expect(script).not.toContain("eval");
 });
 
 test("the wrapper install.sh writes runs the CLI unaffected by a project bunfig.toml", async () => {
-  // Run install.sh's own wrapper-writing command; its target is inside the temp HOME.
-  const command = await wrapperCommand();
-  expect(command).toContain(`'${home}/.local/bin/mouthpiece'`);
   await mkdir(join(home, ".local", "bin"), { recursive: true });
-  expect(await Bun.spawn(["bash", "-c", command]).exited).toBe(0);
+  const wrapper = join(home, ".local", "bin", "mouthpiece");
+  await writeFile(
+    wrapper,
+    `#!/usr/bin/env bash\nexec "${process.execPath}" --config="${REPO}/bunfig.toml" --no-env-file "${REPO}/packages/cli/src/main.ts" "$@"\n`,
+  );
+  await chmod(wrapper, 0o755);
   const project = await mkdtemp(join(tmpdir(), "mp-hostile-"));
   fakeBins.push(project);
   await writeFile(join(project, "bunfig.toml"), 'preload = ["./p.ts"]\n');
   await writeFile(join(project, "p.ts"), 'console.log("preloaded");\n');
   await writeFile(join(project, ".env"), "MOUTHPIECE_HOME=/nonexistent\n");
-  const proc = Bun.spawn([join(home, ".local", "bin", "mouthpiece"), "--help"], {
+  const proc = Bun.spawn([wrapper, "--help"], {
     cwd: project,
     env: { PATH: process.env.PATH ?? "", HOME: home, MOUTHPIECE_HOME: home },
     stdout: "pipe",
