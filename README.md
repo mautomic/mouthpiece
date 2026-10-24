@@ -86,10 +86,12 @@ for responsible disclosure.
 
 ## Everyday use
 
-Start a new Claude Code session. Responses are spoken as summaries:
+Start a new Claude Code session. By default, responses use **Summary long**:
 - **Order:** first the most important results (what was done or found, and how it turned out), then anything you need to do or answer, at the end. If a summary is too long, sentences are cut from the middle, never the closing to-do.
 - **Length:** short replies get a sentence or two, and complex ones get more, up to 700 characters.
 - **Shorter replies:** a reply under 300 characters is read in full.
+
+Choose **Summary short** from the menubar’s **Mode** submenu, or run `mouthpiece mode summary-short`, for a fresh LLM-generated one- or two-sentence synthesis of the important result and next action. It is not merely a clipped Summary long. Choose **Full** to hear the complete response, or **Off** to mute responses (alerts still speak).
 
 When Claude needs your approval to use a tool, you hear an alert that names the project, even when responses are muted. Typing your next prompt interrupts whatever that session is saying.
 
@@ -98,7 +100,7 @@ When Claude needs your approval to use a tool, you hear an alert that names the 
 | ⌃⌥S | Stop speaking and clear the queue |
 | ⌃⌥N | Skip to the next item |
 | ⌃⌥R | Replay the last response |
-| ⌃⌥M | Switch between summary and full |
+| ⌃⌥M | Switch between Summary long and Full |
 | ⌃⌥O | Open the reply inbox (with `[reply] enabled`) |
 
 The menubar icon shows whether Mouthpiece is idle, speaking, or paused, how many items are queued, and "✉N" while N sessions wait in the inbox. Its menu has the same controls, each showing its hotkey, plus **Inbox**, mode and pause, and a **Settings** submenu for the Kokoro voice and speed. A change there is saved to your config file and you hear the new voice right away. **Quit Mouthpiece** (⌘Q while the menu is open) stops the daemon until your next login or `mouthpiece daemon start`.
@@ -188,7 +190,7 @@ Commonly changed settings:
 | `provider.chain` | `["kokoro", "say"]` | Voices to try, in order (an uninstalled Kokoro is skipped) |
 | `modes.default` | `"summary"` | `summary` (long), `summary-short` (one or two sentences), `full`, or `off` |
 | `summarizer.thresholdChars` | `300` | Responses shorter than this are spoken in full |
-| `summarizer.maxChars` | `700` | The longest a summary can be; each one is sized to its response (about 40% of its length) |
+| `summarizer.maxChars` | `700` | The longest Summary long can be; each one is sized to its response (about 40% of its length). Summary short is always one or two sentences. |
 | `filter.minChars` | `20` | Shorter responses (and "done", "ok", …) aren't spoken |
 | `hotkeys.stop` / `skip` / `replay` / `toggleMode` / `inbox` | `ctrl+alt+s` / `n` / `r` / `m` / `o` | Global hotkeys |
 | `menubar.enabled` | `true` | Show the menubar icon |
