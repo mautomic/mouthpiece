@@ -6,7 +6,7 @@
 export const KINDS = ["response", "alert", "info"] as const;
 export type Kind = (typeof KINDS)[number];
 
-export const MODES = ["summary", "full", "off"] as const;
+export const MODES = ["summary", "summary-short", "full", "off"] as const;
 export type Mode = (typeof MODES)[number];
 
 export const FORMATS = ["markdown", "plain"] as const;
@@ -339,7 +339,7 @@ export type Logger = (record: Record<string, unknown>) => void;
 export interface ModeRequest {
   /** Exactly one of mode, toggle, clear. */
   mode?: Mode;
-  /** summary <-> full; off -> summary. */
+  /** summary (long or short) <-> full; off -> summary. */
   toggle?: boolean;
   /** Remove the runtime override at this scope. */
   clear?: boolean;

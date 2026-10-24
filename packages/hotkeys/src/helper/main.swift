@@ -299,13 +299,13 @@ final class Menubar: NSObject, NSMenuDelegate {
 
     let modeMenu = NSMenu()
     modeMenu.autoenablesItems = false
-    for (title, mode) in [("Summary", "summary"), ("Full", "full"), ("Off", "off")] {
+    for (title, mode) in [("Summary long", "summary"), ("Summary short", "summary-short"), ("Full", "full"), ("Off", "off")] {
       let entry = routeItem(title, "/v1/mode", "{\"mode\":\"\(mode)\"}")
       modeMenu.addItem(entry)
       modeItems[mode] = entry
     }
     modeMenu.addItem(NSMenuItem.separator())
-    let toggle = routeItem("Summary ↔ Full", "/v1/mode", "{\"toggle\":true}")
+    let toggle = routeItem("Summary long ↔ Full", "/v1/mode", "{\"toggle\":true}")
     showShortcut(toggle, for: "toggleMode")
     modeMenu.addItem(toggle)
     actionItems.append(toggle)

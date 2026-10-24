@@ -174,7 +174,7 @@ test("status reflects speaking, paused, queueDepth, current and mode (US-018)", 
     provider: "fake",
     current: null,
   });
-  expect(VERSION).toBe("0.4.0");
+  expect(VERSION).toBe("0.5.0");
 
   await speak(
     { ...plain, conversationId: "a", label: "web", text: "The first item is playing now." },

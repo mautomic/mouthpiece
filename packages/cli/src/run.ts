@@ -26,12 +26,12 @@ export type { CliDeps, CliIO } from "./types.ts";
 const USAGE = `usage: mouthpiece <command>
   start                                   run the daemon in the foreground
   say [text…] [--file path] [--source s] [--label l] [--kind response|alert|info]
-      [--mode summary|full|off] [--voice v] [--priority high|normal|low]
+      [--mode summary|summary-short|full|off] [--voice v] [--priority high|normal|low]
       [--plain | --markdown] [--fallback-say]
                                           speak text (reads stdin when no text or --file is given)
   stop | skip | status
   pause | resume [--reason r]             pause speech until resumed (default reason: user)
-  mode [summary|full|off|toggle|clear] [--source s] [--conversation c]
+  mode [summary|summary-short|full|off|toggle|clear] [--source s] [--conversation c]
   replay [--full]
   usage [--month YYYY-MM]
   voices [--provider x]                   list each provider's voices

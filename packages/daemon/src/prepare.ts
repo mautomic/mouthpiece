@@ -3,6 +3,7 @@ import {
   type Logger,
   type NormalizedSpeakEvent,
   type Summarizer,
+  splitSentences,
 } from "@mouthpiece/core";
 import type { Prepared, ResolveMode } from "./types.ts";
 import type { SummaryRecord } from "./usage.ts";
@@ -59,7 +60,7 @@ export function createPreparer(deps: PreparerDeps): Preparer {
     const { summarizer, fallback, thresholdChars } = deps.settings();
     if (
       event.verbatim ||
-      mode !== "summary" ||
+      (mode !== "summary" && mode !== "summary-short") ||
       event.kind !== "response" ||
       full.length <= thresholdChars
     ) {
@@ -96,6 +97,7 @@ export function createPreparer(deps: PreparerDeps): Preparer {
       }
     }
     summary ??= await fallback.summarize(full, { source: event.source }).catch(() => full);
+    if (mode === "summary-short") summary = splitSentences(summary).slice(0, 2).join(" ");
     return { mode, full, summary, spoken: summary };
   }
 

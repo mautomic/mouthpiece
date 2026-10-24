@@ -22,7 +22,7 @@ Body (generic event envelope, PRD §8.3):
 | `label` | string | none | spoken prefix (see `announce`) (≤ 100) |
 | `kind` | `response` \| `alert` \| `info` | `response` | `response` items are subject to the trivial-text filter |
 | `priority` | `high` \| `normal` \| `low` | `high` for alerts, else `normal` | higher priority jumps the queue, never interrupts |
-| `mode` | `summary` \| `full` \| `off` | runtime override, then source profile, then `modes.default` | see `POST /v1/mode` for precedence |
+| `mode` | `summary` \| `summary-short` \| `full` \| `off` | runtime override, then source profile, then `modes.default` | see `POST /v1/mode` for precedence |
 | `format` | `markdown` \| `plain` | `markdown` | `plain` skips markdown cleaning |
 | `voice` | string | none | provider voice for this event (≤ 100); see voice selection below |
 | `verbatim` | boolean | `false` | speak `text` as given: never summarized and never dropped as trivial, whatever the mode or length. Mode `off` still mutes it; markdown is still cleaned unless `format: "plain"` |
@@ -64,7 +64,7 @@ Skips the item currently playing. 200 `{ "skipped": true }`
 200 `StatusResponse`, what the daemon is doing right now (polled by the menubar, US-018):
 
 ```json
-{ "version": "0.4.0", "speaking": true, "paused": false, "pauseReasons": [], "mode": "summary",
+{ "version": "0.5.0", "speaking": true, "paused": false, "pauseReasons": [], "mode": "summary",
   "queueDepth": 2, "provider": "say", "current": { "source": "claude-code", "label": "web" } }
 ```
 
@@ -181,7 +181,7 @@ that reply. Same responses as `/v1/reply`, plus 409 `reason: "not-typed"`.
 200 `ModeState`: `{ "default": "summary", "overrides": [{ "source": "claude-code", "conversationId": "s1", "mode": "full" }] }`
 
 ## POST /v1/mode
-Body: exactly one of `{ "mode": "summary"|"full"|"off" }`, `{ "toggle": true }` (summary↔full, off→summary), `{ "clear": true }`;
+Body: exactly one of `{ "mode": "summary"|"summary-short"|"full"|"off" }`, `{ "toggle": true }` (summary long/short↔full, off→summary), `{ "clear": true }`;
 optional scope `source` (+ `conversationId`). No scope = global runtime mode. Returns 200 `ModeState`.
 Precedence when speaking: event `mode` > conversation > source > global runtime > `profiles.<source>.mode` > config `modes.default`.
 `off` mutes `response` items only; alerts always play.

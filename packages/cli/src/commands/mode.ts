@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { MODES, type Mode, type ModeRequest } from "@mouthpiece/core";
 import type { CommandFn } from "../types.ts";
 
-/** `mouthpiece mode [summary|full|off|toggle|clear] [--source s] [--conversation c]` (US-010). */
+/** `mouthpiece mode [summary|summary-short|full|off|toggle|clear] [--source s] [--conversation c]` (US-010). */
 export const modeCommand: CommandFn = async (args, io, deps) => {
   const { values, positionals } = parseArgs({
     args,

@@ -62,7 +62,7 @@ import { createPlayer } from "./stream-player.ts";
 import { billingCycle, MeteredProvider, monthRange, UsageStore } from "./usage.ts";
 import { watchConfig } from "./watch.ts";
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";
 
 /** How long `GET /v1/voices` waits for one provider's voice list. The CLI's SLOW_REQUEST_TIMEOUT_MS must exceed it. */
 export const VOICES_TIMEOUT_MS = 5_000;

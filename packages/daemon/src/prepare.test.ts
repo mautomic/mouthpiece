@@ -20,7 +20,7 @@ const ev = (text: string, extra: Partial<NormalizedSpeakEvent> = {}): Normalized
   ...extra,
 });
 
-function setup(mode: "summary" | "full" | "off", summarizer?: Summarizer) {
+function setup(mode: "summary" | "summary-short" | "full" | "off", summarizer?: Summarizer) {
   const logs: Record<string, unknown>[] = [];
   const preparer = createPreparer({
     resolveMode: () => mode,
@@ -60,6 +60,14 @@ test("summary mode summarizes long responses", async () => {
   expect(p.spoken).toBe("Short summary.");
   expect(p.summary).toBe("Short summary.");
   expect(p.full).toBe(long.trim());
+});
+
+test("summary-short speaks no more than two sentences", async () => {
+  const { s } = fake("First result. Second action. Third detail.");
+  const p = await setup("summary-short", s).preparer.prepare(ev(long));
+  expect(p.mode).toBe("summary-short");
+  expect(p.summary).toBe("First result. Second action.");
+  expect(p.spoken).toBe("First result. Second action.");
 });
 
 test("short responses and alerts are never summarized", async () => {

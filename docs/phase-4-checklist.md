@@ -1,6 +1,6 @@
 # Phase 4 manual checklist
 
-Run these against the installed daemon (launchd owns port 7317). Re-run `./install.sh` first: it rebuilds the helper as `~/.mouthpiece/MouthpieceHelper.app` (hotkeys, menubar, mic pause) and restarts the daemon on the new code. `mouthpiece status` should then print JSON with `"version": "0.4.0"`.
+Run these against the installed daemon (launchd owns port 7317). Re-run `./install.sh --with-helper --with-agent` first: it rebuilds the helper as `~/.mouthpiece/MouthpieceHelper.app` (hotkeys, menubar, mic pause) and restarts the daemon on the new code. `mouthpiece status` should then print JSON with `"version": "0.5.0"`.
 
 ## Kokoro local voice (US-019)
 
@@ -25,7 +25,7 @@ Run these against the installed daemon (launchd owns port 7317). Re-run `./insta
   - Stop, Skip, Replay, Replay full.
   - The Mode submenu: its checkmark follows `mouthpiece mode`.
   - Pause speech / Resume speech. `mouthpiece status` shows `"pauseReasons": ["user"]` while paused.
-  - The bottom line shows `Mouthpiece 0.4.0 · <provider>`.
+  - The bottom line shows `Mouthpiece 0.5.0 · <provider>`.
 - [ ] `mouthpiece pause` and `mouthpiece resume` do the same as the menu items.
 - [ ] **Quit Mouthpiece** (the menu's last item, or ⌘Q with the menu open):
   - The menubar icon disappears and speech stops.

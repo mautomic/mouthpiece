@@ -89,6 +89,6 @@ test("mode clear with a conversation scope", async () => {
 test("unknown mode is a usage error", async () => {
   const h = harness();
   expect(await run(["mode", "loud"], h.io, h.deps)).toBe(2);
-  expect(h.err.join("")).toContain("summary, full, off");
+  expect(h.err.join("")).toContain("summary, summary-short, full, off");
   expect(h.setModeCalls).toEqual([]);
 });

@@ -228,7 +228,7 @@ test("usage text shows every flag of say, voices, tail and the hook targets", as
     "--source s",
     "--label l",
     "--kind response|alert|info",
-    "--mode summary|full|off",
+    "--mode summary|summary-short|full|off",
     "--voice v",
     "--priority high|normal|low",
     "--plain | --markdown",

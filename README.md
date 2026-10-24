@@ -111,7 +111,7 @@ The menubar icon shows whether Mouthpiece is idle, speaking, or paused, how many
 mouthpiece say "Build finished."           # speak any text (also reads stdin, or --file path)
 mouthpiece stop | skip                     # stop everything / skip the current item
 mouthpiece replay [--full]                 # replay the last response (--full: unsummarized)
-mouthpiece mode summary|full|off|toggle    # how responses are spoken (alerts are always spoken)
+mouthpiece mode summary|summary-short|full|off|toggle # how responses are spoken (alerts are always spoken)
 mouthpiece pause | resume                  # hold all speech, then continue where it left off
 mouthpiece status                          # what the daemon is doing, as JSON
 mouthpiece voices [--provider kokoro]      # list available voices
@@ -186,7 +186,7 @@ Commonly changed settings:
 | Setting | Default | What it does |
 |---|---|---|
 | `provider.chain` | `["kokoro", "say"]` | Voices to try, in order (an uninstalled Kokoro is skipped) |
-| `modes.default` | `"summary"` | `summary`, `full`, or `off` |
+| `modes.default` | `"summary"` | `summary` (long), `summary-short` (one or two sentences), `full`, or `off` |
 | `summarizer.thresholdChars` | `300` | Responses shorter than this are spoken in full |
 | `summarizer.maxChars` | `700` | The longest a summary can be; each one is sized to its response (about 40% of its length) |
 | `filter.minChars` | `20` | Shorter responses (and "done", "ok", …) aren't spoken |

@@ -45,7 +45,7 @@ function harness(
       skip: unused,
       health:
         health === "up"
-          ? async () => ({ ok: true, version: "0.4.0", provider: "say", queueDepth: 0 })
+          ? async () => ({ ok: true, version: "0.5.0", provider: "say", queueDepth: 0 })
           : async () => {
               throw new Error("unreachable");
             },

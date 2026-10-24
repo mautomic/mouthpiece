@@ -58,9 +58,9 @@ export function infoPlist(): string {
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.4.0</string>
+  <string>0.5.0</string>
   <key>CFBundleVersion</key>
-  <string>4</string>
+  <string>5</string>
   <key>LSUIElement</key>
   <true/>
 </dict>

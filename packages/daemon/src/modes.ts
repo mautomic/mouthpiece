@@ -6,7 +6,7 @@ function keyFor(source?: string, conversationId?: string): string {
   if (conversationId === undefined) return source;
   return `${source}\u0000${conversationId}`;
 }
-const flip = (mode: Mode): Mode => (mode === "summary" ? "full" : "summary");
+const flip = (mode: Mode): Mode => (mode === "full" || mode === "off" ? "summary" : "full");
 
 /** Runtime mode overrides (API/hotkeys) layered over config (US-010). */
 export class ModeStore {
