@@ -70,6 +70,19 @@ test("summary-short speaks no more than two sentences", async () => {
   expect(p.spoken).toBe("First result. Second action.");
 });
 
+test("summary-short asks the summarizer for a two-sentence synthesis", async () => {
+  const options: { source: string; maxSentences?: number }[] = [];
+  const summarizer: Summarizer = {
+    name: "fake",
+    summarize: async (_text, opts) => {
+      options.push(opts);
+      return "First result. Second action.";
+    },
+  };
+  await setup("summary-short", summarizer).preparer.prepare(ev(long));
+  expect(options).toEqual([{ source: "claude-code", maxSentences: 2 }]);
+});
+
 test("short responses and alerts are never summarized", async () => {
   const { s, calls } = fake("x");
   const { preparer } = setup("summary", s);

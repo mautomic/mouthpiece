@@ -26,3 +26,7 @@ test("with nothing for the user to do, the summary just ends (no 'no action need
     "If there is nothing for the user to do or answer, just end",
   );
 });
+
+test("a short summary prompt tells the model to synthesize in two sentences", () => {
+  expect(summaryPrompt(700, 1000, 2)).toContain("Use no more than 2 short sentences");
+});

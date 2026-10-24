@@ -1,6 +1,10 @@
 // The first three lines were validated against claude -p --model haiku (relays rather than answers,
 // keeps first person). Re-check summaries with scripts/summary-eval.ts after changing the wording.
-export function summaryPrompt(maxChars: number, messageChars: number): string {
+export function summaryPrompt(
+  maxChars: number,
+  messageChars: number,
+  maxSentences?: number,
+): string {
   return [
     "You condense a message that an AI coding assistant just wrote to its user into what the assistant would say out loud.",
     'Speak AS the assistant, in first person ("I"), addressing the user as "you".',
@@ -10,6 +14,11 @@ export function summaryPrompt(maxChars: number, messageChars: number): string {
     "2. End with anything the user needs to do next (for example restart something, run a command, or try a change), including any question or decision the assistant is asking them.",
     "Never leave out a question or something the user needs to do; shorten the rest instead. If there is nothing for the user to do or answer, just end after the results; don't say so.",
     "Say commands in plain words. No code, file paths, commit ids, or exact counts.",
+    ...(maxSentences === undefined
+      ? []
+      : [
+          `Use no more than ${maxSentences} short sentences; make each one carry the most important result or next action.`,
+        ]),
     `Aim for about ${summaryTarget(maxChars, messageChars)} characters, never more. Use short sentences. Output only the spoken text.`,
   ].join("\n");
 }

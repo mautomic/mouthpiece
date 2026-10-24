@@ -220,7 +220,10 @@ export interface Player {
 /** Phase 2 (US-009). */
 export interface Summarizer {
   readonly name: string;
-  summarize(text: string, opts: { source: string; signal?: AbortSignal }): Promise<string>;
+  summarize(
+    text: string,
+    opts: { source: string; signal?: AbortSignal; maxSentences?: number },
+  ): Promise<string>;
 }
 
 /** Future (PRD §12): send text back into a source's conversation. */

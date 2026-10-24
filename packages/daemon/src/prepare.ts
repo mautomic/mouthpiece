@@ -70,7 +70,10 @@ export function createPreparer(deps: PreparerDeps): Preparer {
     if (summarizer) {
       const started = now();
       try {
-        summary = await summarizer.summarize(full, { source: event.source });
+        summary = await summarizer.summarize(full, {
+          source: event.source,
+          ...(mode === "summary-short" && { maxSentences: 2 }),
+        });
         const ms = now() - started;
         deps.log({ msg: "summarized", source: event.source, ms, chars: summary.length });
         report({

@@ -21,7 +21,7 @@ export class ClaudeCliSummarizer implements Summarizer {
 
   async summarize(
     text: string,
-    options: { source: string; signal?: AbortSignal },
+    options: { source: string; signal?: AbortSignal; maxSentences?: number },
   ): Promise<string> {
     options.signal?.throwIfAborted();
     await mkdir(this.opts.cwd, { recursive: true });
@@ -38,7 +38,7 @@ export class ClaudeCliSummarizer implements Summarizer {
       "--setting-sources",
       "",
       "--system-prompt",
-      summaryPrompt(this.opts.maxChars, text.length),
+      summaryPrompt(this.opts.maxChars, text.length, options.maxSentences),
     ];
     const proc = Bun.spawn(args, {
       cwd: this.opts.cwd,
