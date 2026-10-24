@@ -31,7 +31,7 @@ done
 run() { printf '+ '; printf '%q ' "$@"; printf '\n'; if [ "$DRY_RUN" != 1 ]; then "$@"; fi; }
 say_step() { echo; echo "==> $*"; }
 
-# Comments only, so nothing is pinned against future defaults — and an existing config is never touched.
+# A new config selects Summary short; an existing config is never touched.
 write_default_config() {
   local cfg="${MOUTHPIECE_CONFIG:-$HOME/.config/mouthpiece/config.toml}"
   echo "+ write default config to $cfg"
@@ -41,10 +41,9 @@ write_default_config() {
     return
   fi
   mkdir -p "$(dirname "$cfg")"
-  cat > "$cfg" <<'TOML'
-# Mouthpiece configuration. Every key is optional — this file is comments only, so the daemon
-# runs on its defaults. The file hot-reloads on save. See README.md and docs/api.md for every
-# option; delete this file to go back to all defaults.
+cat > "$cfg" <<'TOML'
+# Mouthpiece configuration. Every key is optional. This file hot-reloads on save. See README.md
+# and docs/api.md for every option; delete this file to go back to all defaults.
 
 # The provider chain: the first provider that can synthesize speaks; the rest are fallbacks.
 # [provider]
@@ -62,9 +61,9 @@ write_default_config() {
 # [sourceVoices.kokoro]
 # codex = "am_adam"
 
-# Speech mode: "summary" | "full" | "off"
-# [modes]
-# default = "summary"
+# Speech mode: "summary" (long) | "summary-short" (one or two sentences) | "full" | "off"
+[modes]
+default = "summary-short"
 TOML
 }
 
