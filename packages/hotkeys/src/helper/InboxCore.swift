@@ -61,6 +61,8 @@ struct InboxEntry: Decodable, Equatable {
   /// "pending" until the voice starts, then "started"; "none" when it won't be spoken. Absent from
   /// older daemons, which counts as started.
   var speech: String? = nil
+  /// True when the response's mode was `off`: it never pops the panel. Absent from older daemons.
+  var muted: Bool? = nil
 
   var name: String { label ?? source }
   var speechPending: Bool { speech == "pending" }
@@ -157,9 +159,9 @@ enum PopupMode: String {
 /// Terminal host (a route's `via`) → its app's bundle id, for "away".
 let hostBundleIds: [String: String] = ["orca": "com.stablyai.orca"]
 
-/// Whether a new entry pops the panel up. Only waiting entries with a route ever do.
+/// Whether a new entry pops the panel up. Only unmuted waiting entries with a route ever do.
 func shouldPop(_ entry: InboxEntry, mode: PopupMode, frontmost: String?) -> Bool {
-  guard entry.state == "waiting", let route = entry.route else { return false }
+  guard entry.state == "waiting", let route = entry.route, entry.muted != true else { return false }
   switch mode {
   case .always: return true
   case .never: return false
@@ -350,10 +352,11 @@ func runInboxSelfTest() -> Int32 {
 
   func entryJSON(
     _ id: String, conv: String = "c1", state: String = "waiting", route: Bool = true, at: Double = 1,
-    label: String? = "web", speech: String? = nil
+    label: String? = "web", speech: String? = nil, muted: Bool = false
   ) -> String {
     let r = route ? ",\"route\":{\"via\":\"orca\",\"target\":\"term_a\",\"agent\":\"claude\"}" : ""
     let l = (label.map { ",\"label\":\"\($0)\"" } ?? "") + (speech.map { ",\"speech\":\"\($0)\"" } ?? "")
+      + (muted ? ",\"muted\":true" : "")
     return "{\"id\":\"\(id)\",\"source\":\"claude-code\",\"conversationId\":\"\(conv)\"\(l),"
       + "\"text\":\"Shall I continue?\",\"at\":\(at),\"state\":\"\(state)\"\(r),\"alert\":{\"text\":\"x\",\"at\":1}}"
   }
@@ -425,6 +428,8 @@ func runInboxSelfTest() -> Int32 {
   check(shouldPop(otherVia, mode: .away, frontmost: orca), "popup: an unknown via counts as away")
   check(!shouldPop(busy, mode: .always, frontmost: nil), "popup: a busy entry never pops")
   check(!shouldPop(noRoute, mode: .always, frontmost: nil), "popup: an entry with no route never pops")
+  let mutedEntry = try! JSONDecoder().decode(InboxEntry.self, from: Data(entryJSON("p7", muted: true).utf8))
+  check(!shouldPop(mutedEntry, mode: .always, frontmost: nil), "popup: a muted (mode off) entry never pops")
 
   // Reply outcomes
   check(decodeReplyOutcome(status: 202, body: Data("{\"status\":\"submitted\"}".utf8)) == .submitted, "reply: 202 submitted")

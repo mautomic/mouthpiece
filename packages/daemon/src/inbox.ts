@@ -44,7 +44,7 @@ export class Inbox {
   }
 
   /** Records a response (returns its entry id) or attaches an alert; anything else is ignored. */
-  record(event: NormalizedSpeakEvent): string | undefined {
+  record(event: NormalizedSpeakEvent, opts: { muted?: boolean } = {}): string | undefined {
     const key = keyOf(event.source, event.conversationId);
     const existing = this.#entries.get(key);
     if (event.kind === "alert") {
@@ -72,6 +72,7 @@ export class Inbox {
       ...(route && { route }),
       state: "waiting",
       speech: "pending",
+      ...(opts.muted && { muted: true }),
     };
     if (existing) {
       this.#replaced.add(existing.id);

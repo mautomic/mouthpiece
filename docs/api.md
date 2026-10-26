@@ -144,6 +144,7 @@ Pause semantics (US-022):
 | `state` | `waiting` (replyable), `busy` (a prompt was submitted), `sending`, `typed` (typed, not submitted) |
 | `reply` | `{ at }`: when a reply was last sent; its text is never returned |
 | `speech` | `pending` until the response's first audio plays, then `started`; `none` when it won't be spoken (muted, skipped, dropped from the queue, or nothing rendered). Set once. Absent from older daemons: treat as `started` |
+| `muted` | `true` when the response's mode resolved to `off`: it stays in the inbox but never pops the panel. Absent from older daemons: treat as `false` |
 
 ## GET /v1/inbox/events
 `text/event-stream`. First `event: snapshot` with the `InboxResponse`, then `event: entry` (an `InboxEntry`) or

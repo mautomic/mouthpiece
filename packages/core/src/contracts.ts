@@ -266,6 +266,8 @@ export interface InboxEntry {
   reply?: { at: number };
   /** Absent from daemons before this field; treat that as `started`. */
   speech?: InboxSpeech;
+  /** The response's mode resolved to `off`: it never pops the panel. Absent from older daemons: treat as false. */
+  muted?: boolean;
 }
 
 export interface InboxResponse {

@@ -108,14 +108,20 @@ test("replies are off by default", async () => {
   expect((await call("POST", "/v1/reply", { id: entry.id, text: "go" })).status).toBe(403);
 });
 
-test("a muted response is still in the inbox", async () => {
+test("a muted response is still in the inbox, flagged so the panel never pops it", async () => {
   await boot(new FakeDriver());
   await call("POST", "/v1/mode", { mode: "off" });
   expect(await speak({ text: "Shall I continue?", source: "agent", reply: route }, o())).toEqual({
     id: null,
     skipped: "muted",
   });
-  expect(await entries()).toHaveLength(1);
+  const [muted] = await entries();
+  expect(muted.muted).toBe(true);
+  // Back to speaking: the same conversation's next response is not flagged.
+  await call("POST", "/v1/mode", { mode: "full" });
+  await speak({ text: "And now?", source: "agent", reply: route }, o());
+  const [spoken] = await entries();
+  expect(spoken.muted).toBeUndefined();
 });
 
 test("dismissing an entry removes it from the inbox", async () => {

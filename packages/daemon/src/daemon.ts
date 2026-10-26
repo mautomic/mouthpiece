@@ -269,13 +269,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<RunningDaem
   const seenSources = new Set<string>();
   const enqueue = (event: NormalizedSpeakEvent): SpeakResponse => {
     seenSources.add(event.source);
+    const muted = event.kind === "response" && modes.resolve(event) === "off";
     // Every response goes to the inbox, even muted or trivial ones: you may still answer it (US-025).
-    const entryId = inbox.record(event);
+    const entryId = inbox.record(event, { muted });
     const unspoken = (skipped: string): SpeakResponse => {
       if (entryId !== undefined) inbox.speech(entryId, "none");
       return { id: null, skipped };
     };
-    if (event.kind === "response" && modes.resolve(event) === "off") return unspoken("muted");
+    if (muted) return unspoken("muted");
     if (deduper.isDuplicate(event)) return unspoken("duplicate");
     const reason = skipReason(event, config.filter);
     if (reason) return unspoken(reason);

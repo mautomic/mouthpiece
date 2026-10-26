@@ -819,7 +819,7 @@ Codex, Gemini and opencode sessions in Orca or tmux use the same terminal routes
   - The CLI gets `mouthpiece inbox` and `mouthpiece reply <label|id> <text…>`.
 - **App:**
   - `MouthpieceHelper`, the existing AppKit menubar app, gets an Inbox panel. It floats and doesn't take focus, so it doesn't pull you out of what you're typing.
-  - It opens when a new response arrives (`[reply] popup`, on by default) or from the menubar or a hotkey.
+  - It opens when a new response arrives (`[reply] popup`, on by default) or from the menubar or a hotkey. A response whose mode resolved to `off` is flagged `muted` and never pops the panel, though it still gets a row you can reply from.
   - **Each row shows:**
     - the label and how long ago it arrived;
     - the spoken summary, which expands to the full markdown;

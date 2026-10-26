@@ -50,6 +50,15 @@ test("a response creates a waiting entry with its route", () => {
   expect(changes).toHaveLength(1);
 });
 
+test("a muted response's entry is flagged on its first emit", () => {
+  const { inbox, changes } = setup();
+  const id = inbox.record(event({ reply: route }), { muted: true });
+  expect(inbox.get(id as string)?.muted).toBe(true);
+  expect(changes).toEqual([
+    { type: "entry", entry: expect.objectContaining({ id: "e1", muted: true }) },
+  ]);
+});
+
 test("a later response replaces the entry with a new id and clears the summary", () => {
   const { inbox, advance } = setup();
   const first = inbox.record(event({})) as string;
