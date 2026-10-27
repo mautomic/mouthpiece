@@ -58,6 +58,8 @@ ${envXml}
       <key>SuccessfulExit</key>
       <false/>
     </dict>
+    <key>ProcessType</key>
+    <string>Interactive</string>
     <key>StandardOutPath</key>
     <string>${esc(spec.logPath)}</string>
     <key>StandardErrorPath</key>

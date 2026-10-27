@@ -308,6 +308,14 @@ mouthpiece daemon restart    # e.g. after pulling new code
 
 When the daemon isn't running, hooks give up silently within 300 ms, so your coding tools are never slowed down or blocked.
 
+**Hearing `say` when Kokoro is installed?** The plist must run the daemon at normal app priority (`ProcessType = Interactive`, written by current installers). A plist written before that key existed leaves the daemon under launchd's light resource limits: its Kokoro renders — pure CPU work — get throttled onto the efficiency cores, miss the per-chunk deadline, and the provider chain falls back to `say`. The daemon log (`~/.mouthpiece/daemon.log`) shows `provider_fallback` lines when that happens. On a machine with an older plist, re-running `mouthpiece install-agent` rewrites it, or fix it directly:
+
+```sh
+/usr/libexec/PlistBuddy -c "Add :ProcessType string Interactive" ~/Library/LaunchAgents/dev.mouthpiece.daemon.plist
+launchctl bootout gui/$(id -u)/dev.mouthpiece.daemon
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.mouthpiece.daemon.plist
+```
+
 ## Uninstall
 
 ```sh

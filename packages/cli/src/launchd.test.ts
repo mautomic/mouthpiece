@@ -18,6 +18,8 @@ test("plist runs `mouthpiece start` with PATH, env, logs, and restart-on-crash",
   );
   expect(xml).toContain("<key>MOUTHPIECE_PORT</key>\n      <string>7400</string>");
   expect(xml).toContain("<key>SuccessfulExit</key>\n      <false/>");
+  // Without it, launchd's light limits keep Kokoro renders on the efficiency cores.
+  expect(xml).toContain("<key>ProcessType</key>\n    <string>Interactive</string>");
   expect(xml).toContain(
     "<key>StandardErrorPath</key>\n    <string>/u/.mouthpiece/daemon.log</string>",
   );
