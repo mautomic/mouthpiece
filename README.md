@@ -97,6 +97,8 @@ merely a clipped Summary long. Existing config files are left unchanged.
 
 Choose another mode from the menubar’s **Mode** submenu, or run `mouthpiece mode summary-short`, `mouthpiece mode summary`, `mouthpiece mode full`, or `mouthpiece mode off`. **Full** reads the complete response; **Off** mutes responses (alerts still speak).
 
+![Mouthpiece's menubar menu with Summary short selected](docs/images/mode-menu.png)
+
 When Claude needs your approval to use a tool, you hear an alert that names the project, even when responses are muted. Typing your next prompt interrupts whatever that session is saying.
 
 | Hotkey | Action |
