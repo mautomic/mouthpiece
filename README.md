@@ -280,6 +280,8 @@ opens it on the newest session waiting for you. ⌘↩ sends (↩ adds a line), 
 A new response pops up when its voice starts, not before; until then its tab reads "Speaking soon…". One that
 won't be spoken (muted, skipped) pops up at once.
 
+![Mouthpiece inbox panel with a reply box](docs/images/inbox-reply-panel.png)
+
 ```toml
 [reply]
 popup = "away"      # pop up on a new response unless the session's terminal app (Orca) is in front;
